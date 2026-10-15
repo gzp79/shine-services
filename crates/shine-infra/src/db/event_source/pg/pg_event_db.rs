@@ -123,7 +123,7 @@ where
 
         let client = self.client.get().await.map_err(PgError::PoolError)?;
         let channel = format!("es_notification_{}", E::NAME);
-        log::info!("Listening to event notifications for {channel}");
+        tracing::debug!("Listening to event notifications for {channel}");
         client
             .listen(&channel, move |p| {
                 let Some(p) = p else {
@@ -137,7 +137,7 @@ where
                     Ok(m) => {
                         handler(m);
                     }
-                    Err(e) => log::error!("Unexpected notification: {e}"),
+                    Err(e) => tracing::error!("Unexpected notification: {e}"),
                 }
             })
             .await?;

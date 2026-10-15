@@ -3,5 +3,5 @@ mod hub;
 
 pub use self::{
     chat_service::ChatService,
-    hub::{HubIntervals, HubService, HubStatus},
+    hub::{hub_metrics, HubIntervals, HubService, HubStatus},
 };

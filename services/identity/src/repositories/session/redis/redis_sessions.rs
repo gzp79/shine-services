@@ -9,6 +9,7 @@ use shine_infra::{
     db::redis::{RedisError, RedisJsonValue},
     web::extracts::SiteInfo,
 };
+use tracing::instrument;
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug, RedisJsonValue)]
@@ -102,7 +103,6 @@ impl RedisSessionDbContext<'_> {
 
     async fn find_redis_keys(&mut self, user_id: Uuid) -> Result<Vec<String>, SessionError> {
         let pattern = format!("{}session:{}:*", self.key_prefix, user_id.as_simple());
-        //log::debug!("pattern: {pattern}");
 
         let mut keys = vec![];
         let mut iter = self
@@ -119,6 +119,7 @@ impl RedisSessionDbContext<'_> {
 }
 
 impl Sessions for RedisSessionDbContext<'_> {
+    #[instrument(level = "info", skip_all, fields(user_id = %identity.id))]
     async fn store_session(
         &mut self,
         created_at: DateTime<Utc>,
@@ -130,10 +131,8 @@ impl Sessions for RedisSessionDbContext<'_> {
         is_linked: bool,
     ) -> Result<Session, SessionError> {
         let (sentinel_key, key) = self.to_redis_keys(identity.id, &session_key_hash);
-        log::debug!(
-            "Storing session, user:[{}], sentinel: [{sentinel_key}], data:[{key}]",
-            identity.id
-        );
+        tracing::debug!("Storing session, user:[{}]", identity.id);
+        tracing::trace!("Storing session, sentinel:[{sentinel_key}], data:[{key}]");
 
         // Session management in redis:
         // The initial step involves attempting to create a sentinel using a unique key. If this operation
@@ -158,8 +157,6 @@ impl Sessions for RedisSessionDbContext<'_> {
             city: site_info.city.clone(),
         };
 
-        log::debug!("sentinel:{sentinel:#?}");
-
         let created: Option<()> = {
             let options = SetOptions::default()
                 .conditional_set(ExistenceCheck::NX)
@@ -177,7 +174,6 @@ impl Sessions for RedisSessionDbContext<'_> {
                 is_linked,
                 roles,
             };
-            log::debug!("data:{sentinel:#?}");
             let _: Option<()> = {
                 let options = SetOptions::default().with_expiration(SetExpiry::EX(self.ttl_session as u64));
 
@@ -204,11 +200,12 @@ impl Sessions for RedisSessionDbContext<'_> {
                 expire_at: Utc::now() + Duration::seconds(self.ttl_session),
             })
         } else {
-            log::debug!("key conflict");
+            tracing::warn!("Session key conflict, user:[{}]", identity.id);
             Err(SessionError::KeyConflict)
         }
     }
 
+    #[instrument(level = "info", skip_all, fields(user_id = %user_id))]
     async fn find_all_session_hashes_by_user(&mut self, user_id: Uuid) -> Result<Vec<String>, SessionError> {
         let keys = self.find_redis_keys(user_id).await?;
 
@@ -226,6 +223,7 @@ impl Sessions for RedisSessionDbContext<'_> {
         Ok(key_hashes)
     }
 
+    #[instrument(level = "info", skip_all, fields(user_id = %user_id))]
     async fn find_all_sessions_by_user(&mut self, user_id: Uuid) -> Result<Vec<Session>, SessionError> {
         let keys = self.find_redis_keys(user_id).await?;
 
@@ -244,13 +242,14 @@ impl Sessions for RedisSessionDbContext<'_> {
         Ok(sessions)
     }
 
+    #[instrument(level = "info", skip_all, fields(user_id = %user_id))]
     async fn find_session_by_hash(
         &mut self,
         user_id: Uuid,
         session_key_hash: &str,
     ) -> Result<Option<Session>, SessionError> {
         let (sentinel_key, key) = self.to_redis_keys(user_id, session_key_hash);
-        log::debug!("Finding session, user:[{user_id}], sentinel: [{sentinel_key}], data:[{key}]");
+        tracing::debug!("Finding session, user:[{user_id}]");
 
         // query sentinel and the available data versions
         let (sentinel, sentinel_ttl, data, data_ttl): (
@@ -288,6 +287,7 @@ impl Sessions for RedisSessionDbContext<'_> {
         )))
     }
 
+    #[instrument(level = "info", skip_all, fields(user_id = %identity.id))]
     async fn update_session_user_by_hash(
         &mut self,
         session_key_hash: &str,
@@ -296,10 +296,8 @@ impl Sessions for RedisSessionDbContext<'_> {
         is_linked: bool,
     ) -> Result<Option<Session>, SessionError> {
         let (sentinel_key, key) = self.to_redis_keys(identity.id, session_key_hash);
-        log::debug!(
-            "Updating session, user:[{}], sentinel: [{sentinel_key}], data:[{key}]",
-            identity.id
-        );
+        tracing::debug!("Updating session, user:[{}]", identity.id);
+        tracing::trace!("Updating session, sentinel:[{sentinel_key}], data:[{key}]");
 
         let is_open = self.client.exists(sentinel_key).await.map_err(RedisError::RawError)?;
         if is_open {
@@ -325,9 +323,10 @@ impl Sessions for RedisSessionDbContext<'_> {
         }
     }
 
+    #[instrument(level = "info", skip_all, fields(user_id = %user_id))]
     async fn delete_session_by_hash(&mut self, user_id: Uuid, session_key_hash: &str) -> Result<(), SessionError> {
         let (sentinel_key, key) = self.to_redis_keys(user_id, session_key_hash);
-        log::debug!("Removing session, user:[{user_id}], sentinel: [{sentinel_key}], data:[{key}]");
+        tracing::debug!("Removing session, user:[{user_id}]");
 
         // todo: https://github.com/redis-rs/redis-rs/issues/1228, https://github.com/redis-rs/redis-rs/issues/1322
         () = self
@@ -338,11 +337,12 @@ impl Sessions for RedisSessionDbContext<'_> {
         Ok(())
     }
 
+    #[instrument(level = "info", skip_all, fields(user_id = %user_id))]
     async fn delete_all_sessions_by_user(&mut self, user_id: Uuid) -> Result<(), SessionError> {
         let keys = self.find_redis_keys(user_id).await?;
 
         if !keys.is_empty() {
-            log::debug!("Removing session, user:[{user_id}], keys: {keys:?}");
+            tracing::debug!("Removing all sessions, user:[{user_id}], keys: {}", keys.len());
             // todo: https://github.com/redis-rs/redis-rs/issues/1228, https://github.com/redis-rs/redis-rs/issues/1322
             () = self.client.del(keys).await.map_err(RedisError::RawError)?;
         }

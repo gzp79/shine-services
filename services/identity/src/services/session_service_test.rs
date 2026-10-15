@@ -24,7 +24,7 @@ async fn create_db(scope: &str) -> Option<impl SessionDb> {
             Some(db)
         }
         _ => {
-            log::warn!("Missing SHINE_TEST_REDIS_CNS, skipping test");
+            tracing::warn!("Missing SHINE_TEST_REDIS_CNS, skipping test");
             None
         }
     }
@@ -33,7 +33,7 @@ async fn create_db(scope: &str) -> Option<impl SessionDb> {
 #[test]
 async fn create_get_remove() {
     let scope = &Uuid::new_v4().to_string()[..5];
-    log::debug!("test scope: {scope}");
+    tracing::debug!("test scope: {scope}");
     let session_manager = match create_db(scope).await {
         Some(db) => SessionService::new(db),
         None => return,
@@ -57,32 +57,32 @@ async fn create_get_remove() {
         city: None,
     };
 
-    log::info!("Creating a new session...");
+    tracing::info!("Creating a new session...");
     let (session, session_key) = session_manager
         .create(&identity, roles.clone(), is_linked, &fingerprint, &site_info)
         .await
         .unwrap();
-    log::debug!("session: {session:#?}");
+    tracing::debug!("session: {session:#?}");
     assert_eq!(identity.id, session.info.user_id);
     assert_eq!(fingerprint.as_str(), session.info.fingerprint);
     assert_eq!(identity.name, session.user.name);
     assert_eq!(roles, session.user.roles);
     assert_eq!(is_linked, session.user.is_linked);
 
-    log::info!("Finding the session...");
+    tracing::info!("Finding the session...");
     let found_session = session_manager
         .find(identity.id, &session_key)
         .await
         .unwrap()
         .expect("Session should have been found");
-    log::debug!("found_session: {found_session:#?}");
+    tracing::debug!("found_session: {found_session:#?}");
     assert_eq!(session.info.key_hash, found_session.info.key_hash);
     assert_eq!(identity.id, found_session.info.user_id);
     assert_eq!(fingerprint.as_str(), found_session.info.fingerprint);
     assert_eq!(identity.name, found_session.user.name);
     assert_eq!(roles, found_session.user.roles);
 
-    log::info!("Remove session...");
+    tracing::info!("Remove session...");
     session_manager.remove(identity.id, &session_key).await.unwrap();
     {
         let sessions = session_manager.find_all(identity.id).await.unwrap();
@@ -92,7 +92,7 @@ async fn create_get_remove() {
         );
     }
 
-    log::info!("Finding after remove...");
+    tracing::info!("Finding after remove...");
     let found_session = session_manager.find(identity.id, &session_key).await.unwrap();
     assert!(found_session.is_none());
 }
@@ -100,7 +100,7 @@ async fn create_get_remove() {
 #[test]
 async fn update_invalid_key() {
     let scope = &Uuid::new_v4().to_string()[..5];
-    log::debug!("test scope: {scope}");
+    tracing::debug!("test scope: {scope}");
     let session_manager = match create_db(scope).await {
         Some(db) => SessionService::new(db),
         None => return,
@@ -128,7 +128,7 @@ async fn update_invalid_key() {
 #[test]
 async fn create_update() {
     let scope = &Uuid::new_v4().to_string()[..5];
-    log::debug!("test scope: {scope}");
+    tracing::debug!("test scope: {scope}");
     let session_manager = match create_db(scope).await {
         Some(db) => SessionService::new(db),
         None => return,
@@ -152,13 +152,13 @@ async fn create_update() {
         city: None,
     };
 
-    log::info!("Creating a new session...");
+    tracing::info!("Creating a new session...");
     let (session, session_key) = session_manager
         .create(&identity1, roles1.clone(), is_linked1, &fingerprint, &site_info)
         .await
         .unwrap();
 
-    log::info!("Update session");
+    tracing::info!("Update session");
     let mut identity2 = identity1.clone();
     identity2.is_email_confirmed = true;
     let roles2 = vec!["Rfix".into(), "R2".into()];
@@ -182,7 +182,7 @@ async fn create_update() {
             .await
             .unwrap()
             .expect("Session should have been found");
-        log::debug!("found_session: {found_session:#?}");
+        tracing::debug!("found_session: {found_session:#?}");
         assert_eq!(session.info.key_hash, found_session.info.key_hash);
         assert_eq!(identity2.id, found_session.info.user_id);
         assert_eq!(fingerprint.as_str(), found_session.info.fingerprint);
@@ -194,7 +194,7 @@ async fn create_update() {
 #[test]
 async fn create_many_remove_all() {
     let scope = &Uuid::new_v4().to_string()[..5];
-    log::debug!("test scope: {scope}");
+    tracing::debug!("test scope: {scope}");
     let session_manager = match create_db(scope).await {
         Some(db) => SessionService::new(db),
         None => return,

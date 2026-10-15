@@ -1,3 +1,5 @@
+use crate::telemetry::log_metrics::LogMetricsLayer;
+use crate::telemetry::otel_http::{CONSOLE_TARGET, TRACING_TARGET};
 use crate::telemetry::{Metering, OtelLayer, TelemetryBuildError, TelemetryConfig, TelemetryError, Tracing};
 use opentelemetry::{
     global,
@@ -14,7 +16,12 @@ use opentelemetry_sdk::{
 use std::sync::{Arc, RwLock};
 use tracing::{Dispatch, Subscriber};
 use tracing_opentelemetry::OpenTelemetryLayer;
-use tracing_subscriber::{filter::EnvFilter, layer::SubscriberExt, registry::LookupSpan, reload, Layer};
+use tracing_subscriber::{
+    filter::{filter_fn, EnvFilter, LevelFilter},
+    layer::{Filter, SubscriberExt},
+    registry::LookupSpan,
+    reload, Layer,
+};
 
 #[derive(Debug, Clone)]
 pub struct DynConfig {
@@ -28,7 +35,7 @@ trait DynHandle: Send + Sync {
 
 struct WrapHandle<L, S>
 where
-    L: Layer<S> + From<EnvFilter> + Send + Sync + 'static,
+    L: From<EnvFilter> + Send + Sync + 'static,
     S: Subscriber,
 {
     handle: reload::Handle<L, S>,
@@ -37,7 +44,7 @@ where
 
 impl<L, S> DynHandle for WrapHandle<L, S>
 where
-    L: Layer<S> + From<EnvFilter> + Send + Sync + 'static,
+    L: From<EnvFilter> + Send + Sync + 'static,
     S: Subscriber,
 {
     fn set_configuration(&mut self, mut new_config: DynConfig) -> Result<(), String> {
@@ -111,22 +118,22 @@ impl TelemetryService {
         Ok(())
     }
 
-    fn tracing_fixed_filter<S>(&mut self, config: &TelemetryConfig) -> Result<impl Layer<S>, TelemetryBuildError>
+    fn tracing_fixed_filter<S>(&mut self, config: &TelemetryConfig) -> Result<impl Filter<S>, TelemetryBuildError>
     where
         S: Subscriber + for<'a> LookupSpan<'a> + Send + Sync + 'static,
     {
-        log::debug!("Registering fixed filter tracing layer...");
+        tracing::debug!("Registering fixed filter tracing layer...");
         let filter = config.default_level.as_deref().unwrap_or("warn");
         let env_filter = EnvFilter::builder().parse(filter)?;
 
         Ok(env_filter)
     }
 
-    fn tracing_dyn_filter<S>(&mut self, config: &TelemetryConfig) -> Result<impl Layer<S>, TelemetryBuildError>
+    fn tracing_dyn_filter<S>(&mut self, config: &TelemetryConfig) -> Result<impl Filter<S>, TelemetryBuildError>
     where
         S: Subscriber + for<'a> LookupSpan<'a> + Send + Sync + 'static,
     {
-        log::debug!("Registering dynamic filter tracing layer...");
+        tracing::debug!("Registering dynamic filter tracing layer...");
 
         let filter = config.default_level.as_deref().unwrap_or("warn");
         let env_filter = EnvFilter::builder().parse(filter)?;
@@ -143,8 +150,13 @@ impl TelemetryService {
     where
         S: Subscriber + for<'a> LookupSpan<'a> + Send + Sync + 'static,
     {
-        log::debug!("Registering console log tracing layer...");
-        let console_layer = tracing_subscriber::fmt::Layer::new().compact();
+        tracing::debug!("Registering console log tracing layer...");
+
+        // The HTTP request span carries many attributes meant for the trace backend; keep them out of the console prefix.
+        let console_layer = tracing_subscriber::fmt::Layer::new()
+            .compact()
+            .with_filter(filter_fn(|meta| !(meta.is_span() && meta.target() == TRACING_TARGET)));
+
         Ok(console_layer)
     }
 
@@ -161,13 +173,13 @@ impl TelemetryService {
 
         builder = match &config.tracing {
             Tracing::StdOut => {
-                log::info!("Registering StdOut tracing exporter...");
+                tracing::info!("Registering StdOut tracing exporter...");
                 let exporter = opentelemetry_stdout::SpanExporter::default();
                 builder.with_simple_exporter(exporter)
             }
             #[cfg(feature = "ot_otlp")]
             Tracing::OpenTelemetryProtocol { endpoint } => {
-                log::info!("Registering OpenTelemetryProtocol tracing exporter...");
+                tracing::info!("Registering OpenTelemetryProtocol tracing exporter...");
                 let exporter = opentelemetry_otlp::SpanExporter::builder()
                     .with_tonic()
                     .with_endpoint(endpoint)
@@ -176,7 +188,7 @@ impl TelemetryService {
             }
             #[cfg(feature = "ot_app_insight")]
             Tracing::AppInsight { connection_string } => {
-                log::info!("Registering AppInsight tracing exporter...");
+                tracing::info!("Registering AppInsight tracing exporter...");
                 let exporter = opentelemetry_application_insights::Exporter::new_from_connection_string(
                     connection_string,
                     reqwest::Client::new(),
@@ -194,7 +206,10 @@ impl TelemetryService {
         let tracer = provider.tracer_with_scope(scope.clone());
         self.tracer_provider = Some(provider);
 
-        Ok(OpenTelemetryLayer::new(tracer).with_tracked_inactivity(true))
+        Ok(OpenTelemetryLayer::new(tracer)
+            .with_tracked_inactivity(true)
+            // Filter out console-only spans from the OpenTelemetry layer
+            .with_filter(filter_fn(|meta| !(meta.is_span() && meta.target() == CONSOLE_TARGET))))
     }
 
     fn install_trace(
@@ -205,56 +220,68 @@ impl TelemetryService {
     ) -> Result<(), TelemetryBuildError> {
         use tracing_subscriber::registry;
 
+        // Kept out of the (reconfigurable) sink filter, so the counts do not depend on the log verbosity.
+        let log_metrics = self
+            .metrics
+            .as_ref()
+            .map(|m| LogMetricsLayer::new(&m.meter).with_filter(LevelFilter::WARN));
+
         if matches!(config.tracing, Tracing::None) {
-            log::warn!("Trace is disabled");
+            tracing::warn!("Trace is disabled");
 
             if config.enable_console_log {
                 if config.allow_reconfigure {
                     Self::set_global_tracing_pipeline(
-                        registry()
-                            .with(self.tracing_dyn_filter(config)?)
-                            .with(self.tracing_console_log(config)?),
+                        registry().with(log_metrics).with(
+                            self.tracing_console_log(config)?
+                                .with_filter(self.tracing_dyn_filter(config)?),
+                        ),
                     )?;
                 } else {
                     Self::set_global_tracing_pipeline(
-                        registry()
-                            .with(self.tracing_fixed_filter(config)?)
-                            .with(self.tracing_console_log(config)?),
+                        registry().with(log_metrics).with(
+                            self.tracing_console_log(config)?
+                                .with_filter(self.tracing_fixed_filter(config)?),
+                        ),
                     )?;
                 }
             } else {
-                log::warn!("Service is configured for silent mode");
+                tracing::warn!("Service is configured for silent mode");
             }
         } else {
             match (config.enable_console_log, config.allow_reconfigure) {
                 (true, true) => {
                     Self::set_global_tracing_pipeline(
-                        registry()
-                            .with(self.tracing_dyn_filter(config)?)
-                            .with(self.tracing_console_log(config)?)
-                            .with(self.tracing_ot(config, resource, scope)?),
+                        registry().with(log_metrics).with(
+                            self.tracing_console_log(config)?
+                                .and_then(self.tracing_ot(config, resource, scope)?)
+                                .with_filter(self.tracing_dyn_filter(config)?),
+                        ),
                     )?;
                 }
                 (true, false) => {
                     Self::set_global_tracing_pipeline(
-                        registry()
-                            .with(self.tracing_fixed_filter(config)?)
-                            .with(self.tracing_console_log(config)?)
-                            .with(self.tracing_ot(config, resource, scope)?),
+                        registry().with(log_metrics).with(
+                            self.tracing_console_log(config)?
+                                .and_then(self.tracing_ot(config, resource, scope)?)
+                                .with_filter(self.tracing_fixed_filter(config)?),
+                        ),
                     )?;
                 }
                 (false, true) => {
                     Self::set_global_tracing_pipeline(
-                        registry()
-                            .with(self.tracing_dyn_filter(config)?)
-                            .with(self.tracing_ot(config, resource, scope)?),
+                        registry().with(log_metrics).with(
+                            self.tracing_ot(config, resource, scope)?
+                                .with_filter(self.tracing_dyn_filter(config)?),
+                        ),
                     )?;
                 }
                 (false, false) => {
                     Self::set_global_tracing_pipeline(
-                        registry()
-                            .with(self.tracing_fixed_filter(config)?)
-                            .with(self.tracing_ot(config, resource, scope)?),
+                        registry().with(log_metrics).with(
+                            self.tracing_ot(config, resource, scope)?
+                                .with_filter(self.tracing_fixed_filter(config)?),
+                        ),
                     )?;
                 }
             }
@@ -272,12 +299,12 @@ impl TelemetryService {
         // Install meter provider for opentelemetry
         let provider = match &config.metrics {
             Metering::None => {
-                log::warn!("Metrics are disabled");
+                tracing::warn!("Metrics are disabled");
                 return Ok(());
             }
             #[cfg(feature = "ot_otlp")]
             Metering::OpenTelemetryProtocol { endpoint } => {
-                log::info!("Registering OpenTelemetryProtocol metric exporter...");
+                tracing::info!("Registering OpenTelemetryProtocol metric exporter...");
                 let exporter = opentelemetry_otlp::MetricExporter::builder()
                     .with_tonic()
                     .with_endpoint(endpoint)

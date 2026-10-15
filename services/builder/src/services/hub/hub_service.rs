@@ -1,3 +1,4 @@
+use crate::services::hub::hub_metrics::hub_metrics;
 use crate::{
     models::{
         messages::{HubEvent, HubMessage, TopicKey},
@@ -7,17 +8,21 @@ use crate::{
     services::{
         hub::{
             hub_command::ControlCommand,
-            hub_connections::Connections,
+            hub_connections::{Connections, DeadConnection},
             hub_subscribers::Subscribers,
             tasks::{ChatDispatcher, Heartbeat, SessionChecker},
         },
         ChatService,
     },
 };
+use opentelemetry::trace::SpanContext;
 use shine_infra::session::{CurrentUserService, SessionKey};
+use shine_infra::telemetry::{current_span_context, label, link_span};
 use std::collections::VecDeque;
+use std::time::Instant;
 use std::{sync::Arc, time::Duration};
 use tokio::{sync::mpsc, task::JoinHandle};
+use tracing::{info_span, Instrument};
 use uuid::Uuid;
 
 /// Cadence configuration for the hub's periodic connection consumers.
@@ -35,7 +40,7 @@ pub struct HubStats {
 }
 
 struct Inner {
-    control_tx: mpsc::UnboundedSender<ControlCommand>,
+    control_tx: mpsc::UnboundedSender<(ControlCommand, SpanContext, Instant)>,
     connections: Connections,
     subscribers: Subscribers,
     hub_registry: RedisHubConnectionDb,
@@ -83,14 +88,20 @@ impl HubService {
     fn send_control(&self, command: ControlCommand) -> Result<(), HubError> {
         self.inner
             .control_tx
-            .send(command)
+            .send((command, current_span_context(), Instant::now()))
             .map_err(|_| HubError::SendCommandFailed)
     }
 
+    /// Logs and counts a connection removed by the hub.
+    fn record_drop(user_id: Uuid, connection_id: Uuid, reason: &'static str) {
+        tracing::info!("[{user_id}] [{connection_id}] Connection dropped: {reason}");
+        hub_metrics().connections_dropped.add(1, &[label("reason", reason)]);
+    }
+
     /// Prunes any connection found dead during an egress send.
-    fn drop_dead(&self, dead: impl IntoIterator<Item = Uuid>) -> Result<(), HubError> {
-        for connection_id in dead {
-            self.send_control(ControlCommand::DropConnection { connection_id })?;
+    fn drop_dead(&self, dead: impl IntoIterator<Item = DeadConnection>) -> Result<(), HubError> {
+        for DeadConnection { connection_id, reason } in dead {
+            self.send_control(ControlCommand::DropConnection { connection_id, reason })?;
         }
         Ok(())
     }
@@ -116,7 +127,21 @@ impl HubService {
 
     /// Requests removal of a connection, only if `connection_id` still matches the user's active one.
     pub fn request_disconnection(&self, user_id: Uuid, connection_id: Uuid) -> Result<(), HubError> {
-        self.send_control(ControlCommand::DisconnectUser { user_id, connection_id })
+        self.send_control(ControlCommand::DisconnectUser {
+            user_id,
+            connection_id,
+            drop_reason: None,
+        })
+    }
+
+    /// Like [`Self::request_disconnection`], for a disconnect forced by the hub; counted as a dropped
+    /// connection with the given reason once the connection is actually removed.
+    pub fn request_drop(&self, user_id: Uuid, connection_id: Uuid, reason: &'static str) -> Result<(), HubError> {
+        self.send_control(ControlCommand::DisconnectUser {
+            user_id,
+            connection_id,
+            drop_reason: Some(reason),
+        })
     }
 
     /// Requests hub shutdown.
@@ -129,25 +154,25 @@ impl HubService {
         self.send_control(ControlCommand::HubRegistryChanged { user_id })
     }
 
-    /// Sends an egress message to a specific connection.
-    pub async fn send_to_connection(&self, connection_id: Uuid, message: HubMessage) -> Result<(), HubError> {
-        self.drop_dead(
-            self.inner
-                .connections
-                .send_to_connection(connection_id, message)
-                .await
-                .err(),
-        )
+    /// Sends an egress message to a specific connection. Returns whether the message was queued for delivery.
+    #[tracing::instrument(level = "debug", skip_all, fields(ws.connection_id = %connection_id))]
+    pub async fn send_to_connection(&self, connection_id: Uuid, message: HubMessage) -> Result<bool, HubError> {
+        match self.inner.connections.send_to_connection(connection_id, message).await {
+            Ok(queued) => Ok(queued),
+            Err(dead) => self.drop_dead([dead]).map(|()| false),
+        }
     }
 
     /// Sends an egress message to a user's active connection.
     #[allow(dead_code)] // part of the hub egress API; not yet wired to a caller
+    #[tracing::instrument(level = "debug", skip_all, fields(enduser.id = %user_id))]
     pub async fn send_to_user(&self, user_id: Uuid, message: HubMessage) -> Result<(), HubError> {
         self.drop_dead(self.inner.connections.send_to_user(user_id, message).await.err())
     }
 
     /// Broadcasts an egress message to every connection subscribed to its topic.
     #[allow(dead_code)] // part of the hub egress API; not yet wired to a caller
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn broadcast(&self, message: HubMessage) -> Result<(), HubError> {
         self.drop_dead(
             self.inner
@@ -176,15 +201,37 @@ impl HubService {
     /// Starts the command loop, the sole writer of connection state.
     fn start_dispatcher(
         service: HubService,
-        mut control_rx: mpsc::UnboundedReceiver<ControlCommand>,
+        mut control_rx: mpsc::UnboundedReceiver<(ControlCommand, SpanContext, Instant)>,
         background_tasks: Vec<JoinHandle<()>>,
     ) {
         tokio::spawn(async move {
-            while let Some(command) = control_rx.recv().await {
-                if !service.process(command).await {
+            while let Some((command, origin, queued_at)) = control_rx.recv().await {
+                let name = command.name();
+                let metrics = hub_metrics();
+                metrics
+                    .command_queue_delay
+                    .record(queued_at.elapsed().as_secs_f64(), &[label("command", name)]);
+
+                // Linked, not parented: the queued command must not keep the originating request span open.
+                let span = info_span!(
+                    parent: None,
+                    "hub command",
+                    hub.command = name,
+                    enduser.id = command.user_id().map(display),
+                    ws.connection_id = command.connection_id().map(display)
+                );
+                link_span(&span, origin);
+                let start = Instant::now();
+                let keep_running = service.process(command).instrument(span).await;
+                metrics.commands.add(1, &[label("command", name)]);
+                metrics
+                    .command_duration
+                    .record(start.elapsed().as_secs_f64(), &[label("command", name)]);
+                if !keep_running {
                     break;
                 }
             }
+            tracing::info!("Hub command loop stopped");
             for task in background_tasks {
                 task.abort();
             }
@@ -199,19 +246,19 @@ impl HubService {
                 .hub_registry
                 .listen_to_registry_changes(move |user_id| {
                     if let Err(err) = notifier.notify_registry_changed(user_id) {
-                        log::error!("[{user_id}] Failed to enqueue hub registry change command: {err:#?}");
+                        tracing::warn!("[{user_id}] Failed to enqueue hub registry change command: {err:#?}");
                     }
                 })
                 .await
             {
-                log::error!("Failed to listen to hub registry changes: {err:#?}");
+                tracing::error!("Failed to listen to hub registry changes: {err:#?}");
             }
         })
     }
 
     /// Processes one control command. Returns if the dispatcher should continue (true) or exit (false).
     async fn process(&self, command: ControlCommand) -> bool {
-        log::debug!("Processing command: {command:#?}");
+        tracing::debug!("Processing command: {command:#?}");
         match command {
             ControlCommand::ConnectUser {
                 user_id,
@@ -225,7 +272,7 @@ impl HubService {
                 // — otherwise a transient Redis error would leave the user with no connection and
                 // an orphaned, untracked new socket.
                 if let Err(err) = self.create_registry_connection(user_id, connection_id).await {
-                    log::error!("[{user_id}] Failed to create hub connection: {err:#?}");
+                    tracing::error!("[{user_id}] Failed to create hub connection: {err:#?}");
                     return true;
                 }
 
@@ -234,15 +281,19 @@ impl HubService {
                 // connection tracker drops it. Same-id re-registration is not a replacement.
                 if let Some((old_connection_id, _)) = self.inner.connections.find_active(user_id).await {
                     if old_connection_id != connection_id {
-                        self.inner
+                        if let Some(removed_connection_id) = self
+                            .inner
                             .connections
                             .remove_connection(user_id, Some(old_connection_id))
+                            .await
+                        {
+                            Self::record_drop(user_id, removed_connection_id, "replaced");
+                            self.publish(HubEvent::UserDisconnected {
+                                user_id,
+                                connection_id: removed_connection_id,
+                            })
                             .await;
-                        self.publish(HubEvent::UserDisconnected {
-                            user_id,
-                            connection_id: old_connection_id,
-                        })
-                        .await;
+                        }
                     }
                 }
 
@@ -258,7 +309,11 @@ impl HubService {
                 .await;
                 true
             }
-            ControlCommand::DisconnectUser { user_id, connection_id } => {
+            ControlCommand::DisconnectUser {
+                user_id,
+                connection_id,
+                drop_reason,
+            } => {
                 // Only removes the entry when `connection_id` still matches the active
                 // connection, so a stale disconnect can never tear down a fresh reconnect.
                 let Some(removed_connection_id) = self
@@ -270,10 +325,13 @@ impl HubService {
                     return true;
                 };
 
+                if let Some(reason) = drop_reason {
+                    Self::record_drop(user_id, removed_connection_id, reason);
+                }
                 if let Err(err) = self.remove_registry_connection(user_id, removed_connection_id).await {
                     // Best-effort: publish UserDisconnected regardless so the socket and trackers
                     // never wedge, and let the registry TTL clean up the stale row.
-                    log::error!("[{user_id}] Failed to remove hub connection (relying on TTL cleanup): {err:#?}");
+                    tracing::error!("[{user_id}] Failed to remove hub connection (relying on TTL cleanup): {err:#?}");
                 }
 
                 self.publish(HubEvent::UserDisconnected {
@@ -283,13 +341,14 @@ impl HubService {
                 .await;
                 true
             }
-            ControlCommand::DropConnection { connection_id } => {
+            ControlCommand::DropConnection { connection_id, reason } => {
                 // A producer found this connection's channel dead during an off-loop send. Prune it
                 // here so all mutation stays on the loop. Force-remove by id (a fresh reconnect that
                 // replaced it has a different id and its channel would not be dead).
                 if let Some((user_id, _)) = self.inner.connections.remove_connection_by_id(connection_id).await {
+                    Self::record_drop(user_id, connection_id, reason);
                     if let Err(err) = self.remove_registry_connection(user_id, connection_id).await {
-                        log::error!("[{user_id}] Failed to remove dropped connection from registry (TTL will clean up): {err:#?}");
+                        tracing::error!("[{user_id}] Failed to remove dropped connection from registry (TTL will clean up): {err:#?}");
                     }
                     self.publish(HubEvent::UserDisconnected { user_id, connection_id })
                         .await;
@@ -345,7 +404,7 @@ impl HubService {
         let is_active = match self.heartbeat_registry_connection(user_id, connection_id).await {
             Ok(is_active) => is_active,
             Err(err) => {
-                log::error!("[{user_id}] Failed to heartbeat hub connection: {err:#?}");
+                tracing::error!("[{user_id}] Failed to heartbeat hub connection: {err:#?}");
                 return;
             }
         };
@@ -366,6 +425,7 @@ impl HubService {
             return;
         };
 
+        Self::record_drop(user_id, removed_connection_id, "registry_inactive");
         self.publish(HubEvent::UserDisconnected {
             user_id,
             connection_id: removed_connection_id,
@@ -383,10 +443,11 @@ impl HubService {
             self.inner.subscribers.publish(message.clone()).await;
 
             if let Err(dead) = self.inner.connections.broadcast(message).await {
-                for connection_id in dead {
+                for DeadConnection { connection_id, reason } in dead {
                     if let Some((user_id, _)) = self.inner.connections.remove_connection_by_id(connection_id).await {
+                        Self::record_drop(user_id, connection_id, reason);
                         if let Err(err) = self.remove_registry_connection(user_id, connection_id).await {
-                            log::error!(
+                            tracing::error!(
                                 "[{user_id}] Failed to remove dead connection from registry (TTL will clean up): {err:#?}"
                             );
                         }

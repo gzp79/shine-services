@@ -19,7 +19,7 @@ use tokio::sync::{Barrier, Mutex, OnceCell};
 use uuid::Uuid;
 
 pub async fn create_pg_pool(cns: &str) -> Result<PgConnectionPool, PgError> {
-    log::info!("Creating postgres pool...");
+    tracing::info!("Creating postgres pool...");
     let postgres = db::postgres::create_postgres_pool(cns)
         .await
         .map_err(PgError::CreatePoolError)?;
@@ -101,7 +101,7 @@ async fn test_store_events() {
     let cns = match env::var("SHINE_TEST_PG_CNS") {
         Ok(cns) => cns,
         Err(_) => {
-            log::warn!("SHINE_TEST_PG_CNS not set, skipping test_event_store");
+            tracing::warn!("SHINE_TEST_PG_CNS not set, skipping test_event_store");
             return;
         }
     };
@@ -118,7 +118,7 @@ async fn test_store_events() {
         TestEvent::TestEvent2 { num: 4 },
         TestEvent::TestEvent2 { num: 5 },
     ];
-    log::info!("Stream id: {stream_id}...");
+    tracing::info!("Stream id: {stream_id}...");
 
     // setup notifications listener
     let received_events = Arc::new(Mutex::new(Vec::new()));
@@ -263,7 +263,7 @@ async fn test_unchecked_store_events() {
     let cns = match env::var("SHINE_TEST_PG_CNS") {
         Ok(cns) => cns,
         Err(_) => {
-            log::warn!("SHINE_TEST_PG_CNS not set, skipping test_event_store");
+            tracing::warn!("SHINE_TEST_PG_CNS not set, skipping test_event_store");
             return;
         }
     };
@@ -280,7 +280,7 @@ async fn test_unchecked_store_events() {
         TestEvent::TestEvent2 { num: 4 },
         TestEvent::TestEvent2 { num: 5 },
     ];
-    log::info!("Stream id: {stream_id}...");
+    tracing::info!("Stream id: {stream_id}...");
 
     // setup notifications listener
     let received_events = Arc::new(Mutex::new(Vec::new()));
@@ -359,7 +359,7 @@ async fn test_store_events_stress() {
     let cns = match env::var("SHINE_TEST_PG_CNS") {
         Ok(cns) => cns,
         Err(_) => {
-            log::warn!("SHINE_TEST_PG_CNS not set, skipping test_event_store");
+            tracing::warn!("SHINE_TEST_PG_CNS not set, skipping test_event_store");
             return;
         }
     };
@@ -369,7 +369,7 @@ async fn test_store_events_stress() {
     let event_db = PgEventDb::<TestEvent, Uuid>::new(&pool).await.unwrap();
 
     let stream_id = uuid::Uuid::new_v4();
-    log::info!("Stream id: {stream_id}...");
+    tracing::info!("Stream id: {stream_id}...");
 
     let mut es = event_db.create_context().await.unwrap();
 
@@ -389,10 +389,10 @@ async fn test_store_events_stress() {
         let instant = std::time::Instant::now();
         version = es.store_events(&stream_id, version, &events).await.unwrap();
         let duration = instant.elapsed();
-        log::debug!("({i}) Stored {} events in {:?}", events.len(), duration);
+        tracing::debug!("({i}) Stored {} events in {:?}", events.len(), duration);
         batch_times.push(duration.as_micros());
     }
-    log::info!(
+    tracing::info!(
         "times: {}",
         batch_times
             .iter()
@@ -401,7 +401,7 @@ async fn test_store_events_stress() {
             .collect::<Vec<_>>()
             .join("; ")
     );
-    log::info!(
+    tracing::info!(
         "{{\n \"x\": [{}],\n \"y\": [{}]\n}}",
         (0..batch_times.len()).map(|i| format!("{i}")).join(","),
         batch_times.iter().map(|t| format!("{t}")).join(",")
@@ -414,9 +414,9 @@ async fn test_store_events_stress() {
             .store_events(&stream_id, version, &[TestEvent::TestEvent2 { num: 42 }])
             .await
             .unwrap();
-        log::debug!("({i}) Stored one more events in {:?}", instant.elapsed());
+        tracing::debug!("({i}) Stored one more events in {:?}", instant.elapsed());
     }
-    log::info!("Stored one more events in {:?}", instant.elapsed() / 10);
+    tracing::info!("Stored one more events in {:?}", instant.elapsed() / 10);
 
     let instant = std::time::Instant::now();
     for i in 0..SINGLE_COUNT {
@@ -424,13 +424,13 @@ async fn test_store_events_stress() {
         es.unchecked_store_events(&stream_id, &[TestEvent::TestEvent2 { num: 42 }])
             .await
             .unwrap();
-        log::info!("({i}) Unchecked stored one more events in {:?}", instant.elapsed());
+        tracing::info!("({i}) Unchecked stored one more events in {:?}", instant.elapsed());
     }
-    log::info!("Unchecked stored one more events in {:?}", instant.elapsed() / 10);
+    tracing::info!("Unchecked stored one more events in {:?}", instant.elapsed() / 10);
 
     let instant = std::time::Instant::now();
     es.delete_stream(&stream_id).await.unwrap();
-    log::info!("Deleted {} events in {:?}", BATCH_COUNT * BATCH_SIZE, instant.elapsed());
+    tracing::info!("Deleted {} events in {:?}", BATCH_COUNT * BATCH_SIZE, instant.elapsed());
 }
 
 #[test]
@@ -438,7 +438,7 @@ async fn test_store_snapshot() {
     let cns = match env::var("SHINE_TEST_PG_CNS") {
         Ok(cns) => cns,
         _ => {
-            log::warn!("Skipping test_stored_statements");
+            tracing::warn!("Skipping test_stored_statements");
             return;
         }
     };
@@ -456,7 +456,7 @@ async fn test_store_snapshot() {
         TestEvent::TestEvent2 { num: 4 },
         TestEvent::TestEvent2 { num: 5 },
     ];
-    log::info!("Stream id: {stream_id}...");
+    tracing::info!("Stream id: {stream_id}...");
 
     // create a stream with a few events
     es.create_stream(&stream_id).await.unwrap();
@@ -586,7 +586,7 @@ async fn test_snapshot_chain() {
     let cns = match env::var("SHINE_TEST_PG_CNS") {
         Ok(cns) => cns,
         _ => {
-            log::warn!("Skipping test_stored_statements");
+            tracing::warn!("Skipping test_stored_statements");
             return;
         }
     };
@@ -598,7 +598,7 @@ async fn test_snapshot_chain() {
     for root_id in [0, 7] {
         let mut es = event_db.create_context().await.unwrap();
         let stream_id = uuid::Uuid::new_v4();
-        log::info!("Stream id: {stream_id}...");
+        tracing::info!("Stream id: {stream_id}...");
 
         es.create_stream(&stream_id).await.unwrap();
 
@@ -643,7 +643,7 @@ async fn test_snapshot_chain() {
         .into_iter()
         .enumerate()
         {
-            log::info!("Case ({stream_id}): {idx} ({start},{end})");
+            tracing::info!("Case ({stream_id}): {idx} ({start},{end})");
             let res = match es
                 .store_aggregate(
                     &stream_id,
@@ -703,7 +703,7 @@ async fn test_prune_snapshots() {
     let cns = match env::var("SHINE_TEST_PG_CNS") {
         Ok(cns) => cns,
         _ => {
-            log::warn!("Skipping test_stored_statements");
+            tracing::warn!("Skipping test_stored_statements");
             return;
         }
     };
@@ -713,7 +713,7 @@ async fn test_prune_snapshots() {
     let event_db = Arc::new(PgEventDb::<TestEvent, Uuid>::new(&pool).await.unwrap());
 
     let stream_id = uuid::Uuid::new_v4();
-    log::info!("Stream id: {stream_id}...");
+    tracing::info!("Stream id: {stream_id}...");
 
     // setup notifications listener
     let received_events = Arc::new(Mutex::new(Vec::new()));
@@ -721,7 +721,7 @@ async fn test_prune_snapshots() {
         let received_events: Arc<Mutex<Vec<EventNotification<Uuid>>>> = received_events.clone();
         event_db
             .listen_to_stream_updates(move |event| {
-                log::info!("Received event: {event:?}");
+                tracing::info!("Received event: {event:?}");
                 if event.stream_id() != &stream_id {
                     return;
                 }
@@ -907,7 +907,7 @@ async fn test_concurrent_store_events() {
     let cns = match env::var("SHINE_TEST_PG_CNS") {
         Ok(cns) => cns,
         _ => {
-            log::warn!("Skipping test_stored_statements");
+            tracing::warn!("Skipping test_stored_statements");
             return;
         }
     };
@@ -917,7 +917,7 @@ async fn test_concurrent_store_events() {
     let event_db = Arc::new(PgEventDb::<TestEvent, Uuid>::new(&pool).await.unwrap());
 
     let stream_id = uuid::Uuid::new_v4();
-    log::info!("Stream id: {stream_id}...");
+    tracing::info!("Stream id: {stream_id}...");
 
     let mut es = event_db.create_context().await.unwrap();
     es.create_stream(&stream_id).await.unwrap();
@@ -953,12 +953,12 @@ async fn test_concurrent_store_events() {
                         .await
                     {
                         Ok(new_version) => {
-                            log::debug!("Number {num:?} stored at version {version:?}.");
+                            tracing::debug!("Number {num:?} stored at version {version:?}.");
                             assert_eq!(new_version, version + 1);
                             break;
                         }
                         Err(EventSourceError::Conflict) => {
-                            log::debug!("Number {num:?} store failed, retry");
+                            tracing::debug!("Number {num:?} store failed, retry");
                             tokio::time::sleep(std::time::Duration::from_micros(100)).await;
                             continue;
                         }
@@ -970,7 +970,7 @@ async fn test_concurrent_store_events() {
 
                 count += 1;
             }
-            log::info!("Insert task {i} completed with {count} insertions an {retry} retries.");
+            tracing::info!("Insert task {i} completed with {count} insertions an {retry} retries.");
             counts.lock().await.push(count);
             barrier.wait().await;
         });
@@ -997,13 +997,13 @@ async fn test_concurrent_store_events() {
 
                 count += 1;
             }
-            log::info!("Unchecked insert task {i} completed with {count} insertions.");
+            tracing::info!("Unchecked insert task {i} completed with {count} insertions.");
             counts.lock().await.push(count);
             barrier.wait().await;
         });
     }
 
-    log::info!("Waiting tasks to complete...");
+    tracing::info!("Waiting tasks to complete...");
     barrier.wait().await;
 
     let mut es = event_db.create_context().await.unwrap();
@@ -1025,7 +1025,7 @@ async fn test_concurrent_store_events() {
     num_list.sort();
     assert_equal(num_list, 0..max_num);
 
-    log::info!("Cleaning up...");
+    tracing::info!("Cleaning up...");
     es.delete_stream(&stream_id).await.unwrap();
 }
 
@@ -1034,7 +1034,7 @@ async fn test_concurrent_snapshots_operation() {
     let cns = match env::var("SHINE_TEST_PG_CNS") {
         Ok(cns) => cns,
         _ => {
-            log::warn!("Skipping test_stored_statements");
+            tracing::warn!("Skipping test_stored_statements");
             return;
         }
     };
@@ -1047,7 +1047,7 @@ async fn test_concurrent_snapshots_operation() {
     let stream_id = uuid::Uuid::new_v4();
     es.create_stream(&stream_id).await.unwrap();
 
-    log::info!("Storing events for aggregate: {stream_id}...");
+    tracing::info!("Storing events for aggregate: {stream_id}...");
     let version_gap = 3;
     let max_version = es
         .unchecked_store_events(
@@ -1105,7 +1105,7 @@ async fn test_concurrent_snapshots_operation() {
                     .store_aggregate(&stream_id, start, version, &data, &format!("hash-{version}"))
                     .await
                 {
-                    Ok(_) => log::debug!("Snapshot {version:?} stored."),
+                    Ok(_) => tracing::debug!("Snapshot {version:?} stored."),
                     Err(EventSourceError::Conflict) => {
                         assert!(
                             op_log.lock().await.iter().any(|d| match d {
@@ -1138,7 +1138,7 @@ async fn test_concurrent_snapshots_operation() {
                 op_log.lock().await.push(Log::Inserted(i, start, version));
                 tokio::task::yield_now().await;
             }
-            log::info!("Insert task {i} completed.");
+            tracing::info!("Insert task {i} completed.");
             barrier.wait().await;
         });
     }
@@ -1187,7 +1187,7 @@ async fn test_concurrent_snapshots_operation() {
                         .await
                     {
                         Ok(_) => {
-                            log::debug!("Snapshot pruned at version {snapshot_to_delete:?}.")
+                            tracing::debug!("Snapshot pruned at version {snapshot_to_delete:?}.")
                         }
                         Err(err) => {
                             panic!(
@@ -1201,14 +1201,14 @@ async fn test_concurrent_snapshots_operation() {
                 }
                 tokio::task::yield_now().await;
             }
-            log::info!("Delete task {i} completed.");
+            tracing::info!("Delete task {i} completed.");
             barrier.wait().await;
         });
     }
 
-    log::info!("Waiting tasks to complete...");
+    tracing::info!("Waiting tasks to complete...");
     barrier.wait().await;
 
-    log::info!("Cleaning up...");
+    tracing::info!("Cleaning up...");
     es.delete_stream(&stream_id).await.unwrap();
 }

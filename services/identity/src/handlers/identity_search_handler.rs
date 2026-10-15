@@ -37,6 +37,7 @@ where
         Self { user_service }
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn search_identities(
         &self,
         query: IdentitySearchQuery<'_>,
@@ -59,6 +60,7 @@ where
 
     /// Look up the public info for a set of users. Only known users are present in the
     /// result; ids without a matching identity are omitted.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn get_public_infos(
         &self,
         ids: &[Uuid],

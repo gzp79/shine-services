@@ -4,6 +4,7 @@ use crate::{
 };
 use redis::streams::{StreamId, StreamRangeReply};
 use shine_infra::db::redis::RedisError;
+use tracing::instrument;
 use uuid::Uuid;
 
 use super::RedisChatCommentDbContext;
@@ -26,6 +27,7 @@ impl RedisChatCommentDbContext<'_> {
 }
 
 impl ChatCommentStore for RedisChatCommentDbContext<'_> {
+    #[instrument(level = "info", skip_all, fields(room_id = %room_id, user_id = %user_id))]
     async fn append_comment(&mut self, room_id: &str, user_id: Uuid, text: &str) -> Result<String, ChatError> {
         let stream_key = self.to_stream_key(room_id);
         let stream_id: String = redis::cmd("XADD")
@@ -63,6 +65,7 @@ impl ChatCommentStore for RedisChatCommentDbContext<'_> {
         Ok(stream_id)
     }
 
+    #[instrument(level = "debug", skip_all, fields(room_id = %room_id, limit))]
     async fn list_after(
         &mut self,
         room_id: &str,

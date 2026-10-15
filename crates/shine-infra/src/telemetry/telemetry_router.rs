@@ -33,10 +33,11 @@ pub async fn put_telemetry_config(
         .check(permissions::UPDATE_TRACE)
         .map_err(|err| err.into_response(&problem_config))?;
 
-    log::trace!("reconfigure telemetry: {body:#?}");
+    let filter = body.filter;
     telemetry
-        .set_configuration(DynConfig { filter: body.filter })
+        .set_configuration(DynConfig { filter: filter.clone() })
         .map_err(|err| err.into_response(&problem_config))?;
+    tracing::info!("Telemetry filter reconfigured by user {} to: {filter}", user.user_id);
 
     Ok(())
 }

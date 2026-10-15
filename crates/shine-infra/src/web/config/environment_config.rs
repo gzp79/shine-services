@@ -50,7 +50,7 @@ impl Source for Environment {
 
         let mut m = Map::new();
         let collector = |(env_key, value): (String, String)| {
-            //log::trace!("Checking env {} ...", env_key);
+            //tracing::trace!("Checking env {} ...", env_key);
 
             // Treat empty environment variables as unset
             if ignore_empty && value.is_empty() {
@@ -67,7 +67,7 @@ impl Source for Environment {
                 .map(|k| self.convert_key_case(k))
                 .collect::<Vec<_>>()
                 .join(".");
-            log::debug!("Reading env {env_key} as {key}...");
+            tracing::debug!("Reading env {env_key} as {key}...");
 
             let value = if try_parsing {
                 // convert to lowercase because bool parsing expects all lowercase
@@ -107,7 +107,7 @@ impl Source for Environment {
 
         env::vars().for_each(collector);
 
-        log::trace!("Environment: {m:#?}");
+        tracing::trace!("Environment: {m:#?}");
         Ok(m)
     }
 }

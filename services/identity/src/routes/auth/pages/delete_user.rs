@@ -53,8 +53,6 @@ pub async fn delete_user(
         return page;
     }
 
-    log::debug!("Query: {query:#?}");
-
     state
         .delete_user_handler()
         .delete_user(

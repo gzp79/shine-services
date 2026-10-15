@@ -52,8 +52,6 @@ pub async fn validate(
         return page;
     }
 
-    log::debug!("Query: {query:#?}");
-
     // 4. Return response
     state
         .auth_page_handler()

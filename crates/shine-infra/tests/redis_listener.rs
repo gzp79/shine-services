@@ -44,7 +44,7 @@ async fn test_redis_listener_pub_sub() {
             assert_eq!(payload, Some("hello".to_string()));
         }
 
-        _ => log::warn!("Skipping test_redis_listener_pub_sub"),
+        _ => tracing::warn!("Skipping test_redis_listener_pub_sub"),
     }
 }
 
@@ -126,7 +126,7 @@ async fn test_redis_listener_shared_connection_multi_channel() {
             assert_eq!(*received_b.lock().await, vec!["b1".to_string(), "b2".to_string()]);
         }
 
-        _ => log::warn!("Skipping test_redis_listener_shared_connection_multi_channel"),
+        _ => tracing::warn!("Skipping test_redis_listener_shared_connection_multi_channel"),
     }
 }
 
@@ -219,7 +219,7 @@ async fn test_redis_listener_reconnect_signal() {
             );
         }
 
-        _ => log::warn!("Skipping test_redis_listener_reconnect_signal"),
+        _ => tracing::warn!("Skipping test_redis_listener_reconnect_signal"),
     }
 }
 
@@ -289,7 +289,7 @@ async fn test_redis_listener_closes_connection_on_drop() {
             );
         }
 
-        _ => log::warn!("Skipping test_redis_listener_closes_connection_on_drop"),
+        _ => tracing::warn!("Skipping test_redis_listener_closes_connection_on_drop"),
     }
 }
 
@@ -358,7 +358,7 @@ async fn test_redis_listener_parallel_connect() {
             assert_eq!(received.lock().await.iter().cloned().collect::<HashSet<_>>(), expected);
         }
 
-        _ => log::warn!("Skipping test_redis_listener_parallel_connect"),
+        _ => tracing::warn!("Skipping test_redis_listener_parallel_connect"),
     }
 }
 
@@ -429,6 +429,6 @@ async fn test_redis_listener_duplicate_listen_is_rejected() {
             );
         }
 
-        _ => log::warn!("Skipping test_redis_listener_duplicate_listen_is_rejected"),
+        _ => tracing::warn!("Skipping test_redis_listener_duplicate_listen_is_rejected"),
     }
 }

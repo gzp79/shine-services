@@ -96,7 +96,7 @@ mod test {
         ];
 
         for (prime, mod_inverse, random) in test_case {
-            log::info!("prime: {prime}, random: {random}");
+            tracing::info!("prime: {prime}, random: {random}");
             let opt = Optimus::new(prime, random);
 
             assert_eq!(opt.mod_inverse, mod_inverse);

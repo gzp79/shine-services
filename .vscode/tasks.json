@@ -125,7 +125,12 @@
           "RUST_BACKTRACE": "full",
           "SHINE--SERVICE--TLS--CERT": "../../certificates/scytta.crt",
           "SHINE--SERVICE--TLS--KEY": "../../certificates/scytta.key",
-          "SHINE--SERVICE--PORT": "8443"
+          "SHINE--SERVICE--PORT": "8443",
+          "SHINE--TELEMETRY--METRICS--TYPE": "otlp",
+          "SHINE--TELEMETRY--METRICS--ENDPOINT": "http://localhost:4317",
+          "SHINE--TELEMETRY--TRACING--TYPE": "otlp",
+          "SHINE--TELEMETRY--TRACING--ENDPOINT": "http://localhost:4317",
+          "SHINE--TELEMETRY--DEFAULT_LEVEL": "INFO,shine=DEBUG"
         }
       },
       "problemMatcher": ["$rustc"],
@@ -156,7 +161,12 @@
           "RUST_BACKTRACE": "full",
           "SHINE--SERVICE--TLS--CERT": "../../certificates/scytta.crt",
           "SHINE--SERVICE--TLS--KEY": "../../certificates/scytta.key",
-          "SHINE--SERVICE--PORT": "8444"
+          "SHINE--SERVICE--PORT": "8444",
+          "SHINE--TELEMETRY--METRICS--TYPE": "otlp",
+          "SHINE--TELEMETRY--METRICS--ENDPOINT": "http://localhost:4317",
+          "SHINE--TELEMETRY--TRACING--TYPE": "otlp",
+          "SHINE--TELEMETRY--TRACING--ENDPOINT": "http://localhost:4317",
+          "SHINE--TELEMETRY--DEFAULT_LEVEL": "INFO,shine=DEBUG"
         }
       },
       "problemMatcher": ["$rustc"],
@@ -203,6 +213,7 @@
       "options": [
         { "label": "start (rebuild)", "value": "up --build" },
         { "label": "start", "value": "up" },
+        { "label": "start (with trace dashboard)", "value": "--profile observe up" },
         { "label": "stop", "value": "down" },
         { "label": "status", "value": "ps" }
       ],

@@ -64,6 +64,7 @@ impl<'a, E: EmailSender> AuthMailHandler<'a, E> {
         Ok(())
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn send_email_confirmation(
         &self,
         to: &str,
@@ -81,6 +82,7 @@ impl<'a, E: EmailSender> AuthMailHandler<'a, E> {
         self.send_email(to, redirect_url, user_name, lang, "confirm.html").await
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn send_email_change(
         &self,
         to: &str,
@@ -98,6 +100,7 @@ impl<'a, E: EmailSender> AuthMailHandler<'a, E> {
         self.send_email(to, redirect_url, user_name, lang, "change.html").await
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn send_email_login(
         &self,
         to: &str,
@@ -108,6 +111,7 @@ impl<'a, E: EmailSender> AuthMailHandler<'a, E> {
         self.send_email(to, redirect_url, user_name, lang, "login.html").await
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn send_email_register(
         &self,
         to: &str,

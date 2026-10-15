@@ -54,6 +54,21 @@ Rust workspace with identity/builder services. Stack: Axum, PostgreSQL, Redis, T
 - **Pattern**: `.filter(|e| e.validate_email()).map(|e| (e.as_str(), false))`
 - **Critical**: Validation prevents invalid emails, storage enables future email login
 
+### Log & Trace Levels
+**Goal**: Each level has one audience, so prod logs stay actionable and sensitive data stays out of them.
+
+| Level | Use for | Enabled |
+|---|---|---|
+| `trace` | Very detailed output; the only level that may log potentially sensitive data (tokens, emails, queries) | Never in prod |
+| `debug` | Verbose detail for common local runs | Local |
+| `info` | Context to find root causes in prod | Prod |
+| `warn` | Things that may need attention in prod | Prod |
+| `error` | Something unexpected that should be fixed (usually a bug) | Prod |
+
+- Sensitive data: `trace` only.
+- Spans follow the same levels; per-tick logs/spans: `debug` or below.
+- Use `tracing::*!`, not `log::*!`; convert `log::` calls when touching them. Keep: `log::` self-test lines (`telemetry_service.rs`, `web_app.rs`), `LogTracer`, and `crates/shine-game` (must stay wasm-logger compatible).
+
 ## Agent Conventions
 
 ### Rust crate docs

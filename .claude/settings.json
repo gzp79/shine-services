@@ -25,19 +25,5 @@
     "rust-analyzer-lsp@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true,
     "shine-skills@ai-tools": true
-  },
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "if": "Bash(git *)",
-            "command": "c=$(jq -r \".tool_input.command\"); if printf \"%s\" \"$c\" | grep -Eq \"(^|[;&|(\\`]|&&|\\|\\|)[[:space:]]*git([[:space:]]+(-[A-Za-z]([[:space:]]*[^[:space:]]+)?|--[^[:space:]]+))*[[:space:]]+(add|commit|push)([[:space:]]|\\$)\"; then printf \"%s\" \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"PreToolUse\\\",\\\"permissionDecision\\\":\\\"deny\\\",\\\"permissionDecisionReason\\\":\\\"git add/commit/push are reserved for the user in this project. Make the file changes only; the user stages, commits, and pushes manually.\\\"}}\"; fi"
-          }
-        ]
-      }
-    ]
   }
 }

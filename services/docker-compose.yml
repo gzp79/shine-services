@@ -35,6 +35,21 @@ services:
     networks:
       - shine
 
+  # Trace/metric viewer for local development. Opt-in: docker compose --profile observe up
+  aspire-dashboard:
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:latest
+    profiles:
+      - observe
+    environment:
+      DASHBOARD__FRONTEND__AUTHMODE: Unsecured
+      DASHBOARD__OTLP__AUTHMODE: Unsecured
+      DASHBOARD__OTLP__ALLOWUNSECUREDTRANSPORT: "true"
+    ports:
+      - 18888:18888  # UI
+      - 4317:18889   # OTLP/gRPC ingest
+    networks:
+      - shine
+
   shine:
     image: gzp79/shine-services:test
     profiles:

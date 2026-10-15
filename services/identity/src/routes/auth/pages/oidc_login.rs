@@ -64,8 +64,6 @@ pub async fn oidc_login(
         return page;
     }
 
-    log::debug!("Query: {query:#?}");
-
     // 4. Validate captcha
     if let Some(page) = req
         .validate_captcha(query.captcha.as_deref(), query.error_url.as_ref())

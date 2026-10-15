@@ -5,9 +5,6 @@ use shine_infra::{
 };
 use thiserror::Error as ThisError;
 
-// Re-export IdentityError from models for backward compatibility with repository internal usage
-pub use crate::models::IdentityError;
-
 #[derive(Debug, ThisError)]
 pub enum IdentityBuildError {
     #[error(transparent)]
@@ -19,4 +16,3 @@ pub enum IdentityBuildError {
     #[error(transparent)]
     DecodeError(#[from] DecodeError),
 }
-

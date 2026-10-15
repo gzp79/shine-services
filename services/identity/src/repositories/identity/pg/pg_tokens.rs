@@ -240,7 +240,7 @@ impl PgTokensStatements {
 }
 
 impl Tokens for PgIdentityDbContext<'_> {
-    #[instrument(skip(self))]
+    #[instrument(level = "info", skip_all, fields(user_id = %user_id))]
     async fn store_token(
         &mut self,
         user_id: Uuid,
@@ -310,7 +310,7 @@ impl Tokens for PgIdentityDbContext<'_> {
         })
     }
 
-    #[instrument(skip(self))]
+    #[instrument(level = "info", skip_all)]
     async fn find_by_hash(&mut self, token_hash: &str) -> Result<Option<TokenInfo>, IdentityError> {
         self.stmts_tokens
             .find_by_hash
@@ -349,7 +349,7 @@ impl Tokens for PgIdentityDbContext<'_> {
             .transpose()
     }
 
-    #[instrument(skip(self))]
+    #[instrument(level = "info", skip_all, fields(user_id = %user_id))]
     async fn find_by_user(&mut self, user_id: &Uuid) -> Result<Vec<TokenInfo>, IdentityError> {
         self.stmts_tokens
             .list_by_user
@@ -389,7 +389,7 @@ impl Tokens for PgIdentityDbContext<'_> {
             .collect::<Result<_, _>>()
     }
 
-    #[instrument(skip(self))]
+    #[instrument(level = "info", skip_all)]
     async fn delete_token_by_hash(&mut self, kind: TokenKind, token_hash: &str) -> Result<Option<()>, IdentityError> {
         let count = self
             .stmts_tokens
@@ -404,7 +404,7 @@ impl Tokens for PgIdentityDbContext<'_> {
         }
     }
 
-    #[instrument(skip(self))]
+    #[instrument(level = "info", skip_all, fields(user_id = %user_id))]
     async fn delete_token_by_user(&mut self, user_id: Uuid, token_hash: &str) -> Result<Option<()>, IdentityError> {
         let count = self
             .stmts_tokens
@@ -419,7 +419,7 @@ impl Tokens for PgIdentityDbContext<'_> {
         }
     }
 
-    #[instrument(skip(self))]
+    #[instrument(level = "info", skip_all, fields(user_id = %user_id))]
     async fn delete_all_token_by_user(&mut self, user_id: Uuid, kinds: &[TokenKind]) -> Result<(), IdentityError> {
         for kind in kinds {
             self.stmts_tokens
@@ -432,7 +432,7 @@ impl Tokens for PgIdentityDbContext<'_> {
     }
 
     /// Test the presence of a token and return the identity if found.
-    #[instrument(skip(self))]
+    #[instrument(level = "info", skip_all)]
     async fn test_token(
         &mut self,
         allowed_kind: &[TokenKind],
@@ -494,7 +494,7 @@ impl Tokens for PgIdentityDbContext<'_> {
 
     /// Take a token and return the identity if found.
     /// The token is deleted from the database.
-    #[instrument(skip(self))]
+    #[instrument(level = "info", skip_all)]
     async fn take_token(
         &mut self,
         allowed_kind: &[TokenKind],

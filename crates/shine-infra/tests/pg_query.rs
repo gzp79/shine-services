@@ -73,6 +73,6 @@ async fn test_pg_query_struct() {
             assert_eq!(p2b.unwrap_err().to_string(), "invalid column `oneFail`");
         }
 
-        _ => log::warn!("Skipping test_stored_statements"),
+        _ => tracing::warn!("Skipping test_stored_statements"),
     }
 }

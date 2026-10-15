@@ -47,6 +47,7 @@ where
         }
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn delete_user(
         &self,
         auth_session: AuthSession,
@@ -85,6 +86,7 @@ where
         if let Err(err) = self.user_service.delete(user_id).await {
             return self.page_handler.error(auth_session, err, error_url);
         }
+        tracing::info!("User {user_id} deleted");
 
         // End of validations, from this point
         //  - there is no reason to keep session
@@ -92,19 +94,21 @@ where
         let response_session = auth_session.cleared();
 
         if let Err(err) = self.session_service.remove_all(user_id).await {
-            log::warn!("Failed to clear all sessions for user {user_id}: {err:?}");
+            tracing::warn!("Failed to clear all sessions for user {user_id}: {err:?}");
         }
 
         self.page_handler.redirect(response_session, redirect_url, None)
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn purge_guests(&self, cutoff: DateTime<Utc>, limit: usize) -> Result<PurgeGuestsResult, IdentityError> {
         let deleted_ids = self.user_service.delete_guests(cutoff, limit).await?;
         let deleted = deleted_ids.len();
+        tracing::info!("Purged {deleted} guest users older than {cutoff}");
 
         for user_id in &deleted_ids {
             if let Err(err) = self.session_service.remove_all(*user_id).await {
-                log::warn!("Failed to clear sessions for purged guest {user_id}: {err:?}");
+                tracing::warn!("Failed to clear sessions for purged guest {user_id}: {err:?}");
             }
         }
 

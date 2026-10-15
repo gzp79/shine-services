@@ -98,6 +98,7 @@ where
 
     /// Send login/registration email
     /// Creates user if doesn't exist, then sends email with login token
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn send_login_email(
         &self,
         email: &Email,
@@ -109,13 +110,13 @@ where
         let (is_registration, identity) = {
             match self.user_service.create_with_retry(None, Some(email)).await {
                 Ok(identity) => {
-                    log::debug!("New user created through email flow: {identity:#?}");
+                    tracing::info!("User {} registered via email", identity.id);
                     (true, identity)
                 }
                 Err(CreateUserError::IdentityError(IdentityError::EmailConflict)) => {
                     match self.user_service.find_by_email(email).await? {
                         Some(identity) => {
-                            log::debug!("User found by email: {identity:#?}");
+                            tracing::debug!("User found by email: {}", identity.id);
                             (false, identity)
                         }
                         None => return Err(EmailAuthError::IdentityError(IdentityError::UserDeleted)),
@@ -179,6 +180,7 @@ where
     }
 
     /// Send email confirmation link
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn start_email_confirm_flow(
         &self,
         user_id: Uuid,
@@ -215,6 +217,7 @@ where
     }
 
     /// Send email change confirmation link
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn start_email_change_flow(
         &self,
         user_id: Uuid,
@@ -251,6 +254,7 @@ where
     }
 
     /// Complete email confirmation or change by validating token
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn complete_email_flow(&self, user_id: Uuid, token: &str) -> Result<(), EmailAuthError> {
         // Take any token type (burns wrong types for defense-in-depth)
         let token_info = self.token_service.take(TokenKind::all(), token).await?;
@@ -259,7 +263,7 @@ where
 
         // Verify correct token kind (wrong kinds already burned by take)
         if token_data.kind != TokenKind::EmailAccess {
-            log::warn!(
+            tracing::warn!(
                 "Wrong token type used in email flow - token burned: user_id={user_id}, token_kind={:?}",
                 token_data.kind
             );
@@ -285,6 +289,7 @@ where
             Err(IdentityError::EmailConflict) => return Err(EmailAuthError::EmailConflict),
             Err(err) => return Err(EmailAuthError::IdentityError(err)),
         }
+        tracing::info!("Email confirmed for user {user_id}");
 
         Ok(())
     }

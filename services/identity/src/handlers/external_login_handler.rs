@@ -51,6 +51,7 @@ where
     ///
     /// Links an external provider account to an existing authenticated user.
     /// Expects user_session to be present in auth_session.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn complete_external_link(
         &self,
         auth_session: AuthSession,
@@ -58,7 +59,7 @@ where
         redirect_url: Option<&Url>,
         error_url: Option<&Url>,
     ) -> AuthPage {
-        log::debug!("Completing external link for user: {external_user:#?}");
+        tracing::trace!("Completing external link for user: {external_user:#?}");
         assert!(auth_session.user_session().is_some());
 
         let user = auth_session.user_session().unwrap();
@@ -72,7 +73,8 @@ where
             Err(err) => return self.page_handler.error(auth_session, err, error_url),
         };
 
-        log::debug!(
+        tracing::info!("User {} linked to provider {}", user.user_id, external_user.provider);
+        tracing::trace!(
             "User {} linked to: {}({})",
             user.user_id,
             external_user.provider,
@@ -87,6 +89,7 @@ where
     ///
     /// Handles both registration (new user) and login (existing linked user).
     /// Creates access token if create_token is true, and establishes user session.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn complete_external_login(
         &self,
         auth_session: AuthSession,
@@ -97,26 +100,31 @@ where
         error_url: Option<&Url>,
         create_token: bool,
     ) -> AuthPage {
-        log::debug!("Completing external login for user: {external_user:#?}");
+        tracing::trace!("Completing external login for user: {external_user:#?}");
         assert!(auth_session.user_session().is_none());
         assert!(auth_session.access().is_none());
 
-        log::debug!("Checking if this is a login or registration...");
-        log::debug!("{external_user:#?}");
+        tracing::debug!("Checking if this is a login or registration...");
         let identity = match self
             .link_service
             .find_by_external_link(external_user.provider.as_str(), external_user.provider_id.as_str())
             .await
         {
             // Found an existing (linked) account
-            Ok(Some(identity)) => identity,
+            Ok(Some(identity)) => {
+                tracing::info!("User {} logged in via {}", identity.id, external_user.provider);
+                identity
+            }
             // Create a new (linked) user
             Ok(None) => match self
                 .user_service
                 .create_linked_user(external_user.name.as_deref(), external_user)
                 .await
             {
-                Ok(identity) => identity,
+                Ok(identity) => {
+                    tracing::info!("User {} registered via {}", identity.id, external_user.provider);
+                    identity
+                }
                 Err(CreateUserError::IdentityError(IdentityError::EmailConflict)) => {
                     return self
                         .page_handler

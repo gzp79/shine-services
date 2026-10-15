@@ -54,8 +54,6 @@ pub async fn guest_login(
         return page;
     }
 
-    log::debug!("Query: {query:#?}");
-
     // 4. Validate captcha
     if let Some(page) = req
         .validate_captcha(query.captcha.as_deref(), query.error_url.as_ref())
@@ -65,7 +63,7 @@ pub async fn guest_login(
     }
 
     // 5. Clear auth state and register guest
-    log::debug!("New user registration flow triggered...");
+    tracing::debug!("New user registration flow triggered...");
     let auth_session = req.clear_auth_state().await.into_auth_session();
 
     state

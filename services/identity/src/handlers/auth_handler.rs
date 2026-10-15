@@ -47,6 +47,7 @@ where
     ///
     /// Validates that the email in the token matches the user's email and the captcha,
     /// then updates the user's email verification status.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn authenticate_with_email_token(
         &self,
         remember_me: bool,
@@ -55,7 +56,7 @@ where
         identity: Identity,
         auth_session: AuthSession,
     ) -> Result<AuthenticationSuccess, AuthenticationFailure> {
-        log::debug!("Completing email verification...");
+        tracing::debug!("Completing email verification...");
 
         let confirmed_email = token_info
             .bound_email
@@ -68,9 +69,9 @@ where
         let query_raw_hash = captcha.map(|s| s.to_string());
 
         if confirmed_norm_hash != identity_norm_hash || confirmed_raw_hash.as_ref() != query_raw_hash.as_ref() {
-            log::info!(
-                "Identity {} has non-matching emails to verify. norm=[{:?}], identity=[{:?}], captcha=[{:?}]",
-                identity.id,
+            tracing::info!("Identity {} has non-matching emails to verify", identity.id);
+            tracing::trace!(
+                "Non-matching email hashes: norm=[{:?}], identity=[{:?}], captcha=[{:?}]",
                 confirmed_norm_hash,
                 identity_norm_hash,
                 query_raw_hash
@@ -82,7 +83,7 @@ where
         }
 
         let identity = if !identity.is_email_confirmed {
-            log::info!("Confirming email for identity {}.", identity.id);
+            tracing::info!("Confirming email for identity {}.", identity.id);
             match self
                 .user_service
                 .update(identity.id, None, Some((confirmed_email, true)))
@@ -118,6 +119,7 @@ where
     ///
     /// Query tokens are single-use and are consumed immediately.
     /// Handles both SingleAccess and EmailAccess token types.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn authenticate_with_query_token(
         &self,
         state: &AppState,
@@ -127,13 +129,13 @@ where
         fingerprint: &ClientFingerprint,
         auth_session: AuthSession,
     ) -> Result<AuthenticationSuccess, AuthenticationFailure> {
-        log::debug!("Checking the token from the query ...");
+        tracing::debug!("Checking the token from the query ...");
         let (identity, token_info) = {
             // Any token provided as a query token is removed from the DB as it's been used in a non-secure way.
             match self.token_service.take(TokenKind::all(), token).await {
                 Ok(Some(info)) => info,
                 Ok(None) => {
-                    log::debug!("Expired single access token ...");
+                    tracing::debug!("Expired single access token ...");
                     return Err(AuthenticationFailure {
                         error: AuthError::TokenExpired,
                         auth_session: auth_session
@@ -153,7 +155,7 @@ where
             }
         };
 
-        log::debug!("Single access token flow triggered...");
+        tracing::debug!("Single access token flow triggered...");
         let response_session = auth_session
             .with_external_login(None)
             .revoke_access(state)
@@ -163,7 +165,11 @@ where
 
         if !token_info.kind.is_single_access() {
             // it is the sign of a compromised or bogus client
-            log::warn!("Non-single access token used in the query, revoking compromised token ...");
+            tracing::warn!(
+                "Non-single access token ({:?}) of user {} used in the query, revoking compromised token ...",
+                token_info.kind,
+                identity.id
+            );
             Err(AuthenticationFailure {
                 error: AuthError::InvalidToken,
                 auth_session: response_session,
@@ -174,7 +180,8 @@ where
                 auth_session: response_session,
             })
         } else if !token_info.check_fingerprint(fingerprint) {
-            log::info!(
+            tracing::info!("Client fingerprint changed for user {} (query token)", identity.id);
+            tracing::trace!(
                 "Client fingerprint changed [{:?}] -> [{:#?}]",
                 token_info.bound_fingerprint,
                 fingerprint
@@ -205,6 +212,7 @@ where
     ///
     /// Header tokens are multi-use Persistent tokens.
     /// Single-access tokens in headers are rejected.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn authenticate_with_header_token(
         &self,
         state: &AppState,
@@ -213,14 +221,14 @@ where
         fingerprint: &ClientFingerprint,
         auth_session: AuthSession,
     ) -> Result<AuthenticationSuccess, AuthenticationFailure> {
-        log::debug!("Checking the token from the header...");
+        tracing::debug!("Checking the token from the header...");
         let token = auth_header.token();
 
         // trying as a single access token
         //  when found revoke even if the login input location is not valid as it is a single use token
         match self.token_service.take(TokenKind::all_single_access(), token).await {
             Ok(Some(_)) => {
-                log::debug!("Single access token used in the Persistent token flow, revoking it ...");
+                tracing::debug!("Single access token used in the Persistent token flow, revoking it ...");
                 return Err(AuthenticationFailure {
                     error: AuthError::InvalidToken,
                     auth_session,
@@ -240,7 +248,7 @@ where
             match self.token_service.test(TokenKind::all_multi_access(), token).await {
                 Ok(Some(info)) => info,
                 Ok(None) => {
-                    log::debug!("Invalid or expired Persistent token ...");
+                    tracing::debug!("Invalid or expired Persistent token ...");
                     return Err(AuthenticationFailure {
                         error: AuthError::TokenExpired,
                         auth_session: auth_session.with_access(None),
@@ -255,7 +263,7 @@ where
             }
         };
 
-        log::debug!("Persistent token flow triggered...");
+        tracing::debug!("Persistent token flow triggered...");
         let response_session = auth_session
             // the client will get a new access,
             .revoke_access(state)
@@ -266,34 +274,36 @@ where
 
         if token_info.kind != TokenKind::Persistent {
             // it is the sign of a compromised or bogus client
-            log::warn!(
-                "Non-persistent token ({:?}) used in the header, revoking compromised token ...",
-                token_info.kind
+            tracing::warn!(
+                "Non-persistent token ({:?}) of user {} used in the header, revoking compromised token ...",
+                token_info.kind,
+                identity.id
             );
             if let Err(err) = self.token_service.delete(token_info.kind, token).await {
-                log::error!("Failed to revoke token: {err}");
+                tracing::error!("Failed to revoke token: {err}");
             }
             Err(AuthenticationFailure {
                 error: AuthError::InvalidToken,
                 auth_session: response_session,
             })
         } else if token_info.is_expired {
-            log::debug!("Token expired, removing from DB ...");
+            tracing::debug!("Token expired, removing from DB ...");
             if let Err(err) = self.token_service.delete(token_info.kind, token).await {
-                log::error!("Failed to revoke token: {err}");
+                tracing::error!("Failed to revoke token: {err}");
             }
             Err(AuthenticationFailure {
                 error: AuthError::TokenExpired,
                 auth_session: response_session,
             })
         } else if !token_info.check_fingerprint(fingerprint) {
-            log::info!(
+            tracing::info!("Client fingerprint changed for user {} (header token)", identity.id);
+            tracing::trace!(
                 "Client fingerprint changed [{:?}] -> [{:#?}]",
                 token_info.bound_fingerprint,
                 fingerprint
             );
             if let Err(err) = self.token_service.delete(token_info.kind, token).await {
-                log::error!("Failed to revoke token: {err}");
+                tracing::error!("Failed to revoke token: {err}");
             }
             Err(AuthenticationFailure {
                 error: AuthError::TokenExpired,
@@ -313,13 +323,14 @@ where
     ///
     /// Cookie tokens are Access tokens that get rotated for security.
     /// Implements token rotation to prevent replay attacks.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn authenticate_with_cookie_token(
         &self,
         state: &AppState,
         fingerprint: &ClientFingerprint,
         auth_session: AuthSession,
     ) -> Result<AuthenticationSuccess, AuthenticationFailure> {
-        log::debug!("Checking the token from the cookie ...");
+        tracing::debug!("Checking the token from the cookie ...");
 
         let (token_user_id, token, revoked_token) = auth_session
             .access()
@@ -334,7 +345,7 @@ where
             match self.token_service.test(TokenKind::all(), &token).await {
                 Ok(Some(info)) => info,
                 Ok(None) => {
-                    log::debug!("Invalid or expired Access token ...");
+                    tracing::debug!("Invalid or expired Access token ...");
                     return Err(AuthenticationFailure {
                         error: AuthError::TokenExpired,
                         auth_session: auth_session.with_access(None),
@@ -357,7 +368,7 @@ where
         // client has just used rotated token. To make sure a network issue won't lock out users with only access tokens,
         // "old/active" token is kept alive for another round while client can confirm a successful rotation.
 
-        log::debug!("Access token flow triggered...");
+        tracing::debug!("Access token flow triggered...");
         let response_session = auth_session
             .with_external_login(None)
             // only clear, but don't revoke the access token, it will be revoked after the new token is acknowledged
@@ -366,29 +377,30 @@ where
             .await;
 
         if let Some(revoked_token) = revoked_token {
-            log::debug!("Rotating out the access token ...");
+            tracing::debug!("Rotating out the access token ...");
             if let Err(err) = self.token_service.delete(token_info.kind, &revoked_token).await {
-                log::error!("Failed to revoke rotated token: {err}");
+                tracing::error!("Failed to revoke rotated token: {err}");
             }
         }
 
         if token_info.kind != TokenKind::Access {
             // it is the sign of a compromised or bogus client
-            log::warn!(
-                "Non-access token ({:?}) used in the cookie, revoking compromised token ...",
-                token_info.kind
+            tracing::warn!(
+                "Non-access token ({:?}) of user {} used in the cookie, revoking compromised token ...",
+                token_info.kind,
+                identity.id
             );
             if let Err(err) = self.token_service.delete(token_info.kind, &token).await {
-                log::error!("Failed to revoke token: {err}");
+                tracing::error!("Failed to revoke token: {err}");
             }
             Err(AuthenticationFailure {
                 error: AuthError::InvalidToken,
                 auth_session: response_session,
             })
         } else if token_info.is_expired {
-            log::debug!("Token expired, removing from DB ...");
+            tracing::debug!("Token expired, removing from DB ...");
             if let Err(err) = self.token_service.delete(token_info.kind, &token).await {
-                log::error!("Failed to revoke token: {err}");
+                tracing::error!("Failed to revoke token: {err}");
             }
             Err(AuthenticationFailure {
                 error: AuthError::TokenExpired,
@@ -396,27 +408,28 @@ where
             })
         } else if identity.id != token_user_id {
             // it is the sign of a compromised or bogus client
-            log::warn!(
-                "User is not matching in identity ({}) and in cookie ({}), token: [{}]",
+            tracing::warn!(
+                "User is not matching in identity ({}) and in cookie ({}), revoking compromised token ...",
                 identity.id,
-                token_user_id,
-                token
+                token_user_id
             );
+            tracing::trace!("Compromised token: [{token}]");
             if let Err(err) = self.token_service.delete(token_info.kind, &token).await {
-                log::error!("Failed to revoke token: {err}");
+                tracing::error!("Failed to revoke token: {err}");
             }
             Err(AuthenticationFailure {
                 error: AuthError::InvalidToken,
                 auth_session: response_session,
             })
         } else if !token_info.check_fingerprint(fingerprint) {
-            log::info!(
+            tracing::info!("Client fingerprint changed for user {} (cookie token)", identity.id);
+            tracing::trace!(
                 "Client fingerprint changed [{:?}] -> [{:#?}]",
                 token_info.bound_fingerprint,
                 fingerprint
             );
             if let Err(err) = self.token_service.delete(token_info.kind, &token).await {
-                log::error!("Failed to revoke token: {err}");
+                tracing::error!("Failed to revoke token: {err}");
             }
             Err(AuthenticationFailure {
                 error: AuthError::TokenExpired,
@@ -436,13 +449,14 @@ where
     ///
     /// Used when the user has a valid session but no access token.
     /// This is the session refresh flow.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn authenticate_with_refresh_session(
         &self,
         state: &AppState,
         remember_me: bool,
         auth_session: AuthSession,
     ) -> Result<AuthenticationSuccess, AuthenticationFailure> {
-        log::debug!("Checking the session cookie ...");
+        tracing::debug!("Checking the session cookie ...");
         assert!(auth_session.access().is_none());
         assert!(auth_session.user_session().is_some());
 
@@ -463,7 +477,7 @@ where
             }
         };
 
-        log::debug!("Refresh session flow triggered...");
+        tracing::debug!("Refresh session flow triggered...");
         let response_session = auth_session
             .with_external_login(None)
             // only clear, but don't revoke the access token, it will be revoked after the new token is acknowledged
@@ -487,6 +501,7 @@ where
     /// 2. Authorization header (persistent token)
     /// 3. Cookie token (access token with rotation)
     /// 4. Session refresh (existing session, no token)
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn authenticate_user(
         &self,
         state: &AppState,

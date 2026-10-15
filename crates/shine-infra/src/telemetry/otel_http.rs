@@ -1,12 +1,20 @@
 use axum::{
     extract::MatchedPath,
-    http::{header, HeaderMap, Method, Request, Response, Uri, Version},
+    http::{header, Extensions, HeaderMap, Method, Request, Response, Uri, Version},
 };
 use opentelemetry::{propagation::Extractor, Context};
 use std::{borrow::Cow, error::Error as StdError};
-use tracing::{field::Empty, trace_span, Span};
+use tracing::{field::Empty, info_span, Span};
 
+/// Target of spans exported to the trace backend only, they are hidden from the console log.
 pub const TRACING_TARGET: &str = "otel::tracing";
+/// Target of spans shown in the console log only, they are not exported to the trace backend.
+pub const CONSOLE_TARGET: &str = "otel::console";
+
+/// Request span for the console log, a compact counterpart of the span of [`make_span_from_request`].
+pub fn make_console_span<B>(req: &Request<B>) -> Span {
+    info_span!(target: CONSOLE_TARGET, "request", method = %req.method(), path = req.uri().path())
+}
 
 #[inline]
 #[must_use]
@@ -84,10 +92,10 @@ pub fn make_span_from_request<B>(req: &Request<B>) -> Span {
         .extensions()
         .get::<MatchedPath>()
         .map_or_else(|| "", |mp| mp.as_str());
-    let name = format!("[{http_method}] {route}");
-    let name = name.trim();
 
-    trace_span!(
+    let name = format!("{http_method} {}", if route.is_empty() { "<unmatched>" } else { route });
+
+    info_span!(
         target: TRACING_TARGET,
         "HTTP request",
         http.request.method = %http_method,
@@ -98,11 +106,11 @@ pub fn make_span_from_request<B>(req: &Request<B>) -> Span {
         server.address = http_host(req),
         user_agent.original = user_agent(req),
         url.path = req.uri().path(),
-        url.query = req.uri().query(),
         url.scheme = url_scheme(req.uri()),
         otel.name = %name,
         otel.kind = ?opentelemetry::trace::SpanKind::Server,
         otel.status_code = Empty, // set on response
+        enduser.id = Empty, // set when the user is authenticated, see record_user_id
         trace_id = Empty, // set on response
         //request_id = Empty, // set
         exception.message = Empty, // set on response
@@ -116,6 +124,26 @@ pub fn update_span_from_response<B>(span: &Span, response: &Response<B>) {
 
     if status.is_server_error() {
         span.record("otel.status_code", "ERROR");
+    }
+}
+
+/// Header carrying the trace id of the request, to find the trace of a response.
+pub const TRACE_ID_HEADER: &str = "x-trace-id";
+
+/// Add the trace id of the span to the response. Nothing is added if the span is not sampled/exported.
+pub fn add_trace_id_header<B>(span: &Span, response: &mut Response<B>) {
+    use opentelemetry::trace::TraceContextExt as _;
+    use tracing_opentelemetry::OpenTelemetrySpanExt as _;
+
+    let span_context = span.context().span().span_context().clone();
+    if span_context.is_valid() && span_context.is_sampled() {
+        let trace_id = span_context.trace_id().to_string();
+        if let Ok(value) = header::HeaderValue::from_str(&trace_id) {
+            span.record("trace_id", trace_id);
+            response
+                .headers_mut()
+                .insert(header::HeaderName::from_static(TRACE_ID_HEADER), value);
+        }
     }
 }
 
@@ -140,4 +168,41 @@ where
             update_span_from_error(span, err);
         }
     }
+}
+
+/// Span context of the current span, to correlate work done later (see [`link_span`]) without keeping the span alive.
+pub fn current_span_context() -> opentelemetry::trace::SpanContext {
+    use opentelemetry::trace::TraceContextExt as _;
+    use tracing_opentelemetry::OpenTelemetrySpanExt as _;
+
+    Span::current().context().span().span_context().clone()
+}
+
+/// Link the span to another span (of any trace) it was caused by.
+pub fn link_span(span: &Span, origin: opentelemetry::trace::SpanContext) {
+    use tracing_opentelemetry::OpenTelemetrySpanExt as _;
+
+    if origin.is_valid() {
+        span.add_link(origin);
+    }
+}
+
+/// The span of [`make_span_from_request`], stored in the request extensions so it can be updated
+/// regardless of which span is current.
+#[derive(Clone)]
+pub struct RequestSpan(pub Span);
+
+impl RequestSpan {
+    /// The request span from the extensions, or a disabled span if the request is not traced.
+    pub fn from_extensions(extensions: &Extensions) -> Span {
+        extensions
+            .get::<RequestSpan>()
+            .map(|RequestSpan(span)| span.clone())
+            .unwrap_or_else(Span::none)
+    }
+}
+
+/// Tag the request span (see [`RequestSpan`]) with the authenticated user.
+pub fn record_user_id(request_span: &Span, user_id: uuid::Uuid) {
+    request_span.record("enduser.id", tracing::field::display(user_id));
 }

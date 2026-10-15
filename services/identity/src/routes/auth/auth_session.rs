@@ -15,11 +15,13 @@ use rand::{rng, RngExt};
 use serde::{Deserialize, Serialize};
 use shine_infra::{
     session::{CheckedCurrentUser, CurrentUser, SessionCookie},
+    telemetry::{record_user_id, RequestSpan},
     web::WebAppConfig,
 };
 use std::{convert::Infallible, sync::Arc};
 use thiserror::Error as ThisError;
 use time::{Duration, OffsetDateTime};
+use tracing::Span;
 use url::Url;
 use uuid::Uuid;
 
@@ -105,7 +107,7 @@ impl AuthSessionMeta {
         let auth_domain = auth_base.domain().ok_or(AuthSessionError::MissingDomain)?.to_string();
         let auth_path = auth_base.path().to_string();
         if !auth_domain.ends_with(&domain) {
-            log::error!("Non-matching domains, home:{home_domain}, auth: {auth_domain}, common:{domain}");
+            tracing::error!("Non-matching domains, home:{home_domain}, auth: {auth_domain}, common:{domain}");
             return Err(AuthSessionError::InvalidApiDomain);
         }
 
@@ -168,20 +170,23 @@ impl AuthSessionMeta {
 #[derive(Clone)]
 pub struct AuthSession {
     meta: Arc<AuthSessionMeta>,
+    request_span: Span,
     access: Option<TokenCookie>,
     session: Option<CurrentUser>,
     external_login: Option<ExternalLoginCookie>,
 }
 
 impl AuthSession {
-    pub fn new(
+    fn new(
         meta: Arc<AuthSessionMeta>,
+        request_span: Span,
         access: Option<TokenCookie>,
         session: Option<CurrentUser>,
         external_login: Option<ExternalLoginCookie>,
     ) -> Self {
         Self {
             meta,
+            request_span,
             access,
             session,
             external_login,
@@ -196,6 +201,7 @@ impl AuthSession {
     pub fn with_session(self, session: Option<CurrentUser>) -> Self {
         Self {
             meta: self.meta,
+            request_span: self.request_span,
             access: self.access,
             session,
             external_login: self.external_login,
@@ -207,7 +213,7 @@ impl AuthSession {
     pub async fn revoke_session(mut self, state: &AppState) -> Self {
         if let Some(session) = self.session.take() {
             if let Err(err) = state.session_service().remove(session.user_id, &session.key).await {
-                log::error!("Failed to revoke session for user {}: {err}", session.user_id);
+                tracing::error!("Failed to revoke session for user {}: {err}", session.user_id);
             }
         }
         self
@@ -221,6 +227,7 @@ impl AuthSession {
     pub fn with_access(self, access: Option<TokenCookie>) -> Self {
         Self {
             meta: self.meta,
+            request_span: self.request_span,
             access,
             session: self.session,
             external_login: self.external_login,
@@ -233,11 +240,11 @@ impl AuthSession {
         if let Some(token_cookie) = self.access.take() {
             if let Some(revoked_token) = &token_cookie.revoked_token {
                 if let Err(err) = state.token_service().delete(TokenKind::Access, revoked_token).await {
-                    log::error!("Failed to revoke access token: {err}");
+                    tracing::error!("Failed to revoke access token: {err}");
                 }
             }
             if let Err(err) = state.token_service().delete(TokenKind::Access, &token_cookie.key).await {
-                log::error!("Failed to revoke access token: {err}");
+                tracing::error!("Failed to revoke access token: {err}");
             }
         }
         self
@@ -247,6 +254,7 @@ impl AuthSession {
     pub fn with_external_login(self, external_login: Option<ExternalLoginCookie>) -> Self {
         Self {
             meta: self.meta,
+            request_span: self.request_span,
             access: self.access,
             session: self.session,
             external_login,
@@ -261,6 +269,7 @@ impl AuthSession {
     pub fn cleared(self) -> Self {
         Self {
             meta: self.meta,
+            request_span: self.request_span,
             access: None,
             session: None,
             external_login: None,
@@ -292,15 +301,18 @@ where
             .get(&meta.token_cookie_settings.name)
             .and_then(|session| serde_json::from_str::<TokenCookie>(session.value()).ok());
 
-        log::debug!(
-            "Auth sessions before validation:\n  user:{user:#?}\n  external_login_cookie:{external_login_cookie:#?}\n  token_cookie:{token_cookie:#?}\n",
+        tracing::debug!(
+            "Auth sessions before validation: user:{:?}, external_login_cookie:{}, token_cookie:{}",
+            user.as_ref().map(|u| u.user_id),
+            external_login_cookie.is_some(),
+            token_cookie.is_some()
         );
 
         // Perform cross-validation
         // - user of token is not matching the user of the session, session is deleted
         // - if linked_account of the external login is not matching the session, external login is deleted
 
-        log::debug!("Validating cookies...");
+        tracing::debug!("Validating cookies...");
         //todo: if let Some(uid) = user.as_ref().map(|u| u.user_id) &&
         //let Some(tid) = token_cookie.as_ref().map(|t| t.user_id) &&
         //tid != uid {
@@ -310,7 +322,7 @@ where
             && user.is_some()
             && token_cookie.as_ref().map(|t| t.user_id) != user.as_ref().map(|u| u.user_id)
         {
-            log::info!("user session is not matching to the token, dropping user session");
+            tracing::info!("user session is not matching to the token, dropping user session");
             user = None;
         }
 
@@ -322,15 +334,19 @@ where
                 .map(|l| l.user_id)
                 != user.as_ref().map(|u| u.user_id)
         {
-            log::info!("external login is not matching the user session, dropping external login");
+            tracing::info!("external login is not matching the user session, dropping external login");
             external_login_cookie = None;
         }
 
-        log::debug!(
-            "Auth sessions after validation:\n  user:{user:#?}\n  external_login_cookie:{external_login_cookie:#?}\n  token_cookie:{token_cookie:#?}\n",
+        tracing::debug!(
+            "Auth sessions after validation: user:{:?}, external_login_cookie:{}, token_cookie:{}",
+            user.as_ref().map(|u| u.user_id),
+            external_login_cookie.is_some(),
+            token_cookie.is_some()
         );
 
-        Ok(Self::new(meta, token_cookie, user, external_login_cookie))
+        let request_span = RequestSpan::from_extensions(&parts.extensions);
+        Ok(Self::new(meta, request_span, token_cookie, user, external_login_cookie))
     }
 }
 
@@ -376,19 +392,21 @@ impl IntoResponseParts for AuthSession {
     fn into_response_parts(self, res: ResponseParts) -> Result<ResponseParts, Self::Error> {
         let Self {
             meta,
+            request_span,
             session: user_session,
             external_login: external_login_cookie,
             access: token_cookie,
         } = self;
+
+        if let Some(user) = &user_session {
+            record_user_id(&request_span, user.user_id);
+        }
+
         let session_cookie = user_session.as_ref().map(|u| SessionCookie {
             user_id: u.user_id,
             fingerprint: u.fingerprint.clone(),
             key: u.key,
         });
-
-        log::debug!(
-            "Auth sessions set headers:\n  session_cookie:{session_cookie:#?}\n  external_login_cookie:{external_login_cookie:#?}\n  token_cookie:{token_cookie:#?}",
-        );
 
         let session = create_jar(
             &meta.session_settings,

@@ -31,7 +31,7 @@ const TEST_TOKEN_SKIP: &str = "skip";
 
 #[derive(Debug, ThisError)]
 pub enum CaptchaError {
-    #[error("Request failed with")]
+    #[error("Captcha verification request failed")]
     Request(String),
     #[error("Captcha validation failed")]
     FailedValidation(String),
@@ -105,25 +105,25 @@ impl CaptchaValidator {
         let idempotency_key = Uuid::new_v4().to_string();
 
         let (secret, token) = if self.0.secret == TEST_SECRET {
-            log::warn!("Using test-secret for captcha validation for token {token}");
+            tracing::warn!("Using test-secret for captcha validation");
             match token {
                 TEST_TOKEN_PASS => {
-                    log::info!("Test token 'pass': calling Cloudflare with the always-passing test secret");
+                    tracing::debug!("Test token 'pass': calling Cloudflare with the always-passing test secret");
                     (CF_TEST_SECRET_PASS, CF_DUMMY_TOKEN)
                 }
                 TEST_TOKEN_BLOCK => {
-                    log::info!("Test token 'block': calling Cloudflare with the always-blocking test secret");
+                    tracing::debug!("Test token 'block': calling Cloudflare with the always-blocking test secret");
                     (CF_TEST_SECRET_BLOCK, CF_DUMMY_TOKEN)
                 }
                 TEST_TOKEN_SKIP => {
-                    log::info!("Test token 'skip': resolving as success without contacting Cloudflare");
+                    tracing::debug!("Test token 'skip': resolving as success without contacting Cloudflare");
                     return Ok(TurnstileValidationResponse {
                         success: true,
                         error_codes: vec![],
                     });
                 }
                 _ => {
-                    log::info!("Unrecognized test token: resolving as failure without contacting Cloudflare");
+                    tracing::debug!("Unrecognized test token: resolving as failure without contacting Cloudflare");
                     return Ok(TurnstileValidationResponse {
                         success: false,
                         error_codes: vec!["invalid-input-response".to_string()],
@@ -156,15 +156,11 @@ impl CaptchaValidator {
 
     pub async fn validate(&self, token: Option<&str>) -> Result<(), CaptchaError> {
         if let Some(token) = token {
-            match self.validate_request(token, None).await {
-                Ok(result) => {
-                    if !result.success {
-                        Err(CaptchaError::FailedValidation(result.error_codes.join(", ")))
-                    } else {
-                        Ok(())
-                    }
-                }
-                Err(err) => Err(CaptchaError::Request(format!("{err:#?}"))),
+            let result = self.validate_request(token, None).await?;
+            if !result.success {
+                Err(CaptchaError::FailedValidation(result.error_codes.join(", ")))
+            } else {
+                Ok(())
             }
         } else {
             Err(CaptchaError::MissingCaptcha)
@@ -184,7 +180,7 @@ mod test {
             .validate_request(TEST_TOKEN_PASS, None)
             .await
             .expect("Validation request failed");
-        log::info!("response: {response:?}");
+        tracing::info!("response: {response:?}");
         assert!(response.success);
     }
 
@@ -195,7 +191,7 @@ mod test {
             .validate_request(TEST_TOKEN_BLOCK, None)
             .await
             .expect("Validation request failed");
-        log::info!("response: {response:?}");
+        tracing::info!("response: {response:?}");
         assert!(!response.success);
     }
 
@@ -206,7 +202,7 @@ mod test {
             .validate_request(TEST_TOKEN_SKIP, None)
             .await
             .expect("Validation request failed");
-        log::info!("response: {response:?}");
+        tracing::info!("response: {response:?}");
         assert!(response.success);
         assert!(response.error_codes.is_empty());
     }
@@ -218,7 +214,7 @@ mod test {
             .validate_request("token", None)
             .await
             .expect("Validation request failed");
-        log::info!("response: {response:?}");
+        tracing::info!("response: {response:?}");
         assert!(!response.success);
         assert_eq!(response.error_codes, vec!["invalid-input-response"]);
     }
@@ -233,11 +229,11 @@ mod test {
                 .validate_request(token, None)
                 .await
                 .expect("Validation request failed");
-            log::info!("response: {response:?}");
+            tracing::info!("response: {response:?}");
             assert!(!response.success);
             assert_eq!(response.error_codes, vec!["invalid-input-response"]);
         } else {
-            log::warn!("CF_CAPTCHA_SECRET not set, skipping test");
+            tracing::warn!("CF_CAPTCHA_SECRET not set, skipping test");
         }
     }
 
@@ -251,11 +247,11 @@ mod test {
                 .validate_request(token, None)
                 .await
                 .expect("Validation request failed");
-            log::info!("response: {response:?}");
+            tracing::info!("response: {response:?}");
             assert!(!response.success);
             assert_eq!(response.error_codes, vec!["timeout-or-duplicate"]);
         } else {
-            log::warn!("CF_CAPTCHA_SECRET not set, skipping test");
+            tracing::warn!("CF_CAPTCHA_SECRET not set, skipping test");
         }
     }
 }

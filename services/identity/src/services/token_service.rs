@@ -4,7 +4,10 @@ use crate::{
 };
 use chrono::Duration;
 use ring::digest;
-use shine_infra::web::extracts::{ClientFingerprint, SiteInfo};
+use shine_infra::{
+    telemetry::secret_tag,
+    web::extracts::{ClientFingerprint, SiteInfo},
+};
 use thiserror::Error as ThisError;
 use uuid::Uuid;
 
@@ -25,52 +28,60 @@ impl<DB: IdentityDb> TokenService<DB> {
         Self { db }
     }
 
+    #[tracing::instrument(level = "debug", skip_all, fields(token_fp = secret_tag(token_hash)))]
     pub async fn find_by_hash(&self, token_hash: &str) -> Result<Option<TokenInfo>, IdentityError> {
         let mut ctx = self.db.create_context().await?;
         ctx.find_by_hash(token_hash).await
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn list_by_user(&self, user_id: &Uuid) -> Result<Vec<TokenInfo>, IdentityError> {
         let mut ctx = self.db.create_context().await?;
         ctx.find_by_user(user_id).await
     }
 
+    #[tracing::instrument(level = "debug", skip_all, fields(token_fp = tracing::field::Empty))]
     pub async fn test(
         &self,
         allowed_kinds: &[TokenKind],
         token: &str,
     ) -> Result<Option<(Identity, TokenInfo)>, IdentityError> {
         let mut ctx = self.db.create_context().await?;
-        let token_hash = hash_token(token);
+        let token_hash = traced_hash_token(token);
         ctx.test_token(allowed_kinds, &token_hash).await
     }
 
+    #[tracing::instrument(level = "debug", skip_all, fields(token_fp = tracing::field::Empty))]
     pub async fn take(
         &self,
         allowed_kinds: &[TokenKind],
         token: &str,
     ) -> Result<Option<(Identity, TokenInfo)>, IdentityError> {
         let mut ctx = self.db.create_context().await?;
-        let token_hash = hash_token(token);
+        let token_hash = traced_hash_token(token);
         ctx.take_token(allowed_kinds, &token_hash).await
     }
 
+    #[tracing::instrument(level = "debug", skip_all, fields(token_fp = tracing::field::Empty))]
     pub async fn delete(&self, kind: TokenKind, token: &str) -> Result<Option<()>, IdentityError> {
         let mut ctx = self.db.create_context().await?;
-        let token_hash = hash_token(token);
+        let token_hash = traced_hash_token(token);
         ctx.delete_token_by_hash(kind, &token_hash).await
     }
 
+    #[tracing::instrument(level = "debug", skip_all, fields(user_id = %user_id, token_fp = secret_tag(token_hash)))]
     pub async fn delete_by_user(&self, user_id: Uuid, token_hash: &str) -> Result<Option<()>, IdentityError> {
         let mut ctx = self.db.create_context().await?;
         ctx.delete_token_by_user(user_id, token_hash).await
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn delete_all_by_user(&self, user_id: Uuid, kinds: &[TokenKind]) -> Result<(), IdentityError> {
         let mut ctx = self.db.create_context().await?;
         ctx.delete_all_token_by_user(user_id, kinds).await
     }
 
+    #[tracing::instrument(level = "debug", skip_all, fields(user_id = %user_id, token_fp = tracing::field::Empty))]
     pub async fn create_with_retry(
         &self,
         user_id: Uuid,
@@ -84,14 +95,14 @@ impl<DB: IdentityDb> TokenService<DB> {
 
         let mut retry_count = 0;
         loop {
-            log::debug!("Creating new token; retry: {retry_count:#?}");
+            tracing::debug!("Creating new token; retry: {retry_count:#?}");
             if retry_count > MAX_RETRY_COUNT {
                 return Err(TokenError::RetryLimitReached);
             }
             retry_count += 1;
 
             let token = Uuid::new_v4().to_string();
-            let token_hash = hash_token(&token);
+            let token_hash = traced_hash_token(&token);
 
             // Business rule: If token kind must be unique per user, delete old tokens first
             if kind.is_unique() {
@@ -112,9 +123,8 @@ impl<DB: IdentityDb> TokenService<DB> {
 }
 
 /// Generate a (crypto) hashed version of a token to protect data at rest.
-fn hash_token(token: &str) -> String {
-    let hash = digest::digest(&digest::SHA256, token.as_bytes());
-    let hash = hex::encode(hash);
-    log::debug!("Hashing token: {token:?} -> [{hash}]");
+fn traced_hash_token(token: &str) -> String {
+    let hash = hex::encode(digest::digest(&digest::SHA256, token.as_bytes()));
+    tracing::Span::current().record("token_fp", secret_tag(&hash));
     hash
 }

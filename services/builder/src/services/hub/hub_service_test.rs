@@ -46,7 +46,7 @@ async fn create_test_hub_service_with_chat(
         .ok();
 
     let Some(redis_cns) = redis_cns else {
-        log::warn!("Missing SHINE_TEST_REDIS_CNS/SHINE_REDIS_CNS, skipping test");
+        tracing::warn!("Missing SHINE_TEST_REDIS_CNS/SHINE_REDIS_CNS, skipping test");
         return None;
     };
 
@@ -894,7 +894,7 @@ async fn concurrent_connect_disconnect_churn_keeps_consistent_registry_state() {
 #[test(serial = "hub-service")]
 async fn chat_append_notification_wakes_delivery_ahead_of_the_timer() {
     let Some(redis_cns) = test_redis_cns() else {
-        log::warn!("Missing SHINE_TEST_REDIS_CNS/SHINE_REDIS_CNS, skipping test");
+        tracing::warn!("Missing SHINE_TEST_REDIS_CNS/SHINE_REDIS_CNS, skipping test");
         return;
     };
     let redis_pool = db::redis::create_redis_pool(redis_cns.as_str()).await.unwrap();
@@ -930,7 +930,7 @@ async fn chat_append_notification_wakes_delivery_ahead_of_the_timer() {
 #[test(serial = "hub-service")]
 async fn chat_wake_with_no_new_messages_delivers_nothing() {
     let Some(redis_cns) = test_redis_cns() else {
-        log::warn!("Missing SHINE_TEST_REDIS_CNS/SHINE_REDIS_CNS, skipping test");
+        tracing::warn!("Missing SHINE_TEST_REDIS_CNS/SHINE_REDIS_CNS, skipping test");
         return;
     };
     let redis_pool = db::redis::create_redis_pool(redis_cns.as_str()).await.unwrap();

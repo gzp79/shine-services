@@ -1,8 +1,8 @@
 use crate::{
     models::messages::{HubEvent, HubMessage, TopicKey},
-    services::HubService,
+    services::{hub::hub_metrics::hub_metrics, HubService},
 };
-use shine_infra::session::SessionKey;
+use shine_infra::{session::SessionKey, telemetry::label};
 use std::{collections::HashMap, future::Future, sync::Arc, time::Duration};
 use tokio::{
     sync::{mpsc, Notify},
@@ -55,6 +55,7 @@ impl ConnectionTracker {
 
 /// A periodic consumer of the connection view, providing only the per-tick work.
 pub trait ConnectionConsumer: Send + 'static {
+    /// The work of a tick.
     fn on_tick(&mut self, tracker: &ConnectionTracker) -> impl Future<Output = ()> + Send;
 }
 
@@ -81,6 +82,21 @@ pub async fn spawn_connection_loop_with_wake<C: ConnectionConsumer>(
 ) -> JoinHandle<()> {
     let subscription = service.subscribe(vec![TopicKey::Hub]).await;
     tokio::spawn(run_connection_loop(subscription, interval, Some(wake), consumer))
+}
+
+/// Short type name of a consumer, for metric labels and logs.
+fn consumer_name<C: ConnectionConsumer>() -> &'static str {
+    std::any::type_name::<C>().rsplit("::").next().unwrap_or_default()
+}
+
+/// Runs a single tick and measures its duration, labelled by the consumer's type name.
+async fn run_tick<C: ConnectionConsumer>(consumer: &mut C, tracker: &ConnectionTracker) {
+    let start = std::time::Instant::now();
+    consumer.on_tick(tracker).await;
+    let name = consumer_name::<C>();
+    hub_metrics()
+        .tick_duration
+        .record(start.elapsed().as_secs_f64(), &[label("consumer", name)]);
 }
 
 /// Drives a self-contained loop that event-sources its own [`ConnectionTracker`] from
@@ -114,19 +130,23 @@ pub async fn run_connection_loop<C: ConnectionConsumer>(
             // live connection expire.
             biased;
             _ = ticker.tick() => {
-                consumer.on_tick(&tracker).await;
+                run_tick(&mut consumer, &tracker).await;
             }
             _ = woken => {
-                consumer.on_tick(&tracker).await;
+                run_tick(&mut consumer, &tracker).await;
             }
             message = subscription.recv() => match message {
                 Some(message) => {
                     if tracker.apply(message) {
+                        tracing::info!("{} loop stopped on hub shutdown", consumer_name::<C>());
                         break;
                     }
                 }
                 // Channel closed without a Shutdown event: stop instead of busy-looping.
-                None => break,
+                None => {
+                    tracing::warn!("{} loop stopped: hub subscription closed", consumer_name::<C>());
+                    break;
+                }
             },
         }
     }

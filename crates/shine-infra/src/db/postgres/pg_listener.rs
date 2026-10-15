@@ -40,7 +40,7 @@ impl ListenState {
 
     /// Drops the client; its connection driver then ends and the streaming task stops.
     fn disconnect(&mut self) {
-        log::info!("PGListener disconnecting from PostgreSQL...");
+        tracing::info!("PGListener disconnecting from PostgreSQL...");
         self.client = None;
     }
 
@@ -61,7 +61,7 @@ impl ListenState {
         handler(payload);
         let elapsed = started.elapsed();
         if elapsed >= SLOW_HANDLER {
-            log::warn!("PGListener handler for channel {channel:?} took {elapsed:?}, blocking dispatch");
+            tracing::warn!("PGListener handler for channel {channel:?} took {elapsed:?}, blocking dispatch");
         }
     }
 }
@@ -113,7 +113,7 @@ impl PgListener {
 
             keep_alive.wait().await;
             while keep_alive.is_running() {
-                log::info!("PGListener reconnection triggered...");
+                tracing::info!("PGListener reconnection triggered...");
 
                 // Reconnect under the op permit so a concurrent listen() cannot open a second connection.
                 let established = {
@@ -126,7 +126,7 @@ impl PgListener {
 
                 match established {
                     Ok(true) => {
-                        log::info!("PGListener reconnected to PostgreSQL.");
+                        tracing::info!("PGListener reconnected to PostgreSQL.");
                         let connected_at = Instant::now();
                         keep_alive.wait().await;
                         if connected_at.elapsed() >= STABLE {
@@ -141,14 +141,14 @@ impl PgListener {
                         keep_alive.wait().await;
                     }
                     Err(e) => {
-                        log::error!("PGListener reconnection error: {e:#?}");
+                        tracing::error!("PGListener reconnection error: {e:#?}");
                         state.write().await.disconnect();
                         backoff.delay().await;
                     }
                 }
             }
             state.write().await.disconnect();
-            log::info!("PGListener keep alive is closed");
+            tracing::info!("PGListener keep alive is closed");
         });
     }
 
@@ -168,7 +168,7 @@ impl PgListener {
 
         // Bound the whole connect: tokio_postgres's connect_timeout covers only the socket, so a
         // stall in the TLS handshake or startup would otherwise hold the op permit indefinitely.
-        log::trace!("PGListener connecting to PostgreSQL...");
+        tracing::trace!("PGListener connecting to PostgreSQL...");
         let (client, connection) = match tokio::time::timeout(connect_timeout, config.connect(tls.clone())).await {
             Ok(result) => result?,
             Err(_) => return Err(PgError::ListenerConnectTimeout),
@@ -213,7 +213,7 @@ impl PgListener {
                     }
                     Ok(_) => {}
                     Err(e) => {
-                        log::error!("PGListener notification error: {e:#?}");
+                        tracing::error!("PGListener notification error: {e:#?}");
                         break;
                     }
                 }
@@ -225,7 +225,7 @@ impl PgListener {
             state.write().await.disconnect();
 
             if keep_alive.is_running() {
-                log::info!("PGListener triggering a reconnection for connection lost...");
+                tracing::info!("PGListener triggering a reconnection for connection lost...");
                 keep_alive.wake();
             }
         });
@@ -305,7 +305,7 @@ impl PgListener {
         // window is not the caller's error — the keep-alive reconnect re-subscribes the handler.
         if let Some(client) = self.inner.state.read().await.client.clone() {
             if let Err(e) = Self::pg_listen(&client, &channel).await {
-                log::warn!("PGListener LISTEN {channel:?} failed ({e:#?}); reconnect will re-subscribe it");
+                tracing::warn!("PGListener LISTEN {channel:?} failed ({e:#?}); reconnect will re-subscribe it");
             }
         }
         self.inner
@@ -344,7 +344,7 @@ impl PgListener {
             state.client.clone()
         };
         if let Some(client) = client {
-            log::info!("PGListener stop listening to all channels...");
+            tracing::info!("PGListener stop listening to all channels...");
             client.execute("UNLISTEN *", &[]).await?;
         }
         Ok(())
@@ -360,7 +360,7 @@ impl PgListener {
     }
 
     async fn pg_listen(client: &PgRawClient, channel: &str) -> Result<(), PgError> {
-        log::info!("PGListener start listening to channel {channel:?}...");
+        tracing::info!("PGListener start listening to channel {channel:?}...");
         client
             .execute(&format!(r#"LISTEN "{}""#, quote_ident(channel)), &[])
             .await?;
@@ -368,7 +368,7 @@ impl PgListener {
     }
 
     async fn pg_unlisten(client: &PgRawClient, channel: &str) -> Result<(), PgError> {
-        log::info!("PGListener stop listening to channel {channel:?}...");
+        tracing::info!("PGListener stop listening to channel {channel:?}...");
         client
             .execute(&format!(r#"UNLISTEN "{}""#, quote_ident(channel)), &[])
             .await?;
