@@ -47,17 +47,7 @@ impl<'a> AuthPageHandler<'a> {
         E: Into<AuthError>,
     {
         let problem = Problem::from(error.into());
-        if problem.status.is_server_error() {
-            tracing::error!("Page Error {} ({}): {}", problem.status, problem.ty, problem.detail);
-            // EXCEPTION to the "sensitive data: trace only" rule: the internal cause is the only root-cause info
-            // of a 5xx in prod. Remove once errors carry a safe cause label (e.g. pg.connection, redis.timeout).
-            tracing::info!("Page Error cause: {}", problem.sensitive);
-        } else if problem.status.is_client_error() {
-            tracing::info!("Page Error {} ({})", problem.status, problem.ty);
-        } else {
-            tracing::debug!("Page redirect {} ({})", problem.status, problem.ty);
-        }
-        tracing::trace!("Page Error: {problem:#?}");
+        problem.log("Page Error");
         let problem = self.problem_config.transform(problem);
 
         let mut target_url = error_url.unwrap_or(&self.settings.error_url).to_owned();

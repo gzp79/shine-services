@@ -116,13 +116,16 @@ impl Connections {
         Some((connection_id, data.session_key))
     }
 
-    /// Sends a message to one connection. `Err` carries the dead connection to prune.
-    pub async fn send_to_connection(&self, connection_id: Uuid, message: HubMessage) -> Result<(), DeadConnection> {
+    /// Sends a message to one connection. `Ok(false)` if the connection is unknown, `Err` carries the dead
+    /// connection to prune.
+    pub async fn send_to_connection(&self, connection_id: Uuid, message: HubMessage) -> Result<bool, DeadConnection> {
         let registry = self.registry.read().await;
         let Some(data) = registry.connections.get(&connection_id) else {
-            return Ok(());
+            return Ok(false);
         };
-        try_send(&data.tx, message).map_err(|reason| DeadConnection { connection_id, reason })
+        try_send(&data.tx, message)
+            .map(|()| true)
+            .map_err(|reason| DeadConnection { connection_id, reason })
     }
 
     /// Sends a message to the user's active connection. `Err` carries the dead connection to prune.
@@ -211,7 +214,7 @@ mod tests {
     #[test]
     async fn directed_send_to_unknown_target_is_ok_noop() {
         let users = Connections::new();
-        assert!(users.send_to_connection(Uuid::new_v4(), chat("x")).await.is_ok());
+        assert_eq!(users.send_to_connection(Uuid::new_v4(), chat("x")).await, Ok(false));
         assert!(users.send_to_user(Uuid::new_v4(), chat("x")).await.is_ok());
     }
 

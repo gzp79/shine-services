@@ -115,16 +115,19 @@ impl ConnectionConsumer for ChatDispatcher {
                 };
 
                 let delivered = comments.len() as u64;
-                if let Err(err) = self
+                match self
                     .hub_service
                     .send_to_connection(*connection_id, HubMessage::Chat(ChatBatch { comments }))
                     .await
                 {
-                    tracing::error!("[{connection_id}] Failed to deliver chat batch: {err:#?}");
-                    continue;
+                    Ok(true) => {
+                        hub_metrics().chat_delivered.add(delivered, &[]);
+                        *cursor = last_id;
+                    }
+                    // Unknown or dead connection: nothing delivered, the cursor stays until reconcile drops it.
+                    Ok(false) => {}
+                    Err(err) => tracing::error!("[{connection_id}] Failed to deliver chat batch: {err:#?}"),
                 }
-                hub_metrics().chat_delivered.add(delivered, &[]);
-                *cursor = last_id;
             }
         }
         .instrument(span)

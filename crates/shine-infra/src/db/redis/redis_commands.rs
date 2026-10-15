@@ -89,6 +89,8 @@ fn is_blocking(name: &str) -> bool {
 }
 
 pub fn assert_not_blocking(name: &str) {
+    // TODO: Rejects by name only, so XREAD/XREADGROUP are rejected even without BLOCK. Update this check (inspect the args
+    // for BLOCK) once a non-blocking XREAD is used on pooled connections.
     if is_blocking(name) {
         panic!("Blocking redis command {name} is not supported on pooled connections, use a dedicated connection with its own instrumentation");
     }

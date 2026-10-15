@@ -92,6 +92,12 @@ impl HubService {
             .map_err(|_| HubError::SendCommandFailed)
     }
 
+    /// Logs and counts a connection removed by the hub.
+    fn record_drop(user_id: Uuid, connection_id: Uuid, reason: &'static str) {
+        tracing::info!("[{user_id}] [{connection_id}] Connection dropped: {reason}");
+        hub_metrics().connections_dropped.add(1, &[label("reason", reason)]);
+    }
+
     /// Prunes any connection found dead during an egress send.
     fn drop_dead(&self, dead: impl IntoIterator<Item = DeadConnection>) -> Result<(), HubError> {
         for DeadConnection { connection_id, reason } in dead {
@@ -148,16 +154,13 @@ impl HubService {
         self.send_control(ControlCommand::HubRegistryChanged { user_id })
     }
 
-    /// Sends an egress message to a specific connection.
+    /// Sends an egress message to a specific connection. Returns whether the message was queued for delivery.
     #[tracing::instrument(level = "debug", skip_all, fields(ws.connection_id = %connection_id))]
-    pub async fn send_to_connection(&self, connection_id: Uuid, message: HubMessage) -> Result<(), HubError> {
-        self.drop_dead(
-            self.inner
-                .connections
-                .send_to_connection(connection_id, message)
-                .await
-                .err(),
-        )
+    pub async fn send_to_connection(&self, connection_id: Uuid, message: HubMessage) -> Result<bool, HubError> {
+        match self.inner.connections.send_to_connection(connection_id, message).await {
+            Ok(queued) => Ok(queued),
+            Err(dead) => self.drop_dead([dead]).map(|()| false),
+        }
     }
 
     /// Sends an egress message to a user's active connection.
@@ -278,8 +281,7 @@ impl HubService {
                 // connection tracker drops it. Same-id re-registration is not a replacement.
                 if let Some((old_connection_id, _)) = self.inner.connections.find_active(user_id).await {
                     if old_connection_id != connection_id {
-                        tracing::info!("[{user_id}] [{old_connection_id}] Connection replaced by {connection_id}");
-                        hub_metrics().connections_dropped.add(1, &[label("reason", "replaced")]);
+                        Self::record_drop(user_id, old_connection_id, "replaced");
                         self.inner
                             .connections
                             .remove_connection(user_id, Some(old_connection_id))
@@ -321,7 +323,7 @@ impl HubService {
                 };
 
                 if let Some(reason) = drop_reason {
-                    hub_metrics().connections_dropped.add(1, &[label("reason", reason)]);
+                    Self::record_drop(user_id, removed_connection_id, reason);
                 }
                 if let Err(err) = self.remove_registry_connection(user_id, removed_connection_id).await {
                     // Best-effort: publish UserDisconnected regardless so the socket and trackers
@@ -341,8 +343,7 @@ impl HubService {
                 // here so all mutation stays on the loop. Force-remove by id (a fresh reconnect that
                 // replaced it has a different id and its channel would not be dead).
                 if let Some((user_id, _)) = self.inner.connections.remove_connection_by_id(connection_id).await {
-                    tracing::info!("[{user_id}] [{connection_id}] Connection dropped: {reason}");
-                    hub_metrics().connections_dropped.add(1, &[label("reason", reason)]);
+                    Self::record_drop(user_id, connection_id, reason);
                     if let Err(err) = self.remove_registry_connection(user_id, connection_id).await {
                         tracing::error!("[{user_id}] Failed to remove dropped connection from registry (TTL will clean up): {err:#?}");
                     }
@@ -421,10 +422,7 @@ impl HubService {
             return;
         };
 
-        tracing::info!("[{user_id}] [{removed_connection_id}] Connection dropped: registry_inactive");
-        hub_metrics()
-            .connections_dropped
-            .add(1, &[label("reason", "registry_inactive")]);
+        Self::record_drop(user_id, removed_connection_id, "registry_inactive");
         self.publish(HubEvent::UserDisconnected {
             user_id,
             connection_id: removed_connection_id,
@@ -444,8 +442,7 @@ impl HubService {
             if let Err(dead) = self.inner.connections.broadcast(message).await {
                 for DeadConnection { connection_id, reason } in dead {
                     if let Some((user_id, _)) = self.inner.connections.remove_connection_by_id(connection_id).await {
-                        tracing::info!("[{user_id}] [{connection_id}] Connection dropped: {reason}");
-                        hub_metrics().connections_dropped.add(1, &[label("reason", reason)]);
+                        Self::record_drop(user_id, connection_id, reason);
                         if let Err(err) = self.remove_registry_connection(user_id, connection_id).await {
                             tracing::error!(
                                 "[{user_id}] Failed to remove dead connection from registry (TTL will clean up): {err:#?}"

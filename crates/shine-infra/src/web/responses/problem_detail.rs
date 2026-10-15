@@ -145,6 +145,19 @@ impl Problem {
     {
         self.with_sensitive(format!("{extension}"))
     }
+
+    /// Log the problem with a level matching its status; `context` prefixes each message.
+    pub fn log(&self, context: &str) {
+        // EXCEPTION to the "sensitive data: trace only" rule: the dump includes the internal cause, the only root-cause
+        // info in prod. Remove once errors carry a safe cause label (e.g. pg.connection, redis.timeout).
+        if self.status.is_server_error() {
+            tracing::error!("{context}: {self:#?}");
+        } else if self.status.is_client_error() {
+            tracing::info!("{context}: {self:#?}");
+        } else {
+            tracing::debug!("{context}: {self:#?}");
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -211,20 +224,7 @@ impl ProblemResponse {
 impl IntoResponse for ProblemResponse {
     fn into_response(self) -> Response {
         let ProblemResponse { problem, config } = self;
-        if problem.status.is_server_error() {
-            tracing::error!(
-                "Problem response {} ({}): {}",
-                problem.status,
-                problem.ty,
-                problem.detail
-            );
-            // TODO:EXCEPTION to the "sensitive data: trace only" rule: the internal cause is the only root-cause info
-            // of a 5xx in prod - it should be revisited in the future.
-            tracing::info!("Problem response cause: {}", problem.sensitive);
-        } else {
-            tracing::debug!("Problem response {} ({})", problem.status, problem.ty);
-        }
-        tracing::trace!("Problem response: {problem:#?}");
+        problem.log("Problem response");
         let problem = config.transform(problem);
         (problem.status, Json(problem)).into_response()
     }

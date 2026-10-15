@@ -67,7 +67,7 @@ Rust workspace with identity/builder services. Stack: Axum, PostgreSQL, Redis, T
 
 - Sensitive data: `trace` only.
 - Spans follow the same levels; per-tick logs/spans: `debug` or below.
-- Use `tracing::*!`, not `log::*!`; convert `log::` calls when touching them. Keep: `log::` self-test lines (`telemetry_service.rs`, `web_app.rs`), `LogTracer`.
+- Use `tracing::*!`, not `log::*!`; convert `log::` calls when touching them. Keep: `log::` self-test lines (`telemetry_service.rs`, `web_app.rs`), `LogTracer`, and `crates/shine-game` (must stay wasm-logger compatible).
 
 ## Agent Conventions
 
