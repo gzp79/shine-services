@@ -46,15 +46,15 @@ impl<'a> AuthPageHandler<'a> {
     where
         E: Into<AuthError>,
     {
-        // Log the problem, not the raw error: the conversion keeps only service-side details in `sensitive`
         let problem = Problem::from(error.into());
         if problem.status.is_server_error() {
-            log::error!("Page Error: {problem:#?}");
+            log::error!("Page Error {} ({}): {}", problem.status, problem.ty, problem.detail);
         } else if problem.status.is_client_error() {
-            log::info!("Page Error: {problem:#?}");
+            log::info!("Page Error {} ({})", problem.status, problem.ty);
         } else {
-            log::debug!("Page redirect: {problem:#?}");
+            log::debug!("Page redirect {} ({})", problem.status, problem.ty);
         }
+        log::trace!("Page Error: {problem:#?}");
         let problem = self.problem_config.transform(problem);
 
         let mut target_url = error_url.unwrap_or(&self.settings.error_url).to_owned();

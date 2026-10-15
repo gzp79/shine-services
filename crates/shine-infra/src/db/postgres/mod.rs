@@ -42,12 +42,15 @@ macro_rules! __pg_span {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __pg_traced {
-    ($id:ident, $op:literal, $stmt:expr, $body:expr) => {{
+    // The statement lookup (a PREPARE round-trip on a fresh connection) is traced but kept out of the duration metric.
+    ($id:ident, $op:literal, $stmt:expr, $statement:ident = $prepare:expr, $body:expr) => {{
         let span = $crate::__pg_span!($id, $op, $stmt);
-        $crate::db::time_db_operation(
-            "postgresql",
-            concat!(stringify!($id), "::", $op),
-            $crate::db::postgres::__tracing::Instrument::instrument($body, span),
+        $crate::db::postgres::__tracing::Instrument::instrument(
+            async {
+                let $statement = $prepare.await?;
+                $crate::db::time_db_operation("postgresql", concat!(stringify!($id), "::", $op), $body).await
+            },
+            span,
         )
         .await
     }};
@@ -115,8 +118,7 @@ macro_rules! pg_query {
             where
                 T: $crate::db::postgres::PgRawConnection
             {
-                $crate::__pg_traced!($id, "query", $stmt, async {
-                    let statement = self.statement(client).await?;
+                $crate::__pg_traced!($id, "query", $stmt, statement = self.statement(client), async {
                     let rows = client.query(&statement, &[$($pid,)*]).await?;
                     rows.into_iter().map(|$row| $extract).collect::<Result<Vec<_>,_>>()
                 })
@@ -132,8 +134,7 @@ macro_rules! pg_query {
             where
                 T: $crate::db::postgres::PgRawConnection
             {
-                $crate::__pg_traced!($id, "query_one", $stmt, async {
-                    let statement = self.statement(client).await?;
+                $crate::__pg_traced!($id, "query_one", $stmt, statement = self.statement(client), async {
                     let $row = client.query_one(&statement, &[$($pid,)*]).await?;
                     $extract
                 })
@@ -149,8 +150,7 @@ macro_rules! pg_query {
             where
                 T: $crate::db::postgres::PgRawConnection
             {
-                $crate::__pg_traced!($id, "query_opt", $stmt, async {
-                    let statement = self.statement(client).await?;
+                $crate::__pg_traced!($id, "query_opt", $stmt, statement = self.statement(client), async {
                     client.query_opt(&statement, &[$($pid,)*])
                         .await?
                         .map(|$row| $extract)
@@ -197,8 +197,7 @@ macro_rules! pg_query {
             where
                 T: $crate::db::postgres::PgRawConnection
             {
-                $crate::__pg_traced!($id, "execute", $stmt, async {
-                    let statement = self.statement(client).await?;
+                $crate::__pg_traced!($id, "execute", $stmt, statement = self.statement(client), async {
                     client.execute(&statement, &[$($pid,)*]).await
                 })
             }

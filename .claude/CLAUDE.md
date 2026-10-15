@@ -65,8 +65,9 @@ Rust workspace with identity/builder services. Stack: Axum, PostgreSQL, Redis, T
 | `warn` | Things that may need attention in prod | Prod |
 | `error` | Something unexpected that should be fixed (usually a bug) | Prod |
 
-- **Pattern**: Anything sensitive goes to `trace`, never to `debug` or above.
-- **Spans**: The same rules apply to `#[tracing::instrument]` / `*_span!` levels; high-frequency spans (per tick) stay at `debug` or below.
+- Sensitive data: `trace` only.
+- Spans follow the same levels; per-tick logs/spans: `debug` or below.
+- Use `tracing::*!`, not `log::*!`; convert `log::` calls when touching them. Keep: `log::` self-test lines (`telemetry_service.rs`, `web_app.rs`), `LogTracer`.
 
 ## Agent Conventions
 

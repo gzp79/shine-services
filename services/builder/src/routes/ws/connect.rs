@@ -191,25 +191,24 @@ async fn handle_socket(
         }
     });
 
-    let reason = tokio::select! {
+    let (reason, other_task) = tokio::select! {
         rv_a = (&mut send_task) => {
-            recv_task.abort();
             if let Err(err) = rv_a {
                 log::error!("[{current_user_id}] Send task failed: {err:#?}");
             }
-            "send task exited"
+            ("send task exited", recv_task.abort_handle())
         },
         rv_b = (&mut recv_task) => {
-            send_task.abort();
             if let Err(err) = rv_b {
                 log::error!("[{current_user_id}] Receive task failed: {err:#?}");
             }
-            "receive task exited"
+            ("receive task exited", send_task.abort_handle())
         }
     };
 
     log::info!("[{current_user_id}] [{connection_id}] Disconnecting from hub: {reason}");
     close_connection(&hub_service, current_user_id, connection_id);
+    other_task.abort();
 }
 
 /// Registers the connection in the hub, now that the upgrade has completed.
