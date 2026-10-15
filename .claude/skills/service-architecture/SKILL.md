@@ -193,6 +193,11 @@ clones avoids that.
 
 Usage: `if let Some(err) = req.validate_query(query) { return Ok(err) }`
 
+## Span fields
+
+- **Request-wide field** (e.g. user id, login method, client fingerprint) set from code that doesn't own the request span: record on `RequestSpan::from_extensions(&parts.extensions)` (`shine_infra::telemetry`), not `Span::current()`. Declare the field as `Empty` in `make_span_from_request`, otherwise the record is silently dropped.
+- **Operation field**: declare it on the operation's own `#[instrument]` span and record with `Span::current()`.
+
 ## Summary of rules
 
 | Rule | Reason |
