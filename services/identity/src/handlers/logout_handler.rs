@@ -85,6 +85,7 @@ where
                     }
                 }
             };
+            log::info!("User {user_id} logged out (terminate_all: {terminate_all})");
         }
 
         let response_session = auth_session.cleared();

@@ -76,6 +76,7 @@ impl SmtpEmailSender {
         }
 
         let mailer = mailer_builder.build();
+        log::info!("SMTP mailer configured, relay:[{relay}:{port}], tls:[{use_tls}], domain:[{email_domain}]");
 
         Ok(Self {
             email_domain: email_domain.to_owned(),
@@ -86,12 +87,8 @@ impl SmtpEmailSender {
 
 impl EmailSender for SmtpEmailSender {
     async fn send(&self, from_name: &str, to: &str, content: Email) -> Result<(), EmailSenderError> {
-        log::info!(
-            "Sending email from {} to {} with subject {}...",
-            to,
-            from_name,
-            content.subject
-        );
+        log::debug!("Sending email from {from_name}, subject: {}", content.subject);
+        log::trace!("Sending email to {to}");
 
         let builder = Message::builder()
             .from(format!("{}@{}", from_name, self.email_domain).parse()?)

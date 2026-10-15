@@ -84,7 +84,7 @@ impl<DB: IdentityDb> TokenService<DB> {
         ctx.delete_all_token_by_user(user_id, kinds).await
     }
 
-    #[tracing::instrument(level = "debug", skip_all)]
+    #[tracing::instrument(level = "debug", skip_all, fields(user_id = %user_id, token_fp = tracing::field::Empty))]
     pub async fn create_with_retry(
         &self,
         user_id: Uuid,
@@ -106,6 +106,7 @@ impl<DB: IdentityDb> TokenService<DB> {
 
             let token = Uuid::new_v4().to_string();
             let token_hash = hash_token(&token);
+            tracing::Span::current().record("token_fp", secret_tag(&token_hash));
 
             // Business rule: If token kind must be unique per user, delete old tokens first
             if kind.is_unique() {
@@ -128,7 +129,5 @@ impl<DB: IdentityDb> TokenService<DB> {
 /// Generate a (crypto) hashed version of a token to protect data at rest.
 fn hash_token(token: &str) -> String {
     let hash = digest::digest(&digest::SHA256, token.as_bytes());
-    let hash = hex::encode(hash);
-    log::debug!("Hashing token -> [{}]", secret_tag(&hash));
-    hash
+    hex::encode(hash)
 }

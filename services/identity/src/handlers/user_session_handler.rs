@@ -119,12 +119,11 @@ where
                 Ok(())
             }
             Ok(None) => {
-                log::warn!("User ({user_id}) not found, removing all the sessions");
+                log::info!("User ({user_id}) not found, removing all the sessions");
                 self.session_service.remove_all(user_id).await?;
                 Ok(())
             }
             Err(err) => {
-                log::warn!("Failed to refresh session for user ({err:?}):");
                 //self.session_service.remove_all(user_id).await?; - keep sessions, it could be a temporary issue
                 Err(err)
             }

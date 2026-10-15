@@ -1,5 +1,6 @@
 use crate::{
     db::{
+        pool_error_logger::PoolErrorLogger,
         redis::{
             redis_commands::{assert_not_blocking, redis_command_name},
             RedisError, RedisListener,
@@ -263,9 +264,11 @@ pub async fn create_redis_pool(cns: &str) -> Result<RedisConnectionPool, RedisCo
     let redis = bb8::Pool::builder()
         .max_size(max_size)
         .connection_timeout(pool_timeout)
+        .error_sink(Box::new(PoolErrorLogger("redis")))
         .build(redis_manager)
         .await?;
 
+    log::info!("Redis pool created (max_size: {max_size}, pool_timeout: {pool_timeout:?}, timeout_ms: {timeout_ms:?})");
     Ok(redis)
 }
 

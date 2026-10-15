@@ -146,7 +146,7 @@ impl OAuth2Client {
             email,
         };
 
-        log::info!("Checking extensions: {extensions:?}");
+        log::debug!("Checking extensions: {extensions:?}");
         for extension in extensions {
             match extension {
                 ExternalUserInfoExtensions::GithubEmail => {

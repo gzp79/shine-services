@@ -31,7 +31,7 @@ const TEST_TOKEN_SKIP: &str = "skip";
 
 #[derive(Debug, ThisError)]
 pub enum CaptchaError {
-    #[error("Request failed with")]
+    #[error("Captcha verification request failed")]
     Request(String),
     #[error("Captcha validation failed")]
     FailedValidation(String),
@@ -108,22 +108,22 @@ impl CaptchaValidator {
             log::warn!("Using test-secret for captcha validation");
             match token {
                 TEST_TOKEN_PASS => {
-                    log::info!("Test token 'pass': calling Cloudflare with the always-passing test secret");
+                    log::debug!("Test token 'pass': calling Cloudflare with the always-passing test secret");
                     (CF_TEST_SECRET_PASS, CF_DUMMY_TOKEN)
                 }
                 TEST_TOKEN_BLOCK => {
-                    log::info!("Test token 'block': calling Cloudflare with the always-blocking test secret");
+                    log::debug!("Test token 'block': calling Cloudflare with the always-blocking test secret");
                     (CF_TEST_SECRET_BLOCK, CF_DUMMY_TOKEN)
                 }
                 TEST_TOKEN_SKIP => {
-                    log::info!("Test token 'skip': resolving as success without contacting Cloudflare");
+                    log::debug!("Test token 'skip': resolving as success without contacting Cloudflare");
                     return Ok(TurnstileValidationResponse {
                         success: true,
                         error_codes: vec![],
                     });
                 }
                 _ => {
-                    log::info!("Unrecognized test token: resolving as failure without contacting Cloudflare");
+                    log::debug!("Unrecognized test token: resolving as failure without contacting Cloudflare");
                     return Ok(TurnstileValidationResponse {
                         success: false,
                         error_codes: vec!["invalid-input-response".to_string()],
@@ -156,15 +156,11 @@ impl CaptchaValidator {
 
     pub async fn validate(&self, token: Option<&str>) -> Result<(), CaptchaError> {
         if let Some(token) = token {
-            match self.validate_request(token, None).await {
-                Ok(result) => {
-                    if !result.success {
-                        Err(CaptchaError::FailedValidation(result.error_codes.join(", ")))
-                    } else {
-                        Ok(())
-                    }
-                }
-                Err(err) => Err(CaptchaError::Request(format!("{err:#?}"))),
+            let result = self.validate_request(token, None).await?;
+            if !result.success {
+                Err(CaptchaError::FailedValidation(result.error_codes.join(", ")))
+            } else {
+                Ok(())
             }
         } else {
             Err(CaptchaError::MissingCaptcha)

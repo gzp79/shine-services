@@ -110,7 +110,7 @@ where
         let (is_registration, identity) = {
             match self.user_service.create_with_retry(None, Some(email)).await {
                 Ok(identity) => {
-                    log::debug!("New user created through email flow: {}", identity.id);
+                    log::info!("User {} registered via email", identity.id);
                     (true, identity)
                 }
                 Err(CreateUserError::IdentityError(IdentityError::EmailConflict)) => {
@@ -289,6 +289,7 @@ where
             Err(IdentityError::EmailConflict) => return Err(EmailAuthError::EmailConflict),
             Err(err) => return Err(EmailAuthError::IdentityError(err)),
         }
+        log::info!("Email confirmed for user {user_id}");
 
         Ok(())
     }

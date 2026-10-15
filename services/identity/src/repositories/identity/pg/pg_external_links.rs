@@ -111,7 +111,7 @@ impl PgExternalLinksStatements {
 }
 
 impl ExternalLinks for PgIdentityDbContext<'_> {
-    #[instrument(skip_all, fields(user_id = %user_id))]
+    #[instrument(level = "info", skip_all, fields(user_id = %user_id))]
     async fn link_user(&mut self, user_id: Uuid, external_user: &ExternalUserInfo) -> Result<(), IdentityError> {
         let encrypted_email = if let Some(email) = &external_user.email {
             Some(self.email_protection.encrypt(email.raw())?)
@@ -143,7 +143,7 @@ impl ExternalLinks for PgIdentityDbContext<'_> {
         }
     }
 
-    #[instrument(skip_all, fields(user_id = %user_id))]
+    #[instrument(level = "info", skip_all, fields(user_id = %user_id))]
     async fn find_all_links(&mut self, user_id: Uuid) -> Result<Vec<ExternalLink>, IdentityError> {
         let links = self
             .stmts_external_links
@@ -154,7 +154,15 @@ impl ExternalLinks for PgIdentityDbContext<'_> {
             .into_iter()
             .map(|row| {
                 let email = if let Some(encrypted_email) = &row.encrypted_email {
-                    self.email_protection.decrypt(encrypted_email).ok()
+                    self.email_protection
+                        .decrypt(encrypted_email)
+                        .inspect_err(|err| {
+                            log::warn!(
+                                "Failed to decrypt external link email, user:[{user_id}], provider:[{}]: {err}",
+                                row.provider
+                            )
+                        })
+                        .ok()
                 } else {
                     None
                 };
@@ -173,7 +181,7 @@ impl ExternalLinks for PgIdentityDbContext<'_> {
         Ok(links)
     }
 
-    #[instrument(skip_all, fields(user_id = %user_id))]
+    #[instrument(level = "info", skip_all, fields(user_id = %user_id))]
     async fn is_linked(&mut self, user_id: Uuid) -> Result<bool, IdentityError> {
         let is_linked = self
             .stmts_external_links
@@ -185,7 +193,7 @@ impl ExternalLinks for PgIdentityDbContext<'_> {
         Ok(is_linked)
     }
 
-    #[instrument(skip_all)]
+    #[instrument(level = "info", skip_all, fields(provider = %provider))]
     async fn find_by_external_link(
         &mut self,
         provider: &str,
@@ -220,7 +228,7 @@ impl ExternalLinks for PgIdentityDbContext<'_> {
         }
     }
 
-    #[instrument(skip_all, fields(user_id = %user_id))]
+    #[instrument(level = "info", skip_all, fields(user_id = %user_id))]
     async fn delete_link(
         &mut self,
         user_id: Uuid,

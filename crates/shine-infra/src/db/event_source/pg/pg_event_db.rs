@@ -123,7 +123,7 @@ where
 
         let client = self.client.get().await.map_err(PgError::PoolError)?;
         let channel = format!("es_notification_{}", E::NAME);
-        log::info!("Listening to event notifications for {channel}");
+        log::debug!("Listening to event notifications for {channel}");
         client
             .listen(&channel, move |p| {
                 let Some(p) = p else {

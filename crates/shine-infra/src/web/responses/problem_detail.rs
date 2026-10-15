@@ -211,7 +211,19 @@ impl ProblemResponse {
 impl IntoResponse for ProblemResponse {
     fn into_response(self) -> Response {
         let ProblemResponse { problem, config } = self;
-        log::info!("problem response: {problem:#?}");
+        // On server errors `sensitive` carries the internal cause; client error details may echo user input
+        if problem.status.is_server_error() {
+            log::error!(
+                "Problem response {} ({}): {}, {}",
+                problem.status,
+                problem.ty,
+                problem.detail,
+                problem.sensitive
+            );
+        } else {
+            log::debug!("Problem response {} ({})", problem.status, problem.ty);
+        }
+        log::trace!("Problem response: {problem:#?}");
         let problem = config.transform(problem);
         (problem.status, Json(problem)).into_response()
     }

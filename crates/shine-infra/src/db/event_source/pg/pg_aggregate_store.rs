@@ -182,7 +182,7 @@ where
                     log::trace!("Snapshot versions are invalid: {err:#?}");
                     Err(EventSourceError::InvalidAggregateVersion(start_version, version))
                 } else {
-                    log::info!("Insert snapshot error: {err:#?}");
+                    log::debug!("Insert snapshot error: {err:#?}");
                     Err(PgError::from(err).into())
                 }
             }

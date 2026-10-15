@@ -183,8 +183,11 @@ impl RedisListener {
 
         // The op permit is held, so the handler set can't change while we snapshot and re-subscribe it.
         let channels = state.read().await.handlers.keys().cloned().collect::<Vec<_>>();
+        if !channels.is_empty() {
+            log::info!("RedisListener re-subscribing to {} channel(s)...", channels.len());
+        }
         for channel in &channels {
-            log::info!("RedisListener subscribing to channel {channel:?}...");
+            log::debug!("RedisListener subscribing to channel {channel:?}...");
             with_timeout(connect_timeout, sink.subscribe(channel)).await?;
         }
 
@@ -285,7 +288,7 @@ impl RedisListener {
         // reconnect re-subscribes it.
         let sink = self.inner.state.read().await.sink.clone();
         if let Some(mut sink) = sink {
-            log::info!("RedisListener subscribing to channel {channel:?}...");
+            log::debug!("RedisListener subscribing to channel {channel:?}...");
             with_timeout(self.inner.connect_timeout, sink.subscribe(channel)).await?;
         }
         self.inner
@@ -308,7 +311,7 @@ impl RedisListener {
             state.sink.clone()
         };
         if let Some(mut sink) = sink {
-            log::info!("RedisListener unsubscribing from channel {channel:?}...");
+            log::debug!("RedisListener unsubscribing from channel {channel:?}...");
             with_timeout(self.inner.connect_timeout, sink.unsubscribe(channel)).await?;
         }
         Ok(())
@@ -327,7 +330,7 @@ impl RedisListener {
             // subscribed server-side with no local handler. Report the first error afterwards.
             let mut first_err = None;
             for channel in channels {
-                log::info!("RedisListener unsubscribing from channel {channel:?}...");
+                log::debug!("RedisListener unsubscribing from channel {channel:?}...");
                 if let Err(e) = with_timeout(self.inner.connect_timeout, sink.unsubscribe(&channel)).await {
                     first_err = first_err.or(Some(e));
                 }

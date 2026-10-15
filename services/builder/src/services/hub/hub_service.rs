@@ -228,6 +228,7 @@ impl HubService {
                     break;
                 }
             }
+            log::info!("Hub command loop stopped");
             for task in background_tasks {
                 task.abort();
             }
@@ -242,7 +243,7 @@ impl HubService {
                 .hub_registry
                 .listen_to_registry_changes(move |user_id| {
                     if let Err(err) = notifier.notify_registry_changed(user_id) {
-                        log::error!("[{user_id}] Failed to enqueue hub registry change command: {err:#?}");
+                        log::warn!("[{user_id}] Failed to enqueue hub registry change command: {err:#?}");
                     }
                 })
                 .await
@@ -277,6 +278,7 @@ impl HubService {
                 // connection tracker drops it. Same-id re-registration is not a replacement.
                 if let Some((old_connection_id, _)) = self.inner.connections.find_active(user_id).await {
                     if old_connection_id != connection_id {
+                        log::info!("[{user_id}] [{old_connection_id}] Connection replaced by {connection_id}");
                         hub_metrics().connections_dropped.add(1, &[label("reason", "replaced")]);
                         self.inner
                             .connections
@@ -339,6 +341,7 @@ impl HubService {
                 // here so all mutation stays on the loop. Force-remove by id (a fresh reconnect that
                 // replaced it has a different id and its channel would not be dead).
                 if let Some((user_id, _)) = self.inner.connections.remove_connection_by_id(connection_id).await {
+                    log::info!("[{user_id}] [{connection_id}] Connection dropped: {reason}");
                     hub_metrics().connections_dropped.add(1, &[label("reason", reason)]);
                     if let Err(err) = self.remove_registry_connection(user_id, connection_id).await {
                         log::error!("[{user_id}] Failed to remove dropped connection from registry (TTL will clean up): {err:#?}");
@@ -418,6 +421,7 @@ impl HubService {
             return;
         };
 
+        log::info!("[{user_id}] [{removed_connection_id}] Connection dropped: registry_inactive");
         hub_metrics()
             .connections_dropped
             .add(1, &[label("reason", "registry_inactive")]);
@@ -440,6 +444,7 @@ impl HubService {
             if let Err(dead) = self.inner.connections.broadcast(message).await {
                 for DeadConnection { connection_id, reason } in dead {
                     if let Some((user_id, _)) = self.inner.connections.remove_connection_by_id(connection_id).await {
+                        log::info!("[{user_id}] [{connection_id}] Connection dropped: {reason}");
                         hub_metrics().connections_dropped.add(1, &[label("reason", reason)]);
                         if let Err(err) = self.remove_registry_connection(user_id, connection_id).await {
                             log::error!(

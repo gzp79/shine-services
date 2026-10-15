@@ -84,11 +84,16 @@ pub async fn spawn_connection_loop_with_wake<C: ConnectionConsumer>(
     tokio::spawn(run_connection_loop(subscription, interval, Some(wake), consumer))
 }
 
+/// Short type name of a consumer, for metric labels and logs.
+fn consumer_name<C: ConnectionConsumer>() -> &'static str {
+    std::any::type_name::<C>().rsplit("::").next().unwrap_or_default()
+}
+
 /// Runs a single tick and measures its duration, labelled by the consumer's type name.
 async fn run_tick<C: ConnectionConsumer>(consumer: &mut C, tracker: &ConnectionTracker) {
     let start = std::time::Instant::now();
     consumer.on_tick(tracker).await;
-    let name = std::any::type_name::<C>().rsplit("::").next().unwrap_or_default();
+    let name = consumer_name::<C>();
     hub_metrics()
         .tick_duration
         .record(start.elapsed().as_secs_f64(), &[label("consumer", name)]);
@@ -133,11 +138,15 @@ pub async fn run_connection_loop<C: ConnectionConsumer>(
             message = subscription.recv() => match message {
                 Some(message) => {
                     if tracker.apply(message) {
+                        log::info!("{} loop stopped on hub shutdown", consumer_name::<C>());
                         break;
                     }
                 }
                 // Channel closed without a Shutdown event: stop instead of busy-looping.
-                None => break,
+                None => {
+                    log::warn!("{} loop stopped: hub subscription closed", consumer_name::<C>());
+                    break;
+                }
             },
         }
     }

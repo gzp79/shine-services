@@ -182,7 +182,7 @@ impl PgIdentitiesStatements {
 }
 
 impl Identities for PgIdentityDbContext<'_> {
-    #[instrument(skip_all, fields(user_id = %user_id))]
+    #[instrument(level = "info", skip_all, fields(user_id = %user_id))]
     async fn create_user(
         &mut self,
         user_id: Uuid,
@@ -224,11 +224,12 @@ impl Identities for PgIdentityDbContext<'_> {
         {
             Ok(created) => created,
             Err(err) if err.is_constraint("identities", "identities_pkey") => {
-                log::info!("Conflicting user id: {user_id}, rolling back user creation");
+                log::debug!("Conflicting user id: {user_id}, rolling back user creation");
                 return Err(IdentityError::UserIdConflict);
             }
             Err(err) if err.is_constraint("identities", "idx_name") => {
-                log::info!("Conflicting name: {user_name}, rolling back user creation");
+                log::debug!("Name conflict for user {user_id}, rolling back user creation");
+                log::trace!("Conflicting name: {user_name}");
                 return Err(IdentityError::NameConflict);
             }
             Err(err) if err.is_constraint("identities", "idx_email_hash") => {
@@ -250,7 +251,7 @@ impl Identities for PgIdentityDbContext<'_> {
         })
     }
 
-    #[instrument(skip_all, fields(user_id = %id))]
+    #[instrument(level = "info", skip_all, fields(user_id = %id))]
     async fn find_by_id(&mut self, id: Uuid) -> Result<Option<Identity>, IdentityError> {
         let row = self
             .stmts_identities
@@ -262,7 +263,7 @@ impl Identities for PgIdentityDbContext<'_> {
         row.map(|r| r.into_identity(self.email_protection)).transpose()
     }
 
-    #[instrument(skip_all)]
+    #[instrument(level = "info", skip_all)]
     async fn find_by_email(&mut self, email: &Email) -> Result<Option<Identity>, IdentityError> {
         let email_hash = email.hash();
         let row = self
@@ -275,7 +276,7 @@ impl Identities for PgIdentityDbContext<'_> {
         row.map(|r| r.into_identity(self.email_protection)).transpose()
     }
 
-    #[instrument(skip_all, fields(user_id = %id))]
+    #[instrument(level = "info", skip_all, fields(user_id = %id))]
     async fn update(
         &mut self,
         id: Uuid,
@@ -314,7 +315,8 @@ impl Identities for PgIdentityDbContext<'_> {
             Ok(Some(row)) => row,
             Ok(None) => return Ok(None),
             Err(err) if err.is_constraint("identities", "idx_name") => {
-                log::info!("Conflicting name: {name:?}, rolling back user update");
+                log::info!("Name conflict for user {id}, rolling back user update");
+                log::trace!("Conflicting name: {name:?}");
                 return Err(IdentityError::NameConflict);
             }
             Err(err) if err.is_constraint("identities", "idx_email_hash") => {
@@ -327,7 +329,7 @@ impl Identities for PgIdentityDbContext<'_> {
         Ok(Some(identity_row.into_identity(self.email_protection)?))
     }
 
-    #[instrument(skip_all, fields(user_id = %id))]
+    #[instrument(level = "info", skip_all, fields(user_id = %id))]
     async fn cascaded_delete(&mut self, id: Uuid) -> Result<(), IdentityError> {
         self.stmts_identities
             .cascaded_delete
@@ -337,7 +339,7 @@ impl Identities for PgIdentityDbContext<'_> {
         Ok(())
     }
 
-    #[instrument(skip_all)]
+    #[instrument(level = "info", skip_all)]
     async fn delete_guests(&mut self, cutoff: DateTime<Utc>, limit: i64) -> Result<Vec<Uuid>, IdentityError> {
         let rows = self
             .stmts_identities

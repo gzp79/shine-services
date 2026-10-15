@@ -1,6 +1,7 @@
 use crate::{
     db::{
         cacerts::{get_root_cert_store, CertError},
+        pool_error_logger::PoolErrorLogger,
         postgres::PgError,
     },
     health::StatusProvider,
@@ -341,9 +342,13 @@ pub async fn create_postgres_pool(cns: &str) -> Result<PgConnectionPool, PgConne
     let postgres = bb8::Pool::builder()
         .max_size(max_size)
         .connection_timeout(pool_timeout)
+        .error_sink(Box::new(PoolErrorLogger("postgres")))
         .build(postgres_manager)
         .await?;
 
+    log::info!(
+        "Postgres pool created (max_size: {max_size}, pool_timeout: {pool_timeout:?}, connect_timeout: {connect_timeout:?})"
+    );
     Ok(postgres)
 }
 

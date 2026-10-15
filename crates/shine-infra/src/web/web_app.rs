@@ -67,7 +67,7 @@ impl ApiDoc {
 async fn shutdown_signal() {
     let ctrl_c = async {
         signal::ctrl_c().await.expect("failed to install Ctrl+C handler");
-        log::warn!("Received ctrl-c, shutting down the server...")
+        log::error!("Received ctrl-c, shutting down the server...")
     };
 
     #[cfg(unix)]
@@ -76,7 +76,7 @@ async fn shutdown_signal() {
             .expect("Failed to install signal handler")
             .recv()
             .await;
-        log::warn!("Received SIGTERM, shutting down the server...")
+        log::error!("Received SIGTERM, shutting down the server...")
     };
 
     #[cfg(not(unix))]

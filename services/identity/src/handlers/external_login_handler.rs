@@ -73,7 +73,8 @@ where
             Err(err) => return self.page_handler.error(auth_session, err, error_url),
         };
 
-        log::debug!(
+        log::info!("User {} linked to provider {}", user.user_id, external_user.provider);
+        log::trace!(
             "User {} linked to: {}({})",
             user.user_id,
             external_user.provider,
@@ -110,14 +111,20 @@ where
             .await
         {
             // Found an existing (linked) account
-            Ok(Some(identity)) => identity,
+            Ok(Some(identity)) => {
+                log::info!("User {} logged in via {}", identity.id, external_user.provider);
+                identity
+            }
             // Create a new (linked) user
             Ok(None) => match self
                 .user_service
                 .create_linked_user(external_user.name.as_deref(), external_user)
                 .await
             {
-                Ok(identity) => identity,
+                Ok(identity) => {
+                    log::info!("User {} registered via {}", identity.id, external_user.provider);
+                    identity
+                }
                 Err(CreateUserError::IdentityError(IdentityError::EmailConflict)) => {
                     return self
                         .page_handler

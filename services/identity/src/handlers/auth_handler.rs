@@ -69,9 +69,9 @@ where
         let query_raw_hash = captcha.map(|s| s.to_string());
 
         if confirmed_norm_hash != identity_norm_hash || confirmed_raw_hash.as_ref() != query_raw_hash.as_ref() {
-            log::info!(
-                "Identity {} has non-matching emails to verify. norm=[{:?}], identity=[{:?}], captcha=[{:?}]",
-                identity.id,
+            log::info!("Identity {} has non-matching emails to verify", identity.id);
+            log::trace!(
+                "Non-matching email hashes: norm=[{:?}], identity=[{:?}], captcha=[{:?}]",
                 confirmed_norm_hash,
                 identity_norm_hash,
                 query_raw_hash
@@ -165,7 +165,11 @@ where
 
         if !token_info.kind.is_single_access() {
             // it is the sign of a compromised or bogus client
-            log::warn!("Non-single access token used in the query, revoking compromised token ...");
+            log::warn!(
+                "Non-single access token ({:?}) of user {} used in the query, revoking compromised token ...",
+                token_info.kind,
+                identity.id
+            );
             Err(AuthenticationFailure {
                 error: AuthError::InvalidToken,
                 auth_session: response_session,
@@ -176,7 +180,8 @@ where
                 auth_session: response_session,
             })
         } else if !token_info.check_fingerprint(fingerprint) {
-            log::info!(
+            log::info!("Client fingerprint changed for user {} (query token)", identity.id);
+            log::trace!(
                 "Client fingerprint changed [{:?}] -> [{:#?}]",
                 token_info.bound_fingerprint,
                 fingerprint
@@ -270,8 +275,9 @@ where
         if token_info.kind != TokenKind::Persistent {
             // it is the sign of a compromised or bogus client
             log::warn!(
-                "Non-persistent token ({:?}) used in the header, revoking compromised token ...",
-                token_info.kind
+                "Non-persistent token ({:?}) of user {} used in the header, revoking compromised token ...",
+                token_info.kind,
+                identity.id
             );
             if let Err(err) = self.token_service.delete(token_info.kind, token).await {
                 log::error!("Failed to revoke token: {err}");
@@ -290,7 +296,8 @@ where
                 auth_session: response_session,
             })
         } else if !token_info.check_fingerprint(fingerprint) {
-            log::info!(
+            log::info!("Client fingerprint changed for user {} (header token)", identity.id);
+            log::trace!(
                 "Client fingerprint changed [{:?}] -> [{:#?}]",
                 token_info.bound_fingerprint,
                 fingerprint
@@ -379,8 +386,9 @@ where
         if token_info.kind != TokenKind::Access {
             // it is the sign of a compromised or bogus client
             log::warn!(
-                "Non-access token ({:?}) used in the cookie, revoking compromised token ...",
-                token_info.kind
+                "Non-access token ({:?}) of user {} used in the cookie, revoking compromised token ...",
+                token_info.kind,
+                identity.id
             );
             if let Err(err) = self.token_service.delete(token_info.kind, &token).await {
                 log::error!("Failed to revoke token: {err}");
@@ -401,11 +409,11 @@ where
         } else if identity.id != token_user_id {
             // it is the sign of a compromised or bogus client
             log::warn!(
-                "User is not matching in identity ({}) and in cookie ({}), token: [{}]",
+                "User is not matching in identity ({}) and in cookie ({}), revoking compromised token ...",
                 identity.id,
-                token_user_id,
-                token
+                token_user_id
             );
+            log::trace!("Compromised token: [{token}]");
             if let Err(err) = self.token_service.delete(token_info.kind, &token).await {
                 log::error!("Failed to revoke token: {err}");
             }
@@ -414,7 +422,8 @@ where
                 auth_session: response_session,
             })
         } else if !token_info.check_fingerprint(fingerprint) {
-            log::info!(
+            log::info!("Client fingerprint changed for user {} (cookie token)", identity.id);
+            log::trace!(
                 "Client fingerprint changed [{:?}] -> [{:#?}]",
                 token_info.bound_fingerprint,
                 fingerprint

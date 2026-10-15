@@ -79,7 +79,7 @@ where
     /// Update the user information in all the session of a user
     /// This is not an atomic operation, if new sessions are created they are not touched, but they should
     /// have the new value already.
-    #[tracing::instrument(level = "debug", skip_all)]
+    #[tracing::instrument(level = "debug", skip_all, fields(user_id = %identity.id))]
     pub async fn update_all(&self, identity: &Identity, roles: &[String], is_linked: bool) -> Result<(), SessionError> {
         let mut db = self.db.create_context().await?;
 
@@ -94,13 +94,13 @@ where
     }
 
     /// Get all the active session of the given user.
-    #[tracing::instrument(level = "debug", skip_all)]
+    #[tracing::instrument(level = "debug", skip_all, fields(user_id = %user_id))]
     pub async fn find_all(&self, user_id: Uuid) -> Result<Vec<Session>, SessionError> {
         let mut db = self.db.create_context().await?;
         db.find_all_sessions_by_user(user_id).await
     }
 
-    #[tracing::instrument(level = "debug", skip_all, fields(session_fp = tracing::field::Empty))]
+    #[tracing::instrument(level = "debug", skip_all, fields(user_id = %user_id, session_fp = tracing::field::Empty))]
     pub async fn find(&self, user_id: Uuid, session_key: &SessionKey) -> Result<Option<Session>, SessionError> {
         let session_key_hash = hash_key(session_key);
         tracing::Span::current().record("session_fp", secret_tag(&session_key_hash));
@@ -109,7 +109,7 @@ where
     }
 
     /// Remove an active session of the given user.
-    #[tracing::instrument(level = "debug", skip_all, fields(session_fp = tracing::field::Empty))]
+    #[tracing::instrument(level = "debug", skip_all, fields(user_id = %user_id, session_fp = tracing::field::Empty))]
     pub async fn remove(&self, user_id: Uuid, session_key: &SessionKey) -> Result<(), SessionError> {
         let session_key_hash = hash_key(session_key);
         tracing::Span::current().record("session_fp", secret_tag(&session_key_hash));
@@ -118,7 +118,7 @@ where
     }
 
     /// Remove all the active session of the given user.
-    #[tracing::instrument(level = "debug", skip_all)]
+    #[tracing::instrument(level = "debug", skip_all, fields(user_id = %user_id))]
     pub async fn remove_all(&self, user_id: Uuid) -> Result<(), SessionError> {
         let mut db = self.db.create_context().await?;
         db.delete_all_sessions_by_user(user_id).await
@@ -129,9 +129,7 @@ where
 fn hash_key(key: &SessionKey) -> String {
     // there is no need for a complex hash as key has a big entropy already
     // and it'd be too expensive to invert the hashing.
-    let hash = key.key_hash();
-    log::debug!("Hashing session key -> [{}]", secret_tag(&hash));
-    hash
+    key.key_hash()
 }
 
 #[cfg(test)]

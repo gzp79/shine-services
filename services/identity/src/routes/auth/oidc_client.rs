@@ -185,7 +185,7 @@ impl OIDCClient {
                 if age < self.client_info.ttl_client {
                     return Ok(cached_client.client.clone());
                 }
-                log::warn!("Discovery expired({}s) for {} ", self.provider, age.as_secs());
+                log::debug!("Discovery expired({}s) for {}", age.as_secs(), self.provider);
             }
         }
 
