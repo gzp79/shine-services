@@ -1,6 +1,6 @@
 use opentelemetry::{
     metrics::{Counter, Meter},
-    KeyValue,
+    KeyValue, Value,
 };
 use tracing::{Event, Level, Subscriber};
 use tracing_log::NormalizeEvent;
@@ -30,15 +30,13 @@ impl<S: Subscriber> Layer<S> for LogMetricsLayer {
             Level::WARN => "warn",
             _ => return,
         };
-        // Events of the log crate carry their real target only in the normalized metadata
-        let normalized = event.normalized_metadata();
-        let target = normalized.as_ref().unwrap_or(event.metadata()).target();
-        self.events.add(
-            1,
-            &[
-                KeyValue::new("level", level),
-                KeyValue::new("target", target.to_string()),
-            ],
-        );
+        let target = if !event.is_log() {
+            Value::from(event.metadata().target())
+        } else {
+            let normalized = event.normalized_metadata();
+            Value::from(normalized.as_ref().map_or("log", |m| m.target()).to_string())
+        };
+        self.events
+            .add(1, &[KeyValue::new("level", level), KeyValue::new("target", target)]);
     }
 }

@@ -212,16 +212,19 @@ impl IntoResponse for ProblemResponse {
     fn into_response(self) -> Response {
         let ProblemResponse { problem, config } = self;
         if problem.status.is_server_error() {
-            log::error!(
+            tracing::error!(
                 "Problem response {} ({}): {}",
                 problem.status,
                 problem.ty,
                 problem.detail
             );
+            // TODO:EXCEPTION to the "sensitive data: trace only" rule: the internal cause is the only root-cause info
+            // of a 5xx in prod - it should be revisited in the future.
+            tracing::info!("Problem response cause: {}", problem.sensitive);
         } else {
-            log::debug!("Problem response {} ({})", problem.status, problem.ty);
+            tracing::debug!("Problem response {} ({})", problem.status, problem.ty);
         }
-        log::trace!("Problem response: {problem:#?}");
+        tracing::trace!("Problem response: {problem:#?}");
         let problem = config.transform(problem);
         (problem.status, Json(problem)).into_response()
     }
