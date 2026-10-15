@@ -106,7 +106,7 @@ impl AuthSessionMeta {
         let auth_domain = auth_base.domain().ok_or(AuthSessionError::MissingDomain)?.to_string();
         let auth_path = auth_base.path().to_string();
         if !auth_domain.ends_with(&domain) {
-            log::error!("Non-matching domains, home:{home_domain}, auth: {auth_domain}, common:{domain}");
+            tracing::error!("Non-matching domains, home:{home_domain}, auth: {auth_domain}, common:{domain}");
             return Err(AuthSessionError::InvalidApiDomain);
         }
 
@@ -208,7 +208,7 @@ impl AuthSession {
     pub async fn revoke_session(mut self, state: &AppState) -> Self {
         if let Some(session) = self.session.take() {
             if let Err(err) = state.session_service().remove(session.user_id, &session.key).await {
-                log::error!("Failed to revoke session for user {}: {err}", session.user_id);
+                tracing::error!("Failed to revoke session for user {}: {err}", session.user_id);
             }
         }
         self
@@ -234,11 +234,11 @@ impl AuthSession {
         if let Some(token_cookie) = self.access.take() {
             if let Some(revoked_token) = &token_cookie.revoked_token {
                 if let Err(err) = state.token_service().delete(TokenKind::Access, revoked_token).await {
-                    log::error!("Failed to revoke access token: {err}");
+                    tracing::error!("Failed to revoke access token: {err}");
                 }
             }
             if let Err(err) = state.token_service().delete(TokenKind::Access, &token_cookie.key).await {
-                log::error!("Failed to revoke access token: {err}");
+                tracing::error!("Failed to revoke access token: {err}");
             }
         }
         self
@@ -293,7 +293,7 @@ where
             .get(&meta.token_cookie_settings.name)
             .and_then(|session| serde_json::from_str::<TokenCookie>(session.value()).ok());
 
-        log::debug!(
+        tracing::debug!(
             "Auth sessions before validation: user:{:?}, external_login_cookie:{}, token_cookie:{}",
             user.as_ref().map(|u| u.user_id),
             external_login_cookie.is_some(),
@@ -304,7 +304,7 @@ where
         // - user of token is not matching the user of the session, session is deleted
         // - if linked_account of the external login is not matching the session, external login is deleted
 
-        log::debug!("Validating cookies...");
+        tracing::debug!("Validating cookies...");
         //todo: if let Some(uid) = user.as_ref().map(|u| u.user_id) &&
         //let Some(tid) = token_cookie.as_ref().map(|t| t.user_id) &&
         //tid != uid {
@@ -314,7 +314,7 @@ where
             && user.is_some()
             && token_cookie.as_ref().map(|t| t.user_id) != user.as_ref().map(|u| u.user_id)
         {
-            log::info!("user session is not matching to the token, dropping user session");
+            tracing::info!("user session is not matching to the token, dropping user session");
             user = None;
         }
 
@@ -326,11 +326,11 @@ where
                 .map(|l| l.user_id)
                 != user.as_ref().map(|u| u.user_id)
         {
-            log::info!("external login is not matching the user session, dropping external login");
+            tracing::info!("external login is not matching the user session, dropping external login");
             external_login_cookie = None;
         }
 
-        log::debug!(
+        tracing::debug!(
             "Auth sessions after validation: user:{:?}, external_login_cookie:{}, token_cookie:{}",
             user.as_ref().map(|u| u.user_id),
             external_login_cookie.is_some(),

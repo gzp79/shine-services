@@ -14,7 +14,7 @@ mod embedded {
 }
 
 pub async fn create_redis_pool(config: &DBConfig) -> Result<RedisConnectionPool, RedisError> {
-    log::info!("Creating redis pool...");
+    tracing::info!("Creating redis pool...");
     shine_infra::db::redis::create_redis_pool(config.redis_cns.as_str())
         .await
         .map_err(RedisError::PoolError)

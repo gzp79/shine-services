@@ -162,8 +162,8 @@ where
         let config = builder.build().await?;
 
         let cfg: Self = config.try_deserialize()?;
-        log::info!("Config loaded [{}]", cfg.core.root_file);
-        log::trace!("Config: {cfg:#?}");
+        tracing::info!("Config loaded [{}]", cfg.core.root_file);
+        tracing::trace!("Config: {cfg:#?}");
 
         if pre_init != cfg.core {
             Err(anyhow!("Core config mismatch"))

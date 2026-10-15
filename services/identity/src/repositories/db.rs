@@ -41,7 +41,7 @@ pub async fn create_redis_pool(config: &DBConfig) -> Result<RedisConnectionPool,
 
 async fn migrate_postgres(postgres: &PgConnectionPool) -> Result<(), PgError> {
     let mut backend = postgres.get().await.map_err(PgError::PoolError)?;
-    log::trace!("migrations: {:#?}", embedded::migrations::runner().get_migrations());
+    tracing::trace!("migrations: {:#?}", embedded::migrations::runner().get_migrations());
     let client = &mut **backend;
     let report = embedded::migrations::runner().run_async(client).await?;
     let applied = report
@@ -49,6 +49,6 @@ async fn migrate_postgres(postgres: &PgConnectionPool) -> Result<(), PgError> {
         .iter()
         .map(|m| m.to_string())
         .collect::<Vec<_>>();
-    log::info!("Applied {} postgres migration(s): {applied:?}", applied.len());
+    tracing::info!("Applied {} postgres migration(s): {applied:?}", applied.len());
     Ok(())
 }

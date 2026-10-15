@@ -77,7 +77,7 @@ where
     where
         I: IntoIterator<Item = StoredEvent<A::Event>>,
     {
-        log::debug!(
+        tracing::debug!(
             "Applying events to aggregate {:?} at version {}",
             self.stream_id,
             self.version
@@ -94,7 +94,7 @@ where
             self.version = event.version;
         }
 
-        log::debug!(
+        tracing::debug!(
             "Applied events to aggregate {:?} up to version {}",
             self.stream_id,
             self.version

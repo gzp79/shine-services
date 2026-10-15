@@ -68,12 +68,12 @@ macro_rules! pg_prepared_statement {
             #[allow(dead_code)]
             pub async fn new(client: &$crate::db::postgres::PgClient) -> Result<Self, $crate::db::postgres::PgRawError>
             {
-                log::debug!("Creating prepared statement for {}...", stringify!{$id});
+                $crate::db::postgres::__tracing::debug!("Creating prepared statement for {}...", stringify!{$id});
                 let params = vec![$(<$pty as $crate::db::postgres::ToPgType>::PG_TYPE,)*];
-                log::trace!("Statement: {}\nArguments: {:#?}", $stmt, params);
+                $crate::db::postgres::__tracing::trace!("Statement: {}\nArguments: {:#?}", $stmt, params);
                 let stmt = client.create_prepared_statement($stmt, params).await;
                 let _ = client.get_prepared_statement(stmt).await?;
-                log::trace!("Creating prepared statement for {} done.", stringify!{$id});
+                $crate::db::postgres::__tracing::trace!("Creating prepared statement for {} done.", stringify!{$id});
                 Ok(Self(stmt))
             }
 
@@ -82,10 +82,10 @@ macro_rules! pg_prepared_statement {
             where
                 F : FnOnce(&'a str) -> std::borrow::Cow<'a, str>
             {
-                log::debug!("Creating prepared statement for {} with process...", stringify!{$id});
+                $crate::db::postgres::__tracing::debug!("Creating prepared statement for {} with process...", stringify!{$id});
                 let stmt = client.create_prepared_statement(&process($stmt), vec![$(<$pty as $crate::db::postgres::ToPgType>::PG_TYPE,)*]).await;
                 let _ = client.get_prepared_statement(stmt).await?;
-                log::trace!("Creating prepared statement for {} with process done.", stringify!{$id});
+                $crate::db::postgres::__tracing::trace!("Creating prepared statement for {} with process done.", stringify!{$id});
                 Ok(Self(stmt))
             }
 

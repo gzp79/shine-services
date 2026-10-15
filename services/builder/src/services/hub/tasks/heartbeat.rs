@@ -38,18 +38,18 @@ impl ConnectionConsumer for Heartbeat {
         let stale = match self.hub_service.heartbeat_registry_connections(&connections).await {
             Ok(stale) => stale,
             Err(err) => {
-                log::error!("Failed to heartbeat hub connections: {err:#?}");
+                tracing::error!("Failed to heartbeat hub connections: {err:#?}");
                 return;
             }
         };
 
         for HubConnection { user_id, connection_id } in stale {
-            log::info!("[{user_id}] heartbeat-found-inactive; requesting hub disconnect");
+            tracing::info!("[{user_id}] heartbeat-found-inactive; requesting hub disconnect");
             if let Err(err) = self
                 .hub_service
                 .request_drop(user_id, connection_id, "heartbeat_inactive")
             {
-                log::error!("[{user_id}] Failed to send heartbeat disconnect command: {err:#?}");
+                tracing::error!("[{user_id}] Failed to send heartbeat disconnect command: {err:#?}");
             }
         }
     }

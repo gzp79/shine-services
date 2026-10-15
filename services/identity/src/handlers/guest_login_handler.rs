@@ -60,8 +60,8 @@ where
             Ok(identity) => identity,
             Err(err) => return self.page_handler.error(auth_session, err, error_url),
         };
-        log::info!("Guest user {} registered", identity.id);
-        log::trace!("New guest user created: {identity:#?}");
+        tracing::info!("Guest user {} registered", identity.id);
+        tracing::trace!("New guest user created: {identity:#?}");
 
         self.credential_handler
             .establish(

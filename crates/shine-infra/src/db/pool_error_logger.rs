@@ -5,7 +5,7 @@ pub struct PoolErrorLogger(pub &'static str);
 
 impl<E: std::fmt::Display> bb8::ErrorSink<E> for PoolErrorLogger {
     fn sink(&self, error: E) {
-        log::warn!("{} pool connection error: {error}", self.0);
+        tracing::warn!("{} pool connection error: {error}", self.0);
     }
 
     fn boxed_clone(&self) -> Box<dyn bb8::ErrorSink<E>> {

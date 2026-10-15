@@ -137,7 +137,7 @@ impl<DB: IdentityDb> UserService<DB> {
 
         let mut retry_count = 0;
         loop {
-            log::debug!("Creating new user; retry: {retry_count:#?}");
+            tracing::debug!("Creating new user; retry: {retry_count:#?}");
             if retry_count > MAX_RETRY_COUNT {
                 return Err(CreateUserError::RetryLimitReached);
             }
@@ -170,7 +170,7 @@ impl<DB: IdentityDb> UserService<DB> {
         let mut retry_count = 0;
 
         loop {
-            log::debug!("Creating new linked user; retry: {retry_count:#?}");
+            tracing::debug!("Creating new linked user; retry: {retry_count:#?}");
             if retry_count > MAX_RETRY_COUNT {
                 return Err(CreateUserError::RetryLimitReached);
             }
@@ -197,7 +197,7 @@ impl<DB: IdentityDb> UserService<DB> {
             // Rollback on link failure
             if let Err(err) = ctx.link_user(user_id, external_user).await {
                 if let Err(del_err) = ctx.cascaded_delete(user_id).await {
-                    log::error!("Failed to delete user ({user_id}) after failed link: {del_err}");
+                    tracing::error!("Failed to delete user ({user_id}) after failed link: {del_err}");
                 }
                 return Err(CreateUserError::IdentityError(err));
             }

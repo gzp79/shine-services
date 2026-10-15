@@ -101,7 +101,7 @@ impl OIDCUserInfoExtractor for CoreClient {
         }
         .normalized();
 
-        log::trace!("Extracted external user info: {external_user_info:#?}");
+        tracing::trace!("Extracted external user info: {external_user_info:#?}");
 
         Ok(external_user_info)
     }
@@ -142,7 +142,9 @@ impl OIDCClient {
 
         let ignore_certificates = config.ignore_certificates.unwrap_or(false);
         if ignore_certificates {
-            log::warn!("Certificate validation is disabled for OIDC provider '{provider}' — do NOT use in production");
+            tracing::warn!(
+                "Certificate validation is disabled for OIDC provider '{provider}' — do NOT use in production"
+            );
         }
         let http_client = HttpClient::builder()
             .redirect(reqwest::redirect::Policy::none())
@@ -185,7 +187,7 @@ impl OIDCClient {
                 if age < self.client_info.ttl_client {
                     return Ok(cached_client.client.clone());
                 }
-                log::debug!("Discovery expired({}s) for {}", age.as_secs(), self.provider);
+                tracing::debug!("Discovery expired({}s) for {}", age.as_secs(), self.provider);
             }
         }
 
@@ -197,7 +199,7 @@ impl OIDCClient {
                 {
                     Ok(meta) => meta,
                     Err(err) => {
-                        log::warn!("Discovery failed for {}: {:#?}", self.provider, err);
+                        tracing::warn!("Discovery failed for {}: {:#?}", self.provider, err);
                         return Err(OIDCDiscoveryError(format!("{err:#?}")));
                     }
                 };

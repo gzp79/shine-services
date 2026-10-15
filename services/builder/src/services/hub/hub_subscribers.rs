@@ -34,7 +34,7 @@ impl Subscribers {
             match subscriber.tx.send(message.clone()) {
                 Ok(()) => true,
                 Err(_) => {
-                    log::error!("Subscriber closed, pruning {:?} subscriber", message.topic());
+                    tracing::error!("Subscriber closed, pruning {:?} subscriber", message.topic());
                     false
                 }
             }

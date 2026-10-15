@@ -53,7 +53,7 @@ impl RedisHubConnectionDb {
 
                 // Payload is "{instance_id}:{user_id}".
                 let Some((origin, raw_user_id)) = payload.split_once(':') else {
-                    log::error!("Malformed hub registry payload {payload:?}");
+                    tracing::error!("Malformed hub registry payload {payload:?}");
                     return;
                 };
 
@@ -65,7 +65,7 @@ impl RedisHubConnectionDb {
 
                 match Uuid::parse_str(raw_user_id) {
                     Ok(user_id) => handler(user_id),
-                    Err(err) => log::error!("Failed to parse hub registry user id {raw_user_id:?}: {err:#?}"),
+                    Err(err) => tracing::error!("Failed to parse hub registry user id {raw_user_id:?}: {err:#?}"),
                 }
             })
             .await?;

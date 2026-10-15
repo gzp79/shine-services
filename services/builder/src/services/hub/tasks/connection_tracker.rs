@@ -138,13 +138,13 @@ pub async fn run_connection_loop<C: ConnectionConsumer>(
             message = subscription.recv() => match message {
                 Some(message) => {
                     if tracker.apply(message) {
-                        log::info!("{} loop stopped on hub shutdown", consumer_name::<C>());
+                        tracing::info!("{} loop stopped on hub shutdown", consumer_name::<C>());
                         break;
                     }
                 }
                 // Channel closed without a Shutdown event: stop instead of busy-looping.
                 None => {
-                    log::warn!("{} loop stopped: hub subscription closed", consumer_name::<C>());
+                    tracing::warn!("{} loop stopped: hub subscription closed", consumer_name::<C>());
                     break;
                 }
             },

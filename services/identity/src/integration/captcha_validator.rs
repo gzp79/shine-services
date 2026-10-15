@@ -105,25 +105,25 @@ impl CaptchaValidator {
         let idempotency_key = Uuid::new_v4().to_string();
 
         let (secret, token) = if self.0.secret == TEST_SECRET {
-            log::warn!("Using test-secret for captcha validation");
+            tracing::warn!("Using test-secret for captcha validation");
             match token {
                 TEST_TOKEN_PASS => {
-                    log::debug!("Test token 'pass': calling Cloudflare with the always-passing test secret");
+                    tracing::debug!("Test token 'pass': calling Cloudflare with the always-passing test secret");
                     (CF_TEST_SECRET_PASS, CF_DUMMY_TOKEN)
                 }
                 TEST_TOKEN_BLOCK => {
-                    log::debug!("Test token 'block': calling Cloudflare with the always-blocking test secret");
+                    tracing::debug!("Test token 'block': calling Cloudflare with the always-blocking test secret");
                     (CF_TEST_SECRET_BLOCK, CF_DUMMY_TOKEN)
                 }
                 TEST_TOKEN_SKIP => {
-                    log::debug!("Test token 'skip': resolving as success without contacting Cloudflare");
+                    tracing::debug!("Test token 'skip': resolving as success without contacting Cloudflare");
                     return Ok(TurnstileValidationResponse {
                         success: true,
                         error_codes: vec![],
                     });
                 }
                 _ => {
-                    log::debug!("Unrecognized test token: resolving as failure without contacting Cloudflare");
+                    tracing::debug!("Unrecognized test token: resolving as failure without contacting Cloudflare");
                     return Ok(TurnstileValidationResponse {
                         success: false,
                         error_codes: vec!["invalid-input-response".to_string()],
@@ -180,7 +180,7 @@ mod test {
             .validate_request(TEST_TOKEN_PASS, None)
             .await
             .expect("Validation request failed");
-        log::info!("response: {response:?}");
+        tracing::info!("response: {response:?}");
         assert!(response.success);
     }
 
@@ -191,7 +191,7 @@ mod test {
             .validate_request(TEST_TOKEN_BLOCK, None)
             .await
             .expect("Validation request failed");
-        log::info!("response: {response:?}");
+        tracing::info!("response: {response:?}");
         assert!(!response.success);
     }
 
@@ -202,7 +202,7 @@ mod test {
             .validate_request(TEST_TOKEN_SKIP, None)
             .await
             .expect("Validation request failed");
-        log::info!("response: {response:?}");
+        tracing::info!("response: {response:?}");
         assert!(response.success);
         assert!(response.error_codes.is_empty());
     }
@@ -214,7 +214,7 @@ mod test {
             .validate_request("token", None)
             .await
             .expect("Validation request failed");
-        log::info!("response: {response:?}");
+        tracing::info!("response: {response:?}");
         assert!(!response.success);
         assert_eq!(response.error_codes, vec!["invalid-input-response"]);
     }
@@ -229,11 +229,11 @@ mod test {
                 .validate_request(token, None)
                 .await
                 .expect("Validation request failed");
-            log::info!("response: {response:?}");
+            tracing::info!("response: {response:?}");
             assert!(!response.success);
             assert_eq!(response.error_codes, vec!["invalid-input-response"]);
         } else {
-            log::warn!("CF_CAPTCHA_SECRET not set, skipping test");
+            tracing::warn!("CF_CAPTCHA_SECRET not set, skipping test");
         }
     }
 
@@ -247,11 +247,11 @@ mod test {
                 .validate_request(token, None)
                 .await
                 .expect("Validation request failed");
-            log::info!("response: {response:?}");
+            tracing::info!("response: {response:?}");
             assert!(!response.success);
             assert_eq!(response.error_codes, vec!["timeout-or-duplicate"]);
         } else {
-            log::warn!("CF_CAPTCHA_SECRET not set, skipping test");
+            tracing::warn!("CF_CAPTCHA_SECRET not set, skipping test");
         }
     }
 }

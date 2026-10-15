@@ -63,7 +63,7 @@ impl OAuth2Client {
 
         let ignore_certificates = config.ignore_certificates.unwrap_or(false);
         if ignore_certificates {
-            log::warn!(
+            tracing::warn!(
                 "Certificate validation is disabled for OAuth2 provider '{provider}' — do NOT use in production"
             );
         }
@@ -118,7 +118,7 @@ impl OAuth2Client {
                 response.text().await.unwrap_or_default(),
             )));
         };
-        log::trace!("external user info: {user_info:?}");
+        tracing::trace!("external user info: {user_info:?}");
 
         let external_id_id = id_mapping.get("id").map(|s| s.as_str()).unwrap_or("id");
         let external_id = user_info
@@ -129,7 +129,7 @@ impl OAuth2Client {
                 _ => None,
             })
             .ok_or(OAuth2Error::MissingExternalId)?;
-        log::trace!("{external_id_id} - {external_id:?}");
+        tracing::trace!("{external_id_id} - {external_id:?}");
 
         let name_id = id_mapping.get("name").map(|s| s.as_str()).unwrap_or("name");
         let name = user_info.get(name_id).and_then(|v| v.as_str()).map(ToOwned::to_owned);
@@ -146,7 +146,7 @@ impl OAuth2Client {
             email,
         };
 
-        log::debug!("Checking extensions: {extensions:?}");
+        tracing::debug!("Checking extensions: {extensions:?}");
         for extension in extensions {
             match extension {
                 ExternalUserInfoExtensions::GithubEmail => {
@@ -156,7 +156,7 @@ impl OAuth2Client {
         }
 
         external_user_info = external_user_info.normalized();
-        log::trace!("Extracted external user info: {external_user_info:#?}");
+        tracing::trace!("Extracted external user info: {external_user_info:#?}");
 
         Ok(external_user_info)
     }
@@ -197,7 +197,7 @@ impl OAuth2Client {
                     response.text().await.unwrap_or_default(),
                 )));
             };
-            log::trace!("{email_info:?}");
+            tracing::trace!("{email_info:?}");
 
             external_user_info.email = email_info
                 .into_iter()

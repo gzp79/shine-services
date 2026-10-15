@@ -320,7 +320,7 @@ where
         if let Some(version) = version {
             Ok(version)
         } else {
-            log::warn!("Performance warning: store_event called without any events");
+            tracing::warn!("Performance warning: store_event called without any events");
             match self
                 .stmts_store
                 .get_version

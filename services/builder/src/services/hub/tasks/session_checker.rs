@@ -35,17 +35,17 @@ impl ConnectionConsumer for SessionChecker {
                 Ok(_) => {}
                 // The session is definitively gone/invalid: close the connection.
                 Err(err @ (UserSessionError::SessionExpired | UserSessionError::SessionCompromised)) => {
-                    log::info!("[{user_id}] session-invalid ({err}); requesting hub disconnect");
+                    tracing::info!("[{user_id}] session-invalid ({err}); requesting hub disconnect");
                     // Target the exact connection we validated. If the user reconnected with a new
                     // connection meanwhile, the hub ignores this stale id and keeps the fresh session.
                     if let Err(err) = self.hub_service.request_drop(user_id, connection_id, "session_invalid") {
-                        log::error!("[{user_id}] Failed to send expiry disconnect command: {err:#?}");
+                        tracing::error!("[{user_id}] Failed to send expiry disconnect command: {err:#?}");
                     }
                 }
                 // Transient/infrastructure errors (Redis unavailable, pool exhausted, …)
                 // Skip this tick; the next one re-checks.
                 Err(err) => {
-                    log::warn!("[{user_id}] session check skipped due to transient error: {err:#?}");
+                    tracing::warn!("[{user_id}] session check skipped due to transient error: {err:#?}");
                 }
             }
         }

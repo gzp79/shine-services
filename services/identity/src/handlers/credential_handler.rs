@@ -81,7 +81,7 @@ where
                 } else {
                     None
                 };
-                log::debug!("Creating access token for identity: {}", identity.id);
+                tracing::debug!("Creating access token for identity: {}", identity.id);
                 let (token, token_info) = match self
                     .token_service
                     .create_with_retry(
@@ -116,7 +116,7 @@ where
             {
                 Ok(Some(session)) => session,
                 Ok(None) => {
-                    log::warn!("User {} has been deleted during login", identity.id);
+                    tracing::warn!("User {} has been deleted during login", identity.id);
                     return self.page_handler.error(
                         auth_session.with_access(None),
                         IdentityError::UserDeleted,
@@ -128,7 +128,7 @@ where
             auth_session.with_session(Some(user_session))
         };
 
-        log::info!("Credentials established for: {}", identity.id);
+        tracing::info!("Credentials established for: {}", identity.id);
         self.page_handler.redirect(auth_session, redirect_url, None)
     }
 }

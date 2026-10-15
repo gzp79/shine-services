@@ -86,7 +86,7 @@ where
         };
 
         // Create session
-        log::debug!("Creating session for identity: {}", identity.id);
+        tracing::debug!("Creating session for identity: {}", identity.id);
         let (user_session, user_session_key) = self
             .session_service
             .create(identity, roles, is_linked, fingerprint, site_info)
@@ -119,7 +119,7 @@ where
                 Ok(())
             }
             Ok(None) => {
-                log::info!("User ({user_id}) not found, removing all the sessions");
+                tracing::info!("User ({user_id}) not found, removing all the sessions");
                 self.session_service.remove_all(user_id).await?;
                 Ok(())
             }

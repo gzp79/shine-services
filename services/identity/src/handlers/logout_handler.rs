@@ -52,7 +52,7 @@ where
         if let Some((user_id, session_key)) = auth_session.user_session().map(|u| (u.user_id, u.key)) {
             match terminate_all {
                 true => {
-                    log::debug!("Removing all the (non-api-key) tokens for user {user_id}");
+                    tracing::debug!("Removing all the (non-api-key) tokens for user {user_id}");
                     //remove all non-api-key tokens
                     if let Err(err) = self
                         .token_service
@@ -65,27 +65,27 @@ where
                         return self.page_handler.error(auth_session, err, error_url);
                     }
 
-                    log::debug!("Removing all the session for user {user_id}");
+                    tracing::debug!("Removing all the session for user {user_id}");
                     if let Err(err) = self.session_service.remove_all(user_id).await {
-                        log::warn!("Failed to clear all sessions for user {user_id}: {err:?}");
+                        tracing::warn!("Failed to clear all sessions for user {user_id}: {err:?}");
                     }
                 }
                 false => {
-                    log::debug!("Removing remember me token for user, if cookie is present {user_id}");
+                    tracing::debug!("Removing remember me token for user, if cookie is present {user_id}");
                     if let Some(token) = auth_session.access().map(|t| t.key.clone()) {
-                        log::debug!("Removing token for user {user_id}");
+                        tracing::debug!("Removing token for user {user_id}");
                         if let Err(err) = self.token_service.delete(TokenKind::Access, &token).await {
                             return self.page_handler.error(auth_session, err, error_url);
                         }
                     }
 
-                    log::debug!("Removing session for user {user_id}");
+                    tracing::debug!("Removing session for user {user_id}");
                     if let Err(err) = self.session_service.remove(user_id, &session_key).await {
-                        log::warn!("Failed to clear session for user {user_id}: {err:?}");
+                        tracing::warn!("Failed to clear session for user {user_id}: {err:?}");
                     }
                 }
             };
-            log::info!("User {user_id} logged out (terminate_all: {terminate_all})");
+            tracing::info!("User {user_id} logged out (terminate_all: {terminate_all})");
         }
 
         let response_session = auth_session.cleared();

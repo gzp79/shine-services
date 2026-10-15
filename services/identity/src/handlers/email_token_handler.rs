@@ -110,13 +110,13 @@ where
         let (is_registration, identity) = {
             match self.user_service.create_with_retry(None, Some(email)).await {
                 Ok(identity) => {
-                    log::info!("User {} registered via email", identity.id);
+                    tracing::info!("User {} registered via email", identity.id);
                     (true, identity)
                 }
                 Err(CreateUserError::IdentityError(IdentityError::EmailConflict)) => {
                     match self.user_service.find_by_email(email).await? {
                         Some(identity) => {
-                            log::debug!("User found by email: {}", identity.id);
+                            tracing::debug!("User found by email: {}", identity.id);
                             (false, identity)
                         }
                         None => return Err(EmailAuthError::IdentityError(IdentityError::UserDeleted)),
@@ -263,7 +263,7 @@ where
 
         // Verify correct token kind (wrong kinds already burned by take)
         if token_data.kind != TokenKind::EmailAccess {
-            log::warn!(
+            tracing::warn!(
                 "Wrong token type used in email flow - token burned: user_id={user_id}, token_kind={:?}",
                 token_data.kind
             );
@@ -289,7 +289,7 @@ where
             Err(IdentityError::EmailConflict) => return Err(EmailAuthError::EmailConflict),
             Err(err) => return Err(EmailAuthError::IdentityError(err)),
         }
-        log::info!("Email confirmed for user {user_id}");
+        tracing::info!("Email confirmed for user {user_id}");
 
         Ok(())
     }

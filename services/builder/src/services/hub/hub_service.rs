@@ -228,7 +228,7 @@ impl HubService {
                     break;
                 }
             }
-            log::info!("Hub command loop stopped");
+            tracing::info!("Hub command loop stopped");
             for task in background_tasks {
                 task.abort();
             }
@@ -243,19 +243,19 @@ impl HubService {
                 .hub_registry
                 .listen_to_registry_changes(move |user_id| {
                     if let Err(err) = notifier.notify_registry_changed(user_id) {
-                        log::warn!("[{user_id}] Failed to enqueue hub registry change command: {err:#?}");
+                        tracing::warn!("[{user_id}] Failed to enqueue hub registry change command: {err:#?}");
                     }
                 })
                 .await
             {
-                log::error!("Failed to listen to hub registry changes: {err:#?}");
+                tracing::error!("Failed to listen to hub registry changes: {err:#?}");
             }
         })
     }
 
     /// Processes one control command. Returns if the dispatcher should continue (true) or exit (false).
     async fn process(&self, command: ControlCommand) -> bool {
-        log::debug!("Processing command: {command:#?}");
+        tracing::debug!("Processing command: {command:#?}");
         match command {
             ControlCommand::ConnectUser {
                 user_id,
@@ -269,7 +269,7 @@ impl HubService {
                 // — otherwise a transient Redis error would leave the user with no connection and
                 // an orphaned, untracked new socket.
                 if let Err(err) = self.create_registry_connection(user_id, connection_id).await {
-                    log::error!("[{user_id}] Failed to create hub connection: {err:#?}");
+                    tracing::error!("[{user_id}] Failed to create hub connection: {err:#?}");
                     return true;
                 }
 
@@ -278,7 +278,7 @@ impl HubService {
                 // connection tracker drops it. Same-id re-registration is not a replacement.
                 if let Some((old_connection_id, _)) = self.inner.connections.find_active(user_id).await {
                     if old_connection_id != connection_id {
-                        log::info!("[{user_id}] [{old_connection_id}] Connection replaced by {connection_id}");
+                        tracing::info!("[{user_id}] [{old_connection_id}] Connection replaced by {connection_id}");
                         hub_metrics().connections_dropped.add(1, &[label("reason", "replaced")]);
                         self.inner
                             .connections
@@ -326,7 +326,7 @@ impl HubService {
                 if let Err(err) = self.remove_registry_connection(user_id, removed_connection_id).await {
                     // Best-effort: publish UserDisconnected regardless so the socket and trackers
                     // never wedge, and let the registry TTL clean up the stale row.
-                    log::error!("[{user_id}] Failed to remove hub connection (relying on TTL cleanup): {err:#?}");
+                    tracing::error!("[{user_id}] Failed to remove hub connection (relying on TTL cleanup): {err:#?}");
                 }
 
                 self.publish(HubEvent::UserDisconnected {
@@ -341,10 +341,10 @@ impl HubService {
                 // here so all mutation stays on the loop. Force-remove by id (a fresh reconnect that
                 // replaced it has a different id and its channel would not be dead).
                 if let Some((user_id, _)) = self.inner.connections.remove_connection_by_id(connection_id).await {
-                    log::info!("[{user_id}] [{connection_id}] Connection dropped: {reason}");
+                    tracing::info!("[{user_id}] [{connection_id}] Connection dropped: {reason}");
                     hub_metrics().connections_dropped.add(1, &[label("reason", reason)]);
                     if let Err(err) = self.remove_registry_connection(user_id, connection_id).await {
-                        log::error!("[{user_id}] Failed to remove dropped connection from registry (TTL will clean up): {err:#?}");
+                        tracing::error!("[{user_id}] Failed to remove dropped connection from registry (TTL will clean up): {err:#?}");
                     }
                     self.publish(HubEvent::UserDisconnected { user_id, connection_id })
                         .await;
@@ -400,7 +400,7 @@ impl HubService {
         let is_active = match self.heartbeat_registry_connection(user_id, connection_id).await {
             Ok(is_active) => is_active,
             Err(err) => {
-                log::error!("[{user_id}] Failed to heartbeat hub connection: {err:#?}");
+                tracing::error!("[{user_id}] Failed to heartbeat hub connection: {err:#?}");
                 return;
             }
         };
@@ -421,7 +421,7 @@ impl HubService {
             return;
         };
 
-        log::info!("[{user_id}] [{removed_connection_id}] Connection dropped: registry_inactive");
+        tracing::info!("[{user_id}] [{removed_connection_id}] Connection dropped: registry_inactive");
         hub_metrics()
             .connections_dropped
             .add(1, &[label("reason", "registry_inactive")]);
@@ -444,10 +444,10 @@ impl HubService {
             if let Err(dead) = self.inner.connections.broadcast(message).await {
                 for DeadConnection { connection_id, reason } in dead {
                     if let Some((user_id, _)) = self.inner.connections.remove_connection_by_id(connection_id).await {
-                        log::info!("[{user_id}] [{connection_id}] Connection dropped: {reason}");
+                        tracing::info!("[{user_id}] [{connection_id}] Connection dropped: {reason}");
                         hub_metrics().connections_dropped.add(1, &[label("reason", reason)]);
                         if let Err(err) = self.remove_registry_connection(user_id, connection_id).await {
-                            log::error!(
+                            tracing::error!(
                                 "[{user_id}] Failed to remove dead connection from registry (TTL will clean up): {err:#?}"
                             );
                         }

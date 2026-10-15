@@ -37,7 +37,7 @@ pub async fn put_telemetry_config(
     telemetry
         .set_configuration(DynConfig { filter: filter.clone() })
         .map_err(|err| err.into_response(&problem_config))?;
-    log::info!("Telemetry filter reconfigured by user {} to: {filter}", user.user_id);
+    tracing::info!("Telemetry filter reconfigured by user {} to: {filter}", user.user_id);
 
     Ok(())
 }

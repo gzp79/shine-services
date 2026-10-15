@@ -66,7 +66,7 @@ pub async fn connect(
     }
 
     let user = user.into_user();
-    log::debug!("[{}] Requesting a connection", user.user_id);
+    tracing::debug!("[{}] Requesting a connection", user.user_id);
 
     let hub_service = state.hub_service().clone();
     let chat_service = state.chat_service().clone();
@@ -107,16 +107,16 @@ async fn handle_socket(
     let Some(connection_id) = open_connection(span_context, &hub_service, user, tx) else {
         // There is no live connection to keep, so close the socket without emitting a disconnect for it.
         if let Err(err) = ws_sender.close().await {
-            log::debug!("[{current_user_id}] Failed to close websocket after failed registration: {err:#?}");
+            tracing::debug!("[{current_user_id}] Failed to close websocket after failed registration: {err:#?}");
         }
         return;
     };
-    log::info!("[{current_user_id}] [{connection_id}] Connected to the hub");
+    tracing::info!("[{current_user_id}] [{connection_id}] Connected to the hub");
 
     let mut recv_task = {
         tokio::spawn(async move {
             while let Some(Ok(message)) = ws_receiver.next().await {
-                log::debug!("[{current_user_id}] WsMessage received");
+                tracing::debug!("[{current_user_id}] WsMessage received");
                 if let WsMessage::Text(text) = message {
                     let msg = match serde_json::from_str::<WSMessageRequest>(&text) {
                         Ok(WSMessageRequest::Chat { text }) => Some(text),
@@ -124,7 +124,7 @@ async fn handle_socket(
                             hub_metrics()
                                 .ws_messages_received
                                 .add(1, &[label("kind", "unknown"), label("outcome", "invalid")]);
-                            log::trace!("[{current_user_id}] Received invalid message: {text}");
+                            tracing::trace!("[{current_user_id}] Received invalid message: {text}");
                             None
                         }
                     };
@@ -146,7 +146,7 @@ async fn handle_socket(
                             .ws_messages_received
                             .add(1, &[label("kind", "chat"), label("outcome", outcome)]);
                         if let Err(err) = appended {
-                            log::error!("[{current_user_id}] Failed to append chat message: {err:#?}");
+                            tracing::error!("[{current_user_id}] Failed to append chat message: {err:#?}");
                         }
                     }
                 }
@@ -156,7 +156,7 @@ async fn handle_socket(
 
     let mut send_task = tokio::spawn(async move {
         while let Some(message) = rx.recv().await {
-            log::debug!("[{current_user_id}] Bus message received");
+            tracing::debug!("[{current_user_id}] Bus message received");
             // Close the socket on a disconnect targeting this connection, or on hub shutdown.
             // Without the Shutdown arm the task would block on rx.recv() forever during a graceful
             // drain, since the hub keeps this connection's tx alive.
@@ -168,9 +168,9 @@ async fn handle_socket(
                 _ => None,
             };
             if let Some(reason) = close_reason {
-                log::info!("[{current_user_id}] [{connection_id}] ws-close-triggered-by-hub-event: {reason}");
+                tracing::info!("[{current_user_id}] [{connection_id}] ws-close-triggered-by-hub-event: {reason}");
                 if let Err(err) = ws_sender.close().await {
-                    log::debug!("[{current_user_id}] Failed to close websocket on hub event: {err:#?}");
+                    tracing::debug!("[{current_user_id}] Failed to close websocket on hub event: {err:#?}");
                 }
                 break;
             }
@@ -179,13 +179,13 @@ async fn handle_socket(
                 let data = match serde_json::to_string(&msg) {
                     Ok(data) => data,
                     Err(err) => {
-                        log::error!("[{current_user_id}] Failed to serialize message: {err:#?}");
-                        log::trace!("[{current_user_id}] Unserializable message: {msg:#?}");
+                        tracing::error!("[{current_user_id}] Failed to serialize message: {err:#?}");
+                        tracing::trace!("[{current_user_id}] Unserializable message: {msg:#?}");
                         continue;
                     }
                 };
                 if let Err(err) = ws_sender.send(WsMessage::Text(data.into())).await {
-                    log::debug!("[{current_user_id}] Failed to send message to the user: {err:#?}");
+                    tracing::debug!("[{current_user_id}] Failed to send message to the user: {err:#?}");
                 }
             }
         }
@@ -194,19 +194,19 @@ async fn handle_socket(
     let (reason, other_task) = tokio::select! {
         rv_a = (&mut send_task) => {
             if let Err(err) = rv_a {
-                log::error!("[{current_user_id}] Send task failed: {err:#?}");
+                tracing::error!("[{current_user_id}] Send task failed: {err:#?}");
             }
             ("send task exited", recv_task.abort_handle())
         },
         rv_b = (&mut recv_task) => {
             if let Err(err) = rv_b {
-                log::error!("[{current_user_id}] Receive task failed: {err:#?}");
+                tracing::error!("[{current_user_id}] Receive task failed: {err:#?}");
             }
             ("receive task exited", send_task.abort_handle())
         }
     };
 
-    log::info!("[{current_user_id}] [{connection_id}] Disconnecting from hub: {reason}");
+    tracing::info!("[{current_user_id}] [{connection_id}] Disconnecting from hub: {reason}");
     close_connection(&hub_service, current_user_id, connection_id);
     other_task.abort();
 }
@@ -233,7 +233,7 @@ fn open_connection(
             Some(connection_id)
         }
         Err(err) => {
-            log::warn!("[{user_id}] Failed to register connection: {err:#?}");
+            tracing::warn!("[{user_id}] Failed to register connection: {err:#?}");
             None
         }
     }
@@ -248,6 +248,6 @@ fn open_connection(
 )]
 fn close_connection(hub_service: &HubService, user_id: Uuid, connection_id: Uuid) {
     if let Err(err) = hub_service.request_disconnection(user_id, connection_id) {
-        log::info!("[{user_id}] Failed to send disconnect command (hub stopped): {err:#?}");
+        tracing::info!("[{user_id}] Failed to send disconnect command (hub stopped): {err:#?}");
     }
 }

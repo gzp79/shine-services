@@ -157,7 +157,7 @@ impl ExternalLinks for PgIdentityDbContext<'_> {
                     self.email_protection
                         .decrypt(encrypted_email)
                         .inspect_err(|err| {
-                            log::warn!(
+                            tracing::warn!(
                                 "Failed to decrypt external link email, user:[{user_id}], provider:[{}]: {err}",
                                 row.provider
                             )

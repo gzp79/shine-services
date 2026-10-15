@@ -44,7 +44,7 @@ impl ListenState {
     /// Drops the sink so the next connect re-establishes the connection; the streaming task ends on
     /// its own when its stream closes.
     fn disconnect(&mut self) {
-        log::info!("RedisListener disconnecting from Redis...");
+        tracing::info!("RedisListener disconnecting from Redis...");
         self.sink = None;
     }
 
@@ -73,7 +73,7 @@ impl ListenState {
         handler(payload);
         let elapsed = started.elapsed();
         if elapsed >= SLOW_HANDLER {
-            log::warn!("RedisListener handler for channel {channel:?} took {elapsed:?}, blocking dispatch");
+            tracing::warn!("RedisListener handler for channel {channel:?} took {elapsed:?}, blocking dispatch");
         }
     }
 }
@@ -125,7 +125,7 @@ impl RedisListener {
 
             keep_alive.wait().await;
             while keep_alive.is_running() {
-                log::info!("RedisListener reconnection triggered...");
+                tracing::info!("RedisListener reconnection triggered...");
 
                 // Reconnect under the op permit so a concurrent listen() cannot open a second connection.
                 let established = {
@@ -137,7 +137,7 @@ impl RedisListener {
                 };
                 match established {
                     Ok(true) => {
-                        log::info!("RedisListener reconnected to Redis.");
+                        tracing::info!("RedisListener reconnected to Redis.");
                         let connected_at = Instant::now();
                         keep_alive.wait().await;
                         if connected_at.elapsed() >= STABLE {
@@ -152,14 +152,14 @@ impl RedisListener {
                         keep_alive.wait().await;
                     }
                     Err(e) => {
-                        log::error!("RedisListener reconnection error: {e:#?}");
+                        tracing::error!("RedisListener reconnection error: {e:#?}");
                         state.write().await.disconnect();
                         backoff.delay().await;
                     }
                 }
             }
             state.write().await.shutdown();
-            log::info!("RedisListener keep alive is closed");
+            tracing::info!("RedisListener keep alive is closed");
         });
     }
 
@@ -177,17 +177,17 @@ impl RedisListener {
             return Ok(false);
         }
 
-        log::trace!("RedisListener connecting to Redis...");
+        tracing::trace!("RedisListener connecting to Redis...");
         let pubsub = with_timeout(connect_timeout, client.get_async_pubsub()).await?;
         let (mut sink, stream) = pubsub.split();
 
         // The op permit is held, so the handler set can't change while we snapshot and re-subscribe it.
         let channels = state.read().await.handlers.keys().cloned().collect::<Vec<_>>();
         if !channels.is_empty() {
-            log::info!("RedisListener re-subscribing to {} channel(s)...", channels.len());
+            tracing::info!("RedisListener re-subscribing to {} channel(s)...", channels.len());
         }
         for channel in &channels {
-            log::debug!("RedisListener subscribing to channel {channel:?}...");
+            tracing::debug!("RedisListener subscribing to channel {channel:?}...");
             with_timeout(connect_timeout, sink.subscribe(channel)).await?;
         }
 
@@ -213,14 +213,14 @@ impl RedisListener {
                 let channel = msg.get_channel_name();
                 match msg.get_payload::<String>() {
                     Ok(payload) => state.read().await.handle(channel, Some(&payload)),
-                    Err(e) => log::warn!("RedisListener dropping non-UTF-8 payload on channel {channel:?}: {e:#?}"),
+                    Err(e) => tracing::warn!("RedisListener dropping non-UTF-8 payload on channel {channel:?}: {e:#?}"),
                 }
             }
 
             state.write().await.disconnect();
 
             if keep_alive.is_running() {
-                log::info!("RedisListener triggering a reconnection for connection lost...");
+                tracing::info!("RedisListener triggering a reconnection for connection lost...");
                 keep_alive.wake();
             }
         })
@@ -288,7 +288,7 @@ impl RedisListener {
         // reconnect re-subscribes it.
         let sink = self.inner.state.read().await.sink.clone();
         if let Some(mut sink) = sink {
-            log::debug!("RedisListener subscribing to channel {channel:?}...");
+            tracing::debug!("RedisListener subscribing to channel {channel:?}...");
             with_timeout(self.inner.connect_timeout, sink.subscribe(channel)).await?;
         }
         self.inner
@@ -311,7 +311,7 @@ impl RedisListener {
             state.sink.clone()
         };
         if let Some(mut sink) = sink {
-            log::debug!("RedisListener unsubscribing from channel {channel:?}...");
+            tracing::debug!("RedisListener unsubscribing from channel {channel:?}...");
             with_timeout(self.inner.connect_timeout, sink.unsubscribe(channel)).await?;
         }
         Ok(())
@@ -330,7 +330,7 @@ impl RedisListener {
             // subscribed server-side with no local handler. Report the first error afterwards.
             let mut first_err = None;
             for channel in channels {
-                log::debug!("RedisListener unsubscribing from channel {channel:?}...");
+                tracing::debug!("RedisListener unsubscribing from channel {channel:?}...");
                 if let Err(e) = with_timeout(self.inner.connect_timeout, sink.unsubscribe(&channel)).await {
                     first_err = first_err.or(Some(e));
                 }

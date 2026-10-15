@@ -59,7 +59,7 @@ where
         redirect_url: Option<&Url>,
         error_url: Option<&Url>,
     ) -> AuthPage {
-        log::trace!("Completing external link for user: {external_user:#?}");
+        tracing::trace!("Completing external link for user: {external_user:#?}");
         assert!(auth_session.user_session().is_some());
 
         let user = auth_session.user_session().unwrap();
@@ -73,8 +73,8 @@ where
             Err(err) => return self.page_handler.error(auth_session, err, error_url),
         };
 
-        log::info!("User {} linked to provider {}", user.user_id, external_user.provider);
-        log::trace!(
+        tracing::info!("User {} linked to provider {}", user.user_id, external_user.provider);
+        tracing::trace!(
             "User {} linked to: {}({})",
             user.user_id,
             external_user.provider,
@@ -100,11 +100,11 @@ where
         error_url: Option<&Url>,
         create_token: bool,
     ) -> AuthPage {
-        log::trace!("Completing external login for user: {external_user:#?}");
+        tracing::trace!("Completing external login for user: {external_user:#?}");
         assert!(auth_session.user_session().is_none());
         assert!(auth_session.access().is_none());
 
-        log::debug!("Checking if this is a login or registration...");
+        tracing::debug!("Checking if this is a login or registration...");
         let identity = match self
             .link_service
             .find_by_external_link(external_user.provider.as_str(), external_user.provider_id.as_str())
@@ -112,7 +112,7 @@ where
         {
             // Found an existing (linked) account
             Ok(Some(identity)) => {
-                log::info!("User {} logged in via {}", identity.id, external_user.provider);
+                tracing::info!("User {} logged in via {}", identity.id, external_user.provider);
                 identity
             }
             // Create a new (linked) user
@@ -122,7 +122,7 @@ where
                 .await
             {
                 Ok(identity) => {
-                    log::info!("User {} registered via {}", identity.id, external_user.provider);
+                    tracing::info!("User {} registered via {}", identity.id, external_user.provider);
                     identity
                 }
                 Err(CreateUserError::IdentityError(IdentityError::EmailConflict)) => {

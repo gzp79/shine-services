@@ -192,7 +192,7 @@ pub async fn get_token(
             if t.user_id == user.user_id {
                 Some(ActiveToken::from(t))
             } else {
-                log::warn!(
+                tracing::warn!(
                     "User {} tried to access token-hash ({}) of user {}",
                     user.user_id,
                     params.hash,

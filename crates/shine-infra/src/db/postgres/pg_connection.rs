@@ -133,7 +133,7 @@ impl PgConnection<PgRawClient> {
     pub async fn migrate(&mut self, name: &str, migrations: &[String]) -> Result<(), PgError> {
         let migrations = migrations
             .iter()
-            .inspect(|m| log::debug!("Migration: {m}"))
+            .inspect(|m| tracing::debug!("Migration: {m}"))
             .enumerate()
             .map(|(i, m)| Migration::unapplied(&format!("V{i}__{name}"), m))
             .collect::<Result<Vec<_>, _>>()?;
@@ -346,7 +346,7 @@ pub async fn create_postgres_pool(cns: &str) -> Result<PgConnectionPool, PgConne
         .build(postgres_manager)
         .await?;
 
-    log::info!(
+    tracing::info!(
         "Postgres pool created (max_size: {max_size}, pool_timeout: {pool_timeout:?}, connect_timeout: {connect_timeout:?})"
     );
     Ok(postgres)

@@ -24,7 +24,7 @@ pub struct CoreConfig {
 
 impl CoreConfig {
     pub fn new(stage: &str, config_file: Option<PathBuf>) -> Result<Self, ConfigError> {
-        log::info!("Loading configuration for {stage}");
+        tracing::info!("Loading configuration for {stage}");
 
         let root_file = config_file.unwrap_or_else(|| Path::new(&format!("server_config.{stage}.json")).to_owned());
         let mut builder = Config::builder().add_source(File::from(root_file.as_path()));
@@ -33,7 +33,7 @@ impl CoreConfig {
         if version_path.exists() {
             builder = builder.add_source(File::from(version_path));
         } else {
-            log::warn!("No version file found at {}", version_path.display());
+            tracing::warn!("No version file found at {}", version_path.display());
             builder = builder.set_override("version", "custom")?;
         }
 
@@ -42,14 +42,14 @@ impl CoreConfig {
             .set_override("rootFile", root_file.to_str().unwrap().to_string())?;
 
         let s = builder.build()?;
-        let cfg: CoreConfig = s.try_deserialize()/*.inspect(|a| log::error!("{a:#?}"))*/?;
+        let cfg: CoreConfig = s.try_deserialize()/*.inspect(|a| tracing::error!("{a:#?}"))*/?;
 
-        log::debug!("pre-init configuration: {cfg:#?}");
+        tracing::debug!("pre-init configuration: {cfg:#?}");
         Ok(cfg)
     }
 
     pub fn create_config_builder(&self) -> Result<ConfigBuilder<AsyncState>, ConfigError> {
-        log::debug!("Setting up configuration builder...");
+        tracing::debug!("Setting up configuration builder...");
         let mut builder = ConfigBuilder::<AsyncState>::default();
 
         #[derive(Debug)]
@@ -84,7 +84,7 @@ impl CoreConfig {
 
         let mut azure_credentials: Option<Arc<dyn TokenCredential>> = None;
         for layer in layers {
-            log::debug!("Adding layer: {layer:?}");
+            tracing::debug!("Adding layer: {layer:?}");
             match layer {
                 Layer::Base => {
                     builder = builder.add_source(File::from(Path::new(&self.root_file)));
@@ -106,7 +106,7 @@ impl CoreConfig {
                     })?;
 
                     if Path::new(path).exists() {
-                        log::info!("Adding optional config file {path}...");
+                        tracing::info!("Adding optional config file {path}...");
                         builder = builder.add_source(File::from(Path::new(path)));
                     }
                 }
@@ -127,10 +127,10 @@ impl CoreConfig {
                                         uri: Some(url.to_owned()),
                                         cause: err.into(),
                                     })?;
-                            log::info!("Getting azure credentials through environment...");
+                            tracing::info!("Getting azure credentials through environment...");
                             Some(credentials)
                         } else {
-                            log::info!("Getting azure credentials through azure cli...");
+                            tracing::info!("Getting azure credentials through azure cli...");
                             let credentials: Arc<dyn TokenCredential> =
                                 AzureCliCredential::new(None).map_err(|err| ConfigError::FileParse {
                                     uri: Some(url.to_owned()),

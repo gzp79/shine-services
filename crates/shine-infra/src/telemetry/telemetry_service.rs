@@ -122,7 +122,7 @@ impl TelemetryService {
     where
         S: Subscriber + for<'a> LookupSpan<'a> + Send + Sync + 'static,
     {
-        log::debug!("Registering fixed filter tracing layer...");
+        tracing::debug!("Registering fixed filter tracing layer...");
         let filter = config.default_level.as_deref().unwrap_or("warn");
         let env_filter = EnvFilter::builder().parse(filter)?;
 
@@ -133,7 +133,7 @@ impl TelemetryService {
     where
         S: Subscriber + for<'a> LookupSpan<'a> + Send + Sync + 'static,
     {
-        log::debug!("Registering dynamic filter tracing layer...");
+        tracing::debug!("Registering dynamic filter tracing layer...");
 
         let filter = config.default_level.as_deref().unwrap_or("warn");
         let env_filter = EnvFilter::builder().parse(filter)?;
@@ -150,7 +150,7 @@ impl TelemetryService {
     where
         S: Subscriber + for<'a> LookupSpan<'a> + Send + Sync + 'static,
     {
-        log::debug!("Registering console log tracing layer...");
+        tracing::debug!("Registering console log tracing layer...");
 
         // The HTTP request span carries many attributes meant for the trace backend; keep them out of the console prefix.
         let console_layer = tracing_subscriber::fmt::Layer::new()
@@ -173,13 +173,13 @@ impl TelemetryService {
 
         builder = match &config.tracing {
             Tracing::StdOut => {
-                log::info!("Registering StdOut tracing exporter...");
+                tracing::info!("Registering StdOut tracing exporter...");
                 let exporter = opentelemetry_stdout::SpanExporter::default();
                 builder.with_simple_exporter(exporter)
             }
             #[cfg(feature = "ot_otlp")]
             Tracing::OpenTelemetryProtocol { endpoint } => {
-                log::info!("Registering OpenTelemetryProtocol tracing exporter...");
+                tracing::info!("Registering OpenTelemetryProtocol tracing exporter...");
                 let exporter = opentelemetry_otlp::SpanExporter::builder()
                     .with_tonic()
                     .with_endpoint(endpoint)
@@ -188,7 +188,7 @@ impl TelemetryService {
             }
             #[cfg(feature = "ot_app_insight")]
             Tracing::AppInsight { connection_string } => {
-                log::info!("Registering AppInsight tracing exporter...");
+                tracing::info!("Registering AppInsight tracing exporter...");
                 let exporter = opentelemetry_application_insights::Exporter::new_from_connection_string(
                     connection_string,
                     reqwest::Client::new(),
@@ -223,7 +223,7 @@ impl TelemetryService {
         let log_metrics = self.metrics.as_ref().map(|m| LogMetricsLayer::new(&m.meter));
 
         if matches!(config.tracing, Tracing::None) {
-            log::warn!("Trace is disabled");
+            tracing::warn!("Trace is disabled");
 
             if config.enable_console_log {
                 if config.allow_reconfigure {
@@ -242,7 +242,7 @@ impl TelemetryService {
                     )?;
                 }
             } else {
-                log::warn!("Service is configured for silent mode");
+                tracing::warn!("Service is configured for silent mode");
             }
         } else {
             match (config.enable_console_log, config.allow_reconfigure) {
@@ -295,12 +295,12 @@ impl TelemetryService {
         // Install meter provider for opentelemetry
         let provider = match &config.metrics {
             Metering::None => {
-                log::warn!("Metrics are disabled");
+                tracing::warn!("Metrics are disabled");
                 return Ok(());
             }
             #[cfg(feature = "ot_otlp")]
             Metering::OpenTelemetryProtocol { endpoint } => {
-                log::info!("Registering OpenTelemetryProtocol metric exporter...");
+                tracing::info!("Registering OpenTelemetryProtocol metric exporter...");
                 let exporter = opentelemetry_otlp::MetricExporter::builder()
                     .with_tonic()
                     .with_endpoint(endpoint)

@@ -15,7 +15,7 @@ pub struct AzureKeyvaultConfigError(#[source] azure_core::Error);
 
 impl From<AzureKeyvaultConfigError> for ConfigError {
     fn from(err: AzureKeyvaultConfigError) -> Self {
-        log::error!("{err:?}");
+        tracing::error!("{err:?}");
         ConfigError::Foreign(Box::new(err))
     }
 }
@@ -50,7 +50,7 @@ impl ConfigAsyncSource for AzureKeyvaultConfigSource {
     async fn collect(&self) -> Result<ConfigMap<String, ConfigValue>, ConfigError> {
         let mut config = ConfigMap::new();
 
-        log::info!("Loading secrets from {} ...", self.keyvault_url);
+        tracing::info!("Loading secrets from {} ...", self.keyvault_url);
         let origin = self.keyvault_url.to_string();
         let mut pager = self
             .client
@@ -61,7 +61,7 @@ impl ConfigAsyncSource for AzureKeyvaultConfigSource {
                 let key = id.split('/').next_back();
                 if let Some(key) = key {
                     let path = key.replace('-', ".");
-                    log::debug!("Reading secret {key:?}");
+                    tracing::debug!("Reading secret {key:?}");
                     let secret = self
                         .client
                         .get_secret(key, None)
@@ -85,7 +85,7 @@ impl ConfigAsyncSource for AzureKeyvaultConfigSource {
             }
         }
 
-        //log::info!("keyvault config: {:#?}", config);
+        //tracing::info!("keyvault config: {:#?}", config);
         Ok(config)
     }
 }

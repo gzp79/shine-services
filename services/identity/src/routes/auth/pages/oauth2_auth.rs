@@ -80,7 +80,7 @@ pub async fn oauth2_auth(
 
     // Check for Cross Site Request Forgery
     if csrf_state != auth_csrf_state {
-        log::trace!("CSRF test failed: [{csrf_state}], [{auth_csrf_state}]");
+        tracing::trace!("CSRF test failed: [{csrf_state}], [{auth_csrf_state}]");
         return req.error_page(ExternalLoginError::InvalidCSRF, error_url.as_ref());
     }
 

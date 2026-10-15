@@ -38,7 +38,7 @@ async fn subscribe_session_refresh_events(state: &AppState) {
             };
 
             if let Err(err) = self.0.user_session_handler().refresh_user_session(user_id).await {
-                log::error!("Failed to refresh session for user ({user_id}) after UserEvent {event:?}: {err:?}");
+                tracing::error!("Failed to refresh session for user ({user_id}) after UserEvent {event:?}: {err:?}");
             }
         }
     }
@@ -53,7 +53,9 @@ async fn subscribe_session_refresh_events(state: &AppState) {
             };
 
             if let Err(err) = self.0.user_session_handler().refresh_user_session(user_id).await {
-                log::error!("Failed to refresh session for user ({user_id}) after UserLinkEvent {event:?}: {err:?}");
+                tracing::error!(
+                    "Failed to refresh session for user ({user_id}) after UserLinkEvent {event:?}: {err:?}"
+                );
             }
         }
     }

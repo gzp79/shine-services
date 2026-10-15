@@ -131,8 +131,8 @@ impl Sessions for RedisSessionDbContext<'_> {
         is_linked: bool,
     ) -> Result<Session, SessionError> {
         let (sentinel_key, key) = self.to_redis_keys(identity.id, &session_key_hash);
-        log::debug!("Storing session, user:[{}]", identity.id);
-        log::trace!("Storing session, sentinel:[{sentinel_key}], data:[{key}]");
+        tracing::debug!("Storing session, user:[{}]", identity.id);
+        tracing::trace!("Storing session, sentinel:[{sentinel_key}], data:[{key}]");
 
         // Session management in redis:
         // The initial step involves attempting to create a sentinel using a unique key. If this operation
@@ -200,7 +200,7 @@ impl Sessions for RedisSessionDbContext<'_> {
                 expire_at: Utc::now() + Duration::seconds(self.ttl_session),
             })
         } else {
-            log::warn!("Session key conflict, user:[{}]", identity.id);
+            tracing::warn!("Session key conflict, user:[{}]", identity.id);
             Err(SessionError::KeyConflict)
         }
     }
@@ -249,7 +249,7 @@ impl Sessions for RedisSessionDbContext<'_> {
         session_key_hash: &str,
     ) -> Result<Option<Session>, SessionError> {
         let (sentinel_key, key) = self.to_redis_keys(user_id, session_key_hash);
-        log::debug!("Finding session, user:[{user_id}]");
+        tracing::debug!("Finding session, user:[{user_id}]");
 
         // query sentinel and the available data versions
         let (sentinel, sentinel_ttl, data, data_ttl): (
@@ -296,8 +296,8 @@ impl Sessions for RedisSessionDbContext<'_> {
         is_linked: bool,
     ) -> Result<Option<Session>, SessionError> {
         let (sentinel_key, key) = self.to_redis_keys(identity.id, session_key_hash);
-        log::debug!("Updating session, user:[{}]", identity.id);
-        log::trace!("Updating session, sentinel:[{sentinel_key}], data:[{key}]");
+        tracing::debug!("Updating session, user:[{}]", identity.id);
+        tracing::trace!("Updating session, sentinel:[{sentinel_key}], data:[{key}]");
 
         let is_open = self.client.exists(sentinel_key).await.map_err(RedisError::RawError)?;
         if is_open {
@@ -326,7 +326,7 @@ impl Sessions for RedisSessionDbContext<'_> {
     #[instrument(level = "info", skip_all, fields(user_id = %user_id))]
     async fn delete_session_by_hash(&mut self, user_id: Uuid, session_key_hash: &str) -> Result<(), SessionError> {
         let (sentinel_key, key) = self.to_redis_keys(user_id, session_key_hash);
-        log::debug!("Removing session, user:[{user_id}]");
+        tracing::debug!("Removing session, user:[{user_id}]");
 
         // todo: https://github.com/redis-rs/redis-rs/issues/1228, https://github.com/redis-rs/redis-rs/issues/1322
         () = self
@@ -342,7 +342,7 @@ impl Sessions for RedisSessionDbContext<'_> {
         let keys = self.find_redis_keys(user_id).await?;
 
         if !keys.is_empty() {
-            log::debug!("Removing all sessions, user:[{user_id}], keys: {}", keys.len());
+            tracing::debug!("Removing all sessions, user:[{user_id}], keys: {}", keys.len());
             // todo: https://github.com/redis-rs/redis-rs/issues/1228, https://github.com/redis-rs/redis-rs/issues/1322
             () = self.client.del(keys).await.map_err(RedisError::RawError)?;
         }

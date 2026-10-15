@@ -98,7 +98,7 @@ impl<DB: IdentityDb> TokenService<DB> {
 
         let mut retry_count = 0;
         loop {
-            log::debug!("Creating new token; retry: {retry_count:#?}");
+            tracing::debug!("Creating new token; retry: {retry_count:#?}");
             if retry_count > MAX_RETRY_COUNT {
                 return Err(TokenError::RetryLimitReached);
             }

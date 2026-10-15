@@ -268,7 +268,9 @@ pub async fn create_redis_pool(cns: &str) -> Result<RedisConnectionPool, RedisCo
         .build(redis_manager)
         .await?;
 
-    log::info!("Redis pool created (max_size: {max_size}, pool_timeout: {pool_timeout:?}, timeout_ms: {timeout_ms:?})");
+    tracing::info!(
+        "Redis pool created (max_size: {max_size}, pool_timeout: {pool_timeout:?}, timeout_ms: {timeout_ms:?})"
+    );
     Ok(redis)
 }
 

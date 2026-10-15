@@ -224,16 +224,16 @@ impl Identities for PgIdentityDbContext<'_> {
         {
             Ok(created) => created,
             Err(err) if err.is_constraint("identities", "identities_pkey") => {
-                log::debug!("Conflicting user id: {user_id}, rolling back user creation");
+                tracing::debug!("Conflicting user id: {user_id}, rolling back user creation");
                 return Err(IdentityError::UserIdConflict);
             }
             Err(err) if err.is_constraint("identities", "idx_name") => {
-                log::debug!("Name conflict for user {user_id}, rolling back user creation");
-                log::trace!("Conflicting name: {user_name}");
+                tracing::debug!("Name conflict for user {user_id}, rolling back user creation");
+                tracing::trace!("Conflicting name: {user_name}");
                 return Err(IdentityError::NameConflict);
             }
             Err(err) if err.is_constraint("identities", "idx_email_hash") => {
-                log::info!("Email conflict for user {user_id}, rolling back user creation");
+                tracing::info!("Email conflict for user {user_id}, rolling back user creation");
                 return Err(IdentityError::EmailConflict);
             }
             Err(err) => {
@@ -315,12 +315,12 @@ impl Identities for PgIdentityDbContext<'_> {
             Ok(Some(row)) => row,
             Ok(None) => return Ok(None),
             Err(err) if err.is_constraint("identities", "idx_name") => {
-                log::info!("Name conflict for user {id}, rolling back user update");
-                log::trace!("Conflicting name: {name:?}");
+                tracing::info!("Name conflict for user {id}, rolling back user update");
+                tracing::trace!("Conflicting name: {name:?}");
                 return Err(IdentityError::NameConflict);
             }
             Err(err) if err.is_constraint("identities", "idx_email_hash") => {
-                log::info!("Email conflict for user {id}, rolling back user update");
+                tracing::info!("Email conflict for user {id}, rolling back user update");
                 return Err(IdentityError::EmailConflict);
             }
             Err(err) => return Err(PgError::from(err).into()),

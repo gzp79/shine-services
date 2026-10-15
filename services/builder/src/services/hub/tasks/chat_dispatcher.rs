@@ -38,7 +38,7 @@ impl ChatDispatcher {
         // here is non-fatal: the periodic tick still delivers, only without the push latency.
         let notify = wake.clone();
         if let Err(err) = chat_service.listen_to_comments(move || notify.notify_one()).await {
-            log::error!("Failed to listen for chat appends; falling back to periodic delivery only: {err:#?}");
+            tracing::error!("Failed to listen for chat appends; falling back to periodic delivery only: {err:#?}");
         }
 
         let consumer = ChatDispatcher {
@@ -79,7 +79,7 @@ impl ConnectionConsumer for ChatDispatcher {
         let batch = match self.chat_service.list_after(&oldest, BATCH_LIMIT).await {
             Ok(batch) => batch,
             Err(err) => {
-                log::error!("Failed to read chat stream from cursor {oldest}: {err:#?}");
+                tracing::error!("Failed to read chat stream from cursor {oldest}: {err:#?}");
                 return;
             }
         };
@@ -120,7 +120,7 @@ impl ConnectionConsumer for ChatDispatcher {
                     .send_to_connection(*connection_id, HubMessage::Chat(ChatBatch { comments }))
                     .await
                 {
-                    log::error!("[{connection_id}] Failed to deliver chat batch: {err:#?}");
+                    tracing::error!("[{connection_id}] Failed to deliver chat batch: {err:#?}");
                     continue;
                 }
                 hub_metrics().chat_delivered.add(delivered, &[]);

@@ -63,7 +63,7 @@ pub async fn guest_login(
     }
 
     // 5. Clear auth state and register guest
-    log::debug!("New user registration flow triggered...");
+    tracing::debug!("New user registration flow triggered...");
     let auth_session = req.clear_auth_state().await.into_auth_session();
 
     state
