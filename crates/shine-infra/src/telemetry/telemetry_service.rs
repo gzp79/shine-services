@@ -1,3 +1,4 @@
+use crate::telemetry::log_metrics::LogMetricsLayer;
 use crate::telemetry::otel_http::{CONSOLE_TARGET, TRACING_TARGET};
 use crate::telemetry::{Metering, OtelLayer, TelemetryBuildError, TelemetryConfig, TelemetryError, Tracing};
 use opentelemetry::{
@@ -219,6 +220,8 @@ impl TelemetryService {
     ) -> Result<(), TelemetryBuildError> {
         use tracing_subscriber::registry;
 
+        let log_metrics = self.metrics.as_ref().map(|m| LogMetricsLayer::new(&m.meter));
+
         if matches!(config.tracing, Tracing::None) {
             log::warn!("Trace is disabled");
 
@@ -227,13 +230,15 @@ impl TelemetryService {
                     Self::set_global_tracing_pipeline(
                         registry()
                             .with(self.tracing_dyn_filter(config)?)
-                            .with(self.tracing_console_log(config)?),
+                            .with(self.tracing_console_log(config)?)
+                            .with(log_metrics),
                     )?;
                 } else {
                     Self::set_global_tracing_pipeline(
                         registry()
                             .with(self.tracing_fixed_filter(config)?)
-                            .with(self.tracing_console_log(config)?),
+                            .with(self.tracing_console_log(config)?)
+                            .with(log_metrics),
                     )?;
                 }
             } else {
@@ -246,7 +251,8 @@ impl TelemetryService {
                         registry()
                             .with(self.tracing_dyn_filter(config)?)
                             .with(self.tracing_console_log(config)?)
-                            .with(self.tracing_ot(config, resource, scope)?),
+                            .with(self.tracing_ot(config, resource, scope)?)
+                            .with(log_metrics),
                     )?;
                 }
                 (true, false) => {
@@ -254,21 +260,24 @@ impl TelemetryService {
                         registry()
                             .with(self.tracing_fixed_filter(config)?)
                             .with(self.tracing_console_log(config)?)
-                            .with(self.tracing_ot(config, resource, scope)?),
+                            .with(self.tracing_ot(config, resource, scope)?)
+                            .with(log_metrics),
                     )?;
                 }
                 (false, true) => {
                     Self::set_global_tracing_pipeline(
                         registry()
                             .with(self.tracing_dyn_filter(config)?)
-                            .with(self.tracing_ot(config, resource, scope)?),
+                            .with(self.tracing_ot(config, resource, scope)?)
+                            .with(log_metrics),
                     )?;
                 }
                 (false, false) => {
                     Self::set_global_tracing_pipeline(
                         registry()
                             .with(self.tracing_fixed_filter(config)?)
-                            .with(self.tracing_ot(config, resource, scope)?),
+                            .with(self.tracing_ot(config, resource, scope)?)
+                            .with(log_metrics),
                     )?;
                 }
             }

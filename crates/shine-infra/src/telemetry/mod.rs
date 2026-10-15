@@ -1,3 +1,4 @@
+mod log_metrics;
 mod metric_label;
 mod otel_http;
 mod otel_layer;
