@@ -22,6 +22,7 @@ use shine_infra::{
         responses::{IntoProblemResponse, Problem, ProblemConfig, ProblemResponse},
     },
 };
+use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::{
     field::{display, Empty},
@@ -33,6 +34,9 @@ use uuid::Uuid;
 /// without draining them is considered too slow, and the hub drops its subscription — closing the
 /// receiver and thus the socket. Internal hub consumers are unbounded and unaffected.
 const WS_CLIENT_CHANNEL_CAPACITY: usize = 256;
+
+/// Max wait after a client close for the hub to drop the connection, before the send task is aborted.
+const SEND_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[utoipa::path(
     get,
@@ -191,24 +195,37 @@ async fn handle_socket(
         }
     });
 
-    let (reason, other_task) = tokio::select! {
+    let send_exited = tokio::select! {
         rv_a = (&mut send_task) => {
             if let Err(err) = rv_a {
                 tracing::error!("[{current_user_id}] Send task failed: {err:#?}");
             }
-            ("send task exited", recv_task.abort_handle())
+            true
         },
         rv_b = (&mut recv_task) => {
             if let Err(err) = rv_b {
                 tracing::error!("[{current_user_id}] Receive task failed: {err:#?}");
             }
-            ("receive task exited", send_task.abort_handle())
+            false
         }
     };
 
+    let reason = if send_exited {
+        "send task exited"
+    } else {
+        "receive task exited"
+    };
     tracing::info!("[{current_user_id}] [{connection_id}] Disconnecting from hub: {reason}");
     close_connection(&hub_service, current_user_id, connection_id);
-    other_task.abort();
+    if send_exited {
+        recv_task.abort();
+    } else {
+        // Keep `rx` open until the hub drops the connection (the send task ends when `rx` closes), so
+        // sends in the meantime do not find a closed channel and count a client close as a dead channel.
+        if tokio::time::timeout(SEND_DRAIN_TIMEOUT, &mut send_task).await.is_err() {
+            send_task.abort();
+        }
+    }
 }
 
 /// Registers the connection in the hub, now that the upgrade has completed.

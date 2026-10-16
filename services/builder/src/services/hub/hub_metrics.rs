@@ -2,6 +2,7 @@ use opentelemetry::{
     global,
     metrics::{Counter, Histogram, UpDownCounter},
 };
+use shine_infra::telemetry::SECONDS_BUCKETS;
 use std::sync::LazyLock;
 
 /// Metrics of the hub. Unlike the request metrics, the hub works asynchronously: commands are queued and processed
@@ -54,11 +55,13 @@ impl HubMetrics {
             command_duration: meter
                 .f64_histogram("hub_command_duration")
                 .with_unit("s")
+                .with_boundaries(SECONDS_BUCKETS.to_vec())
                 .with_description("Processing time of a hub control command")
                 .build(),
             command_queue_delay: meter
                 .f64_histogram("hub_command_queue_delay")
                 .with_unit("s")
+                .with_boundaries(SECONDS_BUCKETS.to_vec())
                 .with_description("Time a hub control command waits before it is processed")
                 .build(),
             messages_sent: meter
@@ -72,6 +75,7 @@ impl HubMetrics {
             tick_duration: meter
                 .f64_histogram("hub_tick_duration")
                 .with_unit("s")
+                .with_boundaries(SECONDS_BUCKETS.to_vec())
                 .with_description("Duration of the ticks of the hub background consumers")
                 .build(),
             ws_messages_received: meter

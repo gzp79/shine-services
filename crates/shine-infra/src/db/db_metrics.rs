@@ -1,4 +1,4 @@
-use crate::telemetry::label;
+use crate::telemetry::{label, SECONDS_BUCKETS};
 use opentelemetry::{global, metrics::Histogram};
 use std::{future::Future, sync::LazyLock, time::Instant};
 
@@ -6,6 +6,7 @@ static DB_OPERATION_DURATION: LazyLock<Histogram<f64>> = LazyLock::new(|| {
     global::meter("shine-infra-db")
         .f64_histogram("db_client_operation_duration")
         .with_unit("s")
+        .with_boundaries(SECONDS_BUCKETS.to_vec())
         .with_description("Duration of the database client operations")
         .build()
 });

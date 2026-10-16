@@ -247,6 +247,9 @@ impl TelemetryService {
                 }
             } else {
                 tracing::warn!("Service is configured for silent mode");
+                if log_metrics.is_some() {
+                    Self::set_global_tracing_pipeline(registry().with(log_metrics))?;
+                }
             }
         } else {
             match (config.enable_console_log, config.allow_reconfigure) {

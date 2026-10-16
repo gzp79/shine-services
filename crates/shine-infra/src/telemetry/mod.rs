@@ -9,7 +9,7 @@ mod telemetry_router;
 mod telemetry_service;
 
 pub use self::{
-    metric_label::label,
+    metric_label::{label, SECONDS_BUCKETS},
     otel_http::{current_span_context, link_span, make_console_span, record_user_id, RequestSpan, TRACE_ID_HEADER},
     otel_layer::*,
     secret_tag::{secret_tag, SecretTag},

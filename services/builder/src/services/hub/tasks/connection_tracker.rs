@@ -127,12 +127,10 @@ pub async fn run_connection_loop<C: ConnectionConsumer>(
 
         tokio::select! {
             // The tick is prioritized so a heavy event stream cannot starve TTL refreshes and let a
-            // live connection expire.
+            // live connection expire. Lifecycle events come before wakes: a wake permit stored during
+            // `on_tick` is ready at once, so steady wakes would otherwise starve the connection view.
             biased;
             _ = ticker.tick() => {
-                run_tick(&mut consumer, &tracker).await;
-            }
-            _ = woken => {
                 run_tick(&mut consumer, &tracker).await;
             }
             message = subscription.recv() => match message {
@@ -148,6 +146,9 @@ pub async fn run_connection_loop<C: ConnectionConsumer>(
                     break;
                 }
             },
+            _ = woken => {
+                run_tick(&mut consumer, &tracker).await;
+            }
         }
     }
 }
