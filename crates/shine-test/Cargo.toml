@@ -3,8 +3,13 @@ name = "shine-test"
 version.workspace = true
 edition.workspace = true
 
+[features]
+# Client of the toxiproxy API, to inject network faults (native only).
+toxiproxy = ["dep:reqwest", "dep:serde_json", "tokio/rt"]
+
 [dependencies]
 log = { workspace = true }
+tracing = { workspace = true }
 
 tracing-subscriber = { workspace = true, features = [
     "std",
@@ -20,6 +25,8 @@ shine-test-macros = { workspace = true }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { workspace = true, features = ["macros"] }
 serial_test = { workspace = true }
+reqwest = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-logger = { workspace = true }

@@ -34,7 +34,7 @@ impl ConnectionTracker {
                 self.connections.insert(user_id, (connection_id, session_key));
                 false
             }
-            HubMessage::Hub(HubEvent::UserDisconnected { user_id, connection_id }) => {
+            HubMessage::Hub(HubEvent::UserDisconnected { user_id, connection_id, .. }) => {
                 // Only forget the user when the disconnected connection is the one we track; a
                 // stale disconnect for a replaced connection must not drop the fresh reconnect.
                 if self.connections.get(&user_id).map(|(id, _)| *id) == Some(connection_id) {
@@ -154,51 +154,5 @@ pub async fn run_connection_loop<C: ConnectionConsumer>(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use ring::rand::SystemRandom;
-    use shine_test::test;
-    use tokio::sync::mpsc;
-
-    fn connected(user_id: Uuid, connection_id: Uuid) -> HubMessage {
-        HubMessage::Hub(HubEvent::UserConnected {
-            user_id,
-            connection_id,
-            session_key: SessionKey::new_random(&SystemRandom::new()).unwrap(),
-        })
-    }
-
-    struct Probe {
-        tx: mpsc::UnboundedSender<usize>,
-    }
-
-    impl ConnectionConsumer for Probe {
-        async fn on_tick(&mut self, tracker: &ConnectionTracker) {
-            let _ = self.tx.send(tracker.connections().len());
-        }
-    }
-
-    #[test]
-    async fn loop_feeds_current_connections_to_consumer() {
-        let (sub_tx, sub_rx) = mpsc::unbounded_channel();
-        let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
-        tokio::spawn(run_connection_loop(
-            sub_rx,
-            Duration::from_millis(5),
-            None,
-            Probe { tx: probe_tx },
-        ));
-
-        sub_tx.send(connected(Uuid::new_v4(), Uuid::new_v4())).unwrap();
-
-        // Wait until a tick observes the tracked connection.
-        let saw_one = tokio::time::timeout(Duration::from_secs(1), async {
-            while probe_rx.recv().await != Some(1) {}
-        })
-        .await;
-        assert!(
-            saw_one.is_ok(),
-            "consumer should observe the connection the loop event-sourced"
-        );
-    }
-}
+#[path = "connection_tracker_test.rs"]
+mod connection_tracker_test;

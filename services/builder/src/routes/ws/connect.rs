@@ -1,28 +1,28 @@
 use crate::{
     app_state::AppState,
-    models::messages::{HubEvent, HubMessage, TopicKey},
+    models::messages::{DisconnectReason, HubEvent, HubMessage, TopicKey},
     routes::ws::message::{ChatWireComment, WSMessageRequest, WSMessageResponse},
     services::{hub_metrics, ChatService, HubService},
 };
 use axum::{
     extract::{
-        ws::{Message as WsMessage, WebSocket, WebSocketUpgrade},
+        ws::{close_code, CloseFrame, Message as WsMessage, WebSocket, WebSocketUpgrade},
         State,
     },
     response::IntoResponse,
     Extension,
 };
-use futures::{SinkExt, StreamExt};
+use futures::{Sink, SinkExt, Stream, StreamExt};
 use opentelemetry::trace::SpanContext;
 use shine_infra::{
-    session::{CheckedCurrentUser, CurrentUser},
+    session::{CheckedCurrentUser, CurrentUser, SessionKey},
     telemetry::{current_span_context, label, link_span},
     web::{
         extracts::{Origin, TargetHost},
         responses::{IntoProblemResponse, Problem, ProblemConfig, ProblemResponse},
     },
 };
-use std::time::Duration;
+use std::{fmt::Debug, time::Duration};
 use tokio::sync::mpsc;
 use tracing::{
     field::{display, Empty},
@@ -33,7 +33,24 @@ use uuid::Uuid;
 /// Per-WS-client egress buffer capacity. A client that lets this many broadcast messages queue
 /// without draining them is considered too slow, and the hub drops its subscription — closing the
 /// receiver and thus the socket. Internal hub consumers are unbounded and unaffected.
-const WS_CLIENT_CHANNEL_CAPACITY: usize = 256;
+const WS_CLIENT_CHANNEL_CAPACITY: usize = 1000;
+
+/// Close code sent when the hub drops a connection; the frame's reason carries the drop reason.
+const CLOSE_CODE_DROPPED: u16 = 4000;
+
+/// Close code of a hub drop reason.
+fn close_code(reason: DisconnectReason) -> u16 {
+    match reason {
+        DisconnectReason::Shutdown => close_code::AWAY,
+        DisconnectReason::Client
+        | DisconnectReason::Replaced
+        | DisconnectReason::RegistryInactive
+        | DisconnectReason::HeartbeatInactive
+        | DisconnectReason::SessionInvalid
+        | DisconnectReason::SlowConsumer
+        | DisconnectReason::DeadChannel => CLOSE_CODE_DROPPED,
+    }
+}
 
 /// Max wait after a client close for the hub to drop the connection, before the send task is aborted.
 const SEND_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
@@ -80,6 +97,7 @@ pub async fn connect(
 
 fn event_to_wire_message(message: HubMessage) -> Option<WSMessageResponse> {
     match message {
+        HubMessage::Hub(_) => None,
         HubMessage::Chat(batch) => {
             let messages = batch
                 .comments
@@ -92,7 +110,6 @@ fn event_to_wire_message(message: HubMessage) -> Option<WSMessageResponse> {
                 .collect();
             Some(WSMessageResponse::Chat { messages })
         }
-        _ => None,
     }
 }
 
@@ -103,12 +120,37 @@ async fn handle_socket(
     chat_service: ChatService,
     span_context: SpanContext,
 ) {
-    let (mut ws_sender, mut ws_receiver) = socket.split();
-    let current_user_id = user.user_id;
+    let (ws_sender, ws_receiver) = socket.split();
+    serve_socket(
+        ws_sender,
+        ws_receiver,
+        user.user_id,
+        user.key,
+        hub_service,
+        chat_service,
+        span_context,
+    )
+    .await
+}
 
-    let (tx, mut rx) = mpsc::channel::<HubMessage>(WS_CLIENT_CHANNEL_CAPACITY);
+/// Runs a client socket as a hub connection until either side ends it.
+async fn serve_socket<S, R, E>(
+    mut ws_sender: S,
+    mut ws_receiver: R,
+    current_user_id: Uuid,
+    session_key: SessionKey,
+    hub_service: HubService,
+    chat_service: ChatService,
+    span_context: SpanContext,
+) where
+    S: Sink<WsMessage> + Unpin + Send + 'static,
+    S::Error: Debug,
+    R: Stream<Item = Result<WsMessage, E>> + Unpin + Send + 'static,
+    E: Send + 'static,
+{
+    let (tx, rx) = mpsc::channel::<HubMessage>(WS_CLIENT_CHANNEL_CAPACITY);
 
-    let Some(connection_id) = open_connection(span_context, &hub_service, user, tx) else {
+    let Some(connection_id) = open_connection(span_context, &hub_service, current_user_id, session_key, tx) else {
         // There is no live connection to keep, so close the socket without emitting a disconnect for it.
         if let Err(err) = ws_sender.close().await {
             tracing::debug!("[{current_user_id}] Failed to close websocket after failed registration: {err:#?}");
@@ -158,42 +200,7 @@ async fn handle_socket(
         })
     };
 
-    let mut send_task = tokio::spawn(async move {
-        while let Some(message) = rx.recv().await {
-            tracing::debug!("[{current_user_id}] Bus message received");
-            // Close the socket on a disconnect targeting this connection, or on hub shutdown.
-            // Without the Shutdown arm the task would block on rx.recv() forever during a graceful
-            // drain, since the hub keeps this connection's tx alive.
-            let close_reason = match &message {
-                HubMessage::Hub(HubEvent::UserDisconnected {
-                    connection_id: disconnected, ..
-                }) if *disconnected == connection_id => Some("UserDisconnected"),
-                HubMessage::Hub(HubEvent::Shutdown) => Some("Shutdown"),
-                _ => None,
-            };
-            if let Some(reason) = close_reason {
-                tracing::info!("[{current_user_id}] [{connection_id}] ws-close-triggered-by-hub-event: {reason}");
-                if let Err(err) = ws_sender.close().await {
-                    tracing::debug!("[{current_user_id}] Failed to close websocket on hub event: {err:#?}");
-                }
-                break;
-            }
-
-            if let Some(msg) = event_to_wire_message(message) {
-                let data = match serde_json::to_string(&msg) {
-                    Ok(data) => data,
-                    Err(err) => {
-                        tracing::error!("[{current_user_id}] Failed to serialize message: {err:#?}");
-                        tracing::trace!("[{current_user_id}] Unserializable message: {msg:#?}");
-                        continue;
-                    }
-                };
-                if let Err(err) = ws_sender.send(WsMessage::Text(data.into())).await {
-                    tracing::debug!("[{current_user_id}] Failed to send message to the user: {err:#?}");
-                }
-            }
-        }
-    });
+    let mut send_task = tokio::spawn(forward_egress(rx, ws_sender, current_user_id, connection_id));
 
     let send_exited = tokio::select! {
         rv_a = (&mut send_task) => {
@@ -228,23 +235,70 @@ async fn handle_socket(
     }
 }
 
+/// Forwards the hub's messages to the socket, and closes it once the hub ends the connection.
+async fn forward_egress<S>(mut rx: mpsc::Receiver<HubMessage>, mut ws_sender: S, user_id: Uuid, connection_id: Uuid)
+where
+    S: Sink<WsMessage> + Unpin,
+    S::Error: Debug,
+{
+    // The hub ends the socket by dropping its sender, after the socket's own `UserDisconnected` when it
+    // removed the connection itself (the event is lost when the channel is full).
+    let mut close_frame = None;
+    while let Some(message) = rx.recv().await {
+        tracing::debug!("[{user_id}] Bus message received");
+        if let HubMessage::Hub(HubEvent::UserDisconnected {
+            connection_id: closed, reason, ..
+        }) = message
+        {
+            if closed != connection_id || !reason.is_drop() {
+                continue;
+            }
+            tracing::info!("[{user_id}] [{connection_id}] ws-close-triggered-by-hub: {reason}");
+            close_frame = Some(CloseFrame {
+                code: close_code(reason),
+                reason: reason.as_str().into(),
+            });
+            break;
+        }
+
+        if let Some(msg) = event_to_wire_message(message) {
+            let data = match serde_json::to_string(&msg) {
+                Ok(data) => data,
+                Err(err) => {
+                    tracing::error!("[{user_id}] Failed to serialize message: {err:#?}");
+                    tracing::trace!("[{user_id}] Unserializable message: {msg:#?}");
+                    continue;
+                }
+            };
+            if let Err(err) = ws_sender.send(WsMessage::Text(data.into())).await {
+                tracing::debug!("[{user_id}] Failed to send message to the user: {err:#?}");
+            }
+        }
+    }
+
+    if let Err(err) = ws_sender.send(WsMessage::Close(close_frame)).await {
+        tracing::debug!("[{user_id}] Failed to close websocket: {err:#?}");
+    }
+}
+
 /// Registers the connection in the hub, now that the upgrade has completed.
 /// Linked to the upgrade request, not parented, so the request span ends with the 101 response.
 #[instrument(
     name = "ws open",
     parent = None,
     skip_all,
-    fields(enduser.id = %user.user_id, ws.connection_id = Empty)
+    fields(enduser.id = %user_id, ws.connection_id = Empty)
 )]
 fn open_connection(
     span_context: SpanContext,
     hub_service: &HubService,
-    user: CurrentUser,
+    user_id: Uuid,
+    session_key: SessionKey,
     tx: mpsc::Sender<HubMessage>,
 ) -> Option<Uuid> {
     link_span(&Span::current(), span_context);
-    let user_id = user.user_id;
-    match hub_service.request_connection(user_id, user.key, tx, vec![TopicKey::Hub]) {
+    // The Hub topic is low frequency; the socket ignores every event but its own end.
+    match hub_service.request_connection(user_id, session_key, tx, vec![TopicKey::Chat, TopicKey::Hub]) {
         Ok(connection_id) => {
             Span::current().record("ws.connection_id", display(connection_id));
             Some(connection_id)
@@ -268,3 +322,7 @@ fn close_connection(hub_service: &HubService, user_id: Uuid, connection_id: Uuid
         tracing::info!("[{user_id}] Failed to send disconnect command (hub stopped): {err:#?}");
     }
 }
+
+#[cfg(test)]
+#[path = "connect_test.rs"]
+mod connect_test;

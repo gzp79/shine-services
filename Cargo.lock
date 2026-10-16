@@ -4090,9 +4090,12 @@ name = "shine-test"
 version = "0.1.0"
 dependencies = [
  "log",
+ "reqwest",
+ "serde_json",
  "serial_test",
  "shine-test-macros",
  "tokio",
+ "tracing",
  "tracing-subscriber",
  "wasm-bindgen-test",
  "wasm-logger",

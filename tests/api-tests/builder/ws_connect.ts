@@ -5,9 +5,13 @@ import { randomUUID } from 'node:crypto';
 import { IncomingMessage } from 'node:http';
 import { WebSocket } from 'ws';
 
+// Close code of a socket the hub dropped; the close reason carries the drop reason.
+const HUB_DROPPED_CLOSE_CODE = 4000;
+
 type WsOutcome = { kind: 'open' } | { kind: 'http_error'; status: number } | { kind: 'error'; message: string };
+
 type WsCloseOutcome =
-    | { kind: 'closed'; code: number }
+    | { kind: 'closed'; code: number; reason: string }
     | { kind: 'http_error'; status: number }
     | { kind: 'error'; message: string };
 
@@ -161,8 +165,8 @@ function openAndWaitClose(url: string, options: WsHoldOptions): WsHoldResult {
             finish({ kind: 'error', message: error.message });
         });
 
-        ws.once('close', (code: number) => {
-            finish({ kind: 'closed', code });
+        ws.once('close', (code: number, reason: Buffer) => {
+            finish({ kind: 'closed', code, reason: reason.toString() });
         });
     });
 
@@ -487,9 +491,9 @@ test.describe('Builder websocket', { tag: ['@regression'] }, () => {
         });
         expect(await second.opened).toBe(true);
 
-        // The first socket must be force-closed by the hub; the second stays open.
+        // The first socket must be force-closed by the hub, telling the client why; the second stays open.
         const firstResult = await first.settled;
-        expect(firstResult.kind).toBe('closed');
+        expect(firstResult).toEqual({ kind: 'closed', code: HUB_DROPPED_CLOSE_CODE, reason: 'replaced' });
     });
 
     test('WS connection shall be dropped when session is deleted', async ({ homeUrl, builderWSUrl }) => {
@@ -508,6 +512,6 @@ test.describe('Builder websocket', { tag: ['@regression'] }, () => {
         await mint.deleteUser(user);
 
         const result = await closeCtx.settled;
-        expect(result.kind).toBe('closed');
+        expect(result).toEqual({ kind: 'closed', code: HUB_DROPPED_CLOSE_CODE, reason: 'session_invalid' });
     });
 });

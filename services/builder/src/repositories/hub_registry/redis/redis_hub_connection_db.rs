@@ -71,6 +71,13 @@ impl RedisHubConnectionDb {
             .await?;
         Ok(())
     }
+
+    /// Stops listening for registry changes.
+    pub async fn unlisten_registry_changes(&self) -> Result<(), HubError> {
+        let client = self.client.get().await.map_err(RedisError::PoolError)?;
+        client.unlisten(HUB_REGISTRY_CHANGED_CHANNEL).await?;
+        Ok(())
+    }
 }
 
 impl HubConnectionDb for RedisHubConnectionDb {

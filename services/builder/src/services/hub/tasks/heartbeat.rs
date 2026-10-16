@@ -1,5 +1,5 @@
 use super::connection_tracker::{spawn_connection_loop, ConnectionConsumer, ConnectionTracker};
-use crate::{repositories::hub_registry::HubConnection, services::HubService};
+use crate::{models::messages::DisconnectReason, repositories::hub_registry::HubConnection, services::HubService};
 use std::time::Duration;
 use tokio::task::JoinHandle;
 
@@ -47,7 +47,7 @@ impl ConnectionConsumer for Heartbeat {
             tracing::info!("[{user_id}] heartbeat-found-inactive; requesting hub disconnect");
             if let Err(err) = self
                 .hub_service
-                .request_drop(user_id, connection_id, "heartbeat_inactive")
+                .request_drop(user_id, connection_id, DisconnectReason::HeartbeatInactive)
             {
                 tracing::error!("[{user_id}] Failed to send heartbeat disconnect command: {err:#?}");
             }

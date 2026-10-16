@@ -1,5 +1,5 @@
 use super::connection_tracker::{spawn_connection_loop, ConnectionConsumer, ConnectionTracker};
-use crate::services::HubService;
+use crate::{models::messages::DisconnectReason, services::HubService};
 use shine_infra::session::{CurrentUserService, UserSessionError};
 use std::{sync::Arc, time::Duration};
 use tokio::task::JoinHandle;
@@ -38,7 +38,10 @@ impl ConnectionConsumer for SessionChecker {
                     tracing::info!("[{user_id}] session-invalid ({err}); requesting hub disconnect");
                     // Target the exact connection we validated. If the user reconnected with a new
                     // connection meanwhile, the hub ignores this stale id and keeps the fresh session.
-                    if let Err(err) = self.hub_service.request_drop(user_id, connection_id, "session_invalid") {
+                    if let Err(err) =
+                        self.hub_service
+                            .request_drop(user_id, connection_id, DisconnectReason::SessionInvalid)
+                    {
                         tracing::error!("[{user_id}] Failed to send expiry disconnect command: {err:#?}");
                     }
                 }

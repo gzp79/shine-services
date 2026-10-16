@@ -1,4 +1,4 @@
-use crate::models::messages::{HubMessage, TopicKey};
+use crate::models::messages::{DisconnectReason, HubMessage, TopicKey};
 use shine_infra::session::SessionKey;
 use tokio::sync::mpsc;
 use uuid::Uuid;
@@ -16,11 +16,11 @@ pub enum ControlCommand {
     DisconnectUser {
         user_id: Uuid,
         connection_id: Uuid,
-        drop_reason: Option<&'static str>,
+        reason: DisconnectReason,
     },
     DropConnection {
         connection_id: Uuid,
-        reason: &'static str,
+        reason: DisconnectReason,
     },
     HubRegistryChanged {
         user_id: Uuid,

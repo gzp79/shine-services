@@ -52,4 +52,4 @@ shine-infra = { workspace = true }
 shine-core = { workspace = true }
 
 [dev-dependencies]
-shine-test = { workspace = true }
+shine-test = { workspace = true, features = ["toxiproxy"] }

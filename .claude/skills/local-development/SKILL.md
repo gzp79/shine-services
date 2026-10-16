@@ -54,6 +54,8 @@ it exposes on the host:
 # toxiproxy exposes redis on host :6379 and postgres on host :5432 (see services/docker-compose.yml)
 export SHINE_TEST_REDIS_CNS="redis://localhost:6379"
 export SHINE_TEST_PG_CNS="postgres://username:password@localhost:5432/database-test?sslmode=disable"
+# fault-injection tests (toxiproxy API); they skip without it
+export SHINE_TEST_TOXIPROXY_URL="http://localhost:8474"
 
 cargo test -p shine-builder    # or -p shine-identity, or the whole workspace
 ```
