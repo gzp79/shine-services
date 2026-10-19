@@ -535,6 +535,18 @@ async fn session_check_drops_only_connections_with_an_invalid_session() {
     let valid_key = key();
     seed_session(&test.redis, valid_user, valid_key).await;
 
+    // Shorter than the service's session TTL (120 s), so an extension would be visible.
+    let sentinel_key = format!("session:{}:{}:sentinel", valid_user.as_simple(), valid_key.key_hash());
+    {
+        let mut conn = test.redis.get().await.unwrap();
+        let _: () = redis::cmd("EXPIRE")
+            .arg(&sentinel_key)
+            .arg(60)
+            .query_async(&mut *conn)
+            .await
+            .unwrap();
+    }
+
     let (valid, mut valid_rx) = connect_with_key(&test.hub, valid_user, valid_key, 8);
     let (invalid, mut invalid_rx) = connect(&test.hub, invalid_user, 8);
 
@@ -555,6 +567,20 @@ async fn session_check_drops_only_connections_with_an_invalid_session() {
     );
     assert_eq!(egress_state(&mut valid_rx), open());
     assert_eq!(drops(&seen), dropped(&[(DisconnectReason::SessionInvalid, 1)]));
+
+    // The check must not keep the session alive.
+    let ttl: i64 = {
+        let mut conn = test.redis.get().await.unwrap();
+        redis::cmd("TTL")
+            .arg(&sentinel_key)
+            .query_async(&mut *conn)
+            .await
+            .unwrap()
+    };
+    assert!(
+        (1..=60).contains(&ttl),
+        "the session check extended the session: ttl={ttl}"
+    );
 
     test.hub.request_disconnection(valid_user, valid).unwrap();
     barrier(&test.hub, &mut test.events).await;
