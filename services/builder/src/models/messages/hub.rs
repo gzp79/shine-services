@@ -1,4 +1,4 @@
-use crate::models::messages::ChatBatch;
+use crate::models::messages::{ChatBatch, StreamEvent, StreamMessage};
 use shine_infra::session::SessionKey;
 use uuid::Uuid;
 
@@ -7,6 +7,8 @@ use uuid::Uuid;
 pub enum TopicKey {
     Hub,
     Chat,
+    /// Command stream subscription events; internal subscribers only.
+    Stream,
 }
 
 pub trait ToTopic {
@@ -88,6 +90,11 @@ impl ToTopic for HubEvent {
 pub enum HubMessage {
     Hub(HubEvent),
     Chat(ChatBatch),
+    /// Command stream egress to one connection.
+    #[allow(dead_code)] // built by the command stream service (S6)
+    Stream(StreamMessage),
+    /// Command stream subscription change, for internal subscribers.
+    StreamEvent(StreamEvent),
 }
 
 impl ToTopic for HubMessage {
@@ -95,6 +102,8 @@ impl ToTopic for HubMessage {
         match self {
             HubMessage::Hub(event) => event.topic(),
             HubMessage::Chat(batch) => batch.topic(),
+            HubMessage::Stream(_) => TopicKey::Stream,
+            HubMessage::StreamEvent(event) => event.topic(),
         }
     }
 }

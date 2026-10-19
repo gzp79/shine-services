@@ -1,4 +1,5 @@
-use crate::models::messages::{DisconnectReason, HubMessage, TopicKey};
+use crate::models::messages::{DisconnectReason, HubMessage, StreamResume, TopicKey};
+use shine_infra::db::command_log::StreamId;
 use shine_infra::session::SessionKey;
 use tokio::sync::mpsc;
 use uuid::Uuid;
@@ -25,6 +26,20 @@ pub enum ControlCommand {
     HubRegistryChanged {
         user_id: Uuid,
     },
+    #[allow(dead_code)] // built by the command stream service (S6)
+    SubscribeStream {
+        user_id: Uuid,
+        connection_id: Uuid,
+        stream_id: StreamId,
+        kind: &'static str,
+        resume: Option<StreamResume>,
+    },
+    #[allow(dead_code)] // built by the command stream service (S6)
+    UnsubscribeStream {
+        user_id: Uuid,
+        connection_id: Uuid,
+        stream_id: StreamId,
+    },
     Shutdown,
 }
 
@@ -36,6 +51,8 @@ impl ControlCommand {
             ControlCommand::DisconnectUser { .. } => "disconnect_user",
             ControlCommand::DropConnection { .. } => "drop_connection",
             ControlCommand::HubRegistryChanged { .. } => "hub_registry_changed",
+            ControlCommand::SubscribeStream { .. } => "subscribe_stream",
+            ControlCommand::UnsubscribeStream { .. } => "unsubscribe_stream",
             ControlCommand::Shutdown => "shutdown",
         }
     }
@@ -45,7 +62,9 @@ impl ControlCommand {
         match self {
             ControlCommand::ConnectUser { user_id, .. }
             | ControlCommand::DisconnectUser { user_id, .. }
-            | ControlCommand::HubRegistryChanged { user_id } => Some(*user_id),
+            | ControlCommand::HubRegistryChanged { user_id }
+            | ControlCommand::SubscribeStream { user_id, .. }
+            | ControlCommand::UnsubscribeStream { user_id, .. } => Some(*user_id),
             ControlCommand::DropConnection { .. } | ControlCommand::Shutdown => None,
         }
     }
@@ -55,7 +74,9 @@ impl ControlCommand {
         match self {
             ControlCommand::ConnectUser { connection_id, .. }
             | ControlCommand::DisconnectUser { connection_id, .. }
-            | ControlCommand::DropConnection { connection_id, .. } => Some(*connection_id),
+            | ControlCommand::DropConnection { connection_id, .. }
+            | ControlCommand::SubscribeStream { connection_id, .. }
+            | ControlCommand::UnsubscribeStream { connection_id, .. } => Some(*connection_id),
             ControlCommand::HubRegistryChanged { .. } | ControlCommand::Shutdown => None,
         }
     }

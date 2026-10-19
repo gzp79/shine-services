@@ -320,7 +320,7 @@ sequenceDiagram
     Note over C,WS: the socket stays connected and follows its other streams
 ```
 
-Only the end of the connection (close, drop, replacement) removes every subscription at once; the hub emits the same unsubscribed event for each of them.
+Only the end of the connection (close, drop, replacement) removes every subscription at once; the hub keeps no subscription set per connection, so the stream dispatcher drops every subscription of a connection when it sees `UserDisconnected`.
 
 | Direction | Frame | Fields |
 |---|---|---|

@@ -1,7 +1,7 @@
 use crate::services::hub::hub_metrics::hub_metrics;
 use crate::{
     models::{
-        messages::{DisconnectReason, HubEvent, HubMessage, TopicKey},
+        messages::{DisconnectReason, HubEvent, HubMessage, StreamEvent, StreamResume, TopicKey},
         HubError,
     },
     repositories::hub_registry::{redis::RedisHubConnectionDb, HubConnection, HubConnectionDb, HubRegistry},
@@ -16,6 +16,7 @@ use crate::{
     },
 };
 use opentelemetry::trace::SpanContext;
+use shine_infra::db::command_log::StreamId;
 use shine_infra::session::{CurrentUserService, SessionKey};
 use shine_infra::telemetry::{current_span_context, label, link_span};
 use std::collections::VecDeque;
@@ -153,6 +154,40 @@ impl HubService {
     /// Notifies the hub that a user's registry entry changed, prompting an active-connection recheck.
     pub fn notify_registry_changed(&self, user_id: Uuid) -> Result<(), HubError> {
         self.send_control(ControlCommand::HubRegistryChanged { user_id })
+    }
+
+    /// Requests a stream subscription for a connection; ignored if the connection is gone by then.
+    #[allow(dead_code)] // built by the command stream service (S6)
+    pub fn request_subscribe_stream(
+        &self,
+        user_id: Uuid,
+        connection_id: Uuid,
+        stream_id: StreamId,
+        kind: &'static str,
+        resume: Option<StreamResume>,
+    ) -> Result<(), HubError> {
+        self.send_control(ControlCommand::SubscribeStream {
+            user_id,
+            connection_id,
+            stream_id,
+            kind,
+            resume,
+        })
+    }
+
+    /// Ends a stream subscription of a connection; the connection itself stays.
+    #[allow(dead_code)] // built by the command stream service (S6)
+    pub fn request_unsubscribe_stream(
+        &self,
+        user_id: Uuid,
+        connection_id: Uuid,
+        stream_id: StreamId,
+    ) -> Result<(), HubError> {
+        self.send_control(ControlCommand::UnsubscribeStream {
+            user_id,
+            connection_id,
+            stream_id,
+        })
     }
 
     /// Sends an egress message to a specific connection. Returns whether the message was queued for delivery.
@@ -367,6 +402,34 @@ impl HubService {
                 self.process_registry_change(user_id).await;
                 true
             }
+            ControlCommand::SubscribeStream {
+                user_id,
+                connection_id,
+                stream_id,
+                kind,
+                resume,
+            } => {
+                // A subscribe racing a replaced or dropped connection must not pin a stream worker.
+                if self.inner.connections.contains(connection_id).await {
+                    self.publish_stream_event(StreamEvent::Subscribed {
+                        connection_id,
+                        stream_id,
+                        kind,
+                        resume,
+                    })
+                    .await;
+                } else {
+                    tracing::debug!("[{user_id}] [{connection_id}] Stream subscribe for an unknown connection ignored");
+                }
+                true
+            }
+            ControlCommand::UnsubscribeStream { connection_id, stream_id, .. } => {
+                if self.inner.connections.contains(connection_id).await {
+                    self.publish_stream_event(StreamEvent::Unsubscribed { connection_id, stream_id })
+                        .await;
+                }
+                true
+            }
             ControlCommand::Shutdown => {
                 self.shutdown().await;
                 false
@@ -476,6 +539,13 @@ impl HubService {
                 tracing::warn!("[{user_id}] Failed to remove hub connection on shutdown (TTL will clean up): {err:#?}");
             }
         }
+    }
+
+    /// Delivers a stream subscription change to the internal subscribers; no socket subscribes to its topic.
+    /// A disconnect needs no such event: the stream dispatcher drops the streams of a connection when it
+    /// sees `UserDisconnected`.
+    async fn publish_stream_event(&self, event: StreamEvent) {
+        self.inner.subscribers.publish(HubMessage::StreamEvent(event)).await;
     }
 
     /// Delivers a lifecycle `HubEvent` to every internal subscriber and every topic-matching

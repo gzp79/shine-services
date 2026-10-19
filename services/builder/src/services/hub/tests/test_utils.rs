@@ -264,7 +264,7 @@ impl EgressState {
             {
                 self.notices.push(reason)
             }
-            HubMessage::Hub(_) => {}
+            HubMessage::Hub(_) | HubMessage::Stream(_) | HubMessage::StreamEvent(_) => {}
         }
     }
 }

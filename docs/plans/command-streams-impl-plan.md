@@ -18,8 +18,9 @@
 | S2 Postgres command log | done | `cargo test -p shine-infra --test pg_command_log` (15 tests, `database-test`) |
 | S3 Builder Postgres and settings | done | `cargo test -p shine-builder` (56 tests; 7 new: settings, schema on startup) |
 | S4 Redis stream repository | done, scripts reviewed | `cargo test -p shine-builder` (76 tests; 20 in `redis_command_stream`) |
-| S5 Hub subscriptions | next | |
-| S6 - S10 | open | |
+| S5 Hub subscriptions and stream messages | done | `cargo test -p shine-builder` (`hub::tests::stream`, 5 tests) |
+| S6 Service, worker, dispatcher | next | |
+| S7 - S10 | open | |
 | S11 let the worker prune | decision pending | |
 
 **Decisions taken while implementing** (they supersede the older wording where they differ):
@@ -72,7 +73,7 @@ Run the shell commands one at a time (parallel Git Bash starts can crash).
 1. **A client retries a command after a timeout** (same `commandId` twice): one version, the retry gets `streamNack duplicate`. Test: Task S6 `ingest_dedupes_command_id`.
 2. **Redis lost or back in time** while clients are connected, including a copy that reassigned versions: versions continue from the Postgres head, clients get `streamReset` then `streamSync`. Tests: Task S8 `redis_loss_continues_from_the_postgres_head`, `redis_rolled_back_within_a_generation_is_repaired`.
 3. **Slow client** with a full channel: dropped cleanly, never sees a version gap or a checkpoint ahead of its commands. Tests: Task S6 `a_failed_send_stops_all_later_frames`, Task S8 `a_slow_subscriber_never_sees_a_version_gap`.
-4. **Subscribe/unsubscribe churn** and a subscribe for a connection that is not registered: no leaked subscription or worker. Tests: Task S5 `subscribe_for_an_unregistered_connection_is_ignored`, Task S8 `subscribe_unsubscribe_churn_leaves_no_subscription`.
+4. **Subscribe/unsubscribe churn** and a subscribe for a connection that is not registered: no leaked subscription or worker. Tests: Task S5 `subscriptions_are_published_for_registered_connections_only`, Task S8 `subscribe_unsubscribe_churn_leaves_no_subscription`.
 5. **Resume at the edges** (same version, older than the worker's snapshot, changed generation, above the head): contiguous tail or a full sync, never a gap. Tests: Task S7 `resume_inside_the_window_sends_only_the_tail`, `resume_with_a_changed_generation_sends_a_full_sync`, `resume_older_than_the_base_version_sends_a_full_sync`, `resume_above_the_head_sends_a_full_sync`.
 
 ---
@@ -155,15 +156,16 @@ S1, S2 and S5 are independent and can be done in any order.
 - [ ] **Step 1: Failing tests** (unique prefix per test): the plan Task 4 tests, adapted, plus `mark_persisted_keeps_everything_from_the_oldest_snapshot`; `mark_persisted_never_trims_unpersisted_commands`; `ingest_is_not_ready_before_hydrate`.
 - [ ] **Step 2:** Implement. **Step 3: Verify** with Redis. **Step 4: Checkpoint.**
 
-## Task S5: Hub subscriptions and stream messages
+## Task S5: Hub subscriptions and stream messages - done (5 tests)
 
-**Files:** Create `services/builder/src/models/messages/stream.rs`; modify `services/hub/hub_command.rs`, `hub_service.rs`, `hub_connections.rs`, `models/messages/hub.rs`. Test: `services/hub/hub_stream_test.rs`.
+**Files:** Create `services/builder/src/models/messages/stream.rs`, `services/hub/tests/stream.rs`; modify `services/hub/hub_command.rs`, `hub_service.rs`, `hub_connections.rs`, `models/messages/{mod.rs,hub.rs}`, and the exhaustive matches on `HubMessage` (`routes/ws/connect.rs`, `tests/test_utils.rs`).
 
 **Interfaces:**
-- Produces: `ControlCommand::{SubscribeStream { user_id, connection_id, stream_id, kind, resume: Option<Resume> }, UnsubscribeStream { connection_id, stream_id }, Reply { connection_id, message }}`; `StreamEvent::{Subscribed, Unsubscribed}`; `TopicKey::Stream` (internal subscribers only; no socket subscribes); `HubMessage::Stream(StreamMessage)`; `Connections` tracks a `streams: HashSet<StreamId>` per connection, dropped with the connection; `HubService::request_subscribe`, `request_unsubscribe`, `request_reply`.
+- Produces: `ControlCommand::{SubscribeStream { user_id, connection_id, stream_id: StreamId, kind: &'static str, resume: Option<StreamResume> }, UnsubscribeStream { user_id, connection_id, stream_id }}`; `StreamResume { generation, version }`; `StreamEvent::{Subscribed { connection_id, stream_id, kind, resume }, Unsubscribed { connection_id, stream_id }}` on `TopicKey::Stream` (internal subscribers only; no socket subscribes); `HubMessage::{Stream(StreamMessage), StreamEvent(StreamEvent)}` with `StreamMessage::{Sync, Commands, Checkpoint, Reset, Nack, SubscribeFailed}`; `HubService::{request_subscribe_stream, request_unsubscribe_stream}`; `Connections::contains`.
+- The hub keeps no subscription set per connection: the loop only checks that the connection is registered and publishes the event; the dispatcher (S6) tracks subscriptions and drops a connection's streams on `UserDisconnected`. A socket's own replies (nacks, subscribe failures) do not go through the loop: the socket keeps a `WeakSender` of the egress channel it created (`tx.downgrade()`) and sends into it directly, so they cost the command loop nothing and are not lost while the connection is still being registered; being weak, the sender does not keep the channel open when the hub drops the connection (S7, proven by `a_socket_replies_through_a_weak_sender_without_keeping_its_channel_open`).
 
-- [ ] **Step 1: Failing tests.** `subscribe_for_an_unregistered_connection_is_ignored`; `unsubscribe_keeps_the_socket_and_its_other_streams`; `disconnect_emits_unsubscribed_for_every_stream`; `a_reply_sent_right_after_connect_is_not_lost` (the reply goes through the loop behind `ConnectUser`); `stream_events_reach_only_internal_subscribers`.
-- [ ] **Step 2:** Implement in the command loop (sole writer). **Step 3: Verify** `cargo test -p shine-builder hub`. **Step 4: Checkpoint.**
+- [x] **Step 1: Tests** (`hub/tests/stream.rs`, Redis): `subscriptions_are_published_for_registered_connections_only`; `a_subscribe_carries_the_resume_position`; `unsubscribing_keeps_the_socket_connected`; `stream_events_reach_only_internal_subscribers`; `a_socket_replies_through_a_weak_sender_without_keeping_its_channel_open`.
+- [x] **Step 2:** Implemented in the command loop (sole writer). The new items carry a temporary `allow(dead_code)` until S6 and S7 construct them. **Checkpoint.** (Done.)
 
 ## Task S6: Service, kinds, `StreamCore`, worker, dispatcher
 
@@ -183,7 +185,7 @@ S1, S2 and S5 are independent and can be done in any order.
 **Files:** Create `services/builder/src/routes/command_stream.rs`; modify `routes/mod.rs`, `routes/ws/message.rs`, `routes/ws/connect.rs`, `services/command_stream/{command_stream_service.rs, stream_worker.rs}`, router wiring next to `ws_routes()`. Tests: `routes/command_stream_test.rs`, `routes/ws/connect_test.rs`, worker tests.
 
 **Interfaces:**
-- Produces: `CommandStreamService::read_snapshot(stream) -> Result<Option<StreamSyncPayload>, CommandStreamError>` (S-D5); `GET streams/{streamId}/snapshot`; the socket parses the client frames of the spec (`resume` included) and sends the server frames; the socket's own replies (nacks, subscribe failures) go through `HubService::request_reply`; resume handling in the worker per S-D6.
+- Produces: `CommandStreamService::read_snapshot(stream) -> Result<Option<StreamSyncPayload>, CommandStreamError>` (S-D5); `GET streams/{streamId}/snapshot`; the socket parses the client frames of the spec (`resume` included) and sends the server frames; the socket's own replies (nacks, subscribe failures) are written by the socket itself into its egress channel through a `WeakSender` (S5), never through the command loop; resume handling in the worker per S-D6.
 
 - [ ] **Step 1: Failing tests.** `snapshot_route_returns_snapshot_plus_tail`; `snapshot_route_merges_the_redis_tail_above_the_postgres_head` (contiguous, no duplicates); `snapshot_route_without_a_session_is_401`; `snapshot_route_for_an_unknown_stream_is_404`; `snapshot_route_with_storage_down_is_503`; `ws_resume_frame_is_parsed`; `resume_inside_the_window_sends_only_the_tail`; `resume_with_a_changed_generation_sends_a_full_sync`; `resume_older_than_the_base_version_sends_a_full_sync`; `resume_above_the_head_sends_a_full_sync`; `resume_after_a_drop_is_contiguous_or_a_full_sync`; `a_command_for_an_unsubscribed_stream_gets_not_subscribed`; `an_unknown_kind_gets_subscribe_failed_unknown_kind`.
 - [ ] **Step 2:** Implement. Metrics: counter `command_stream_snapshot_reads{outcome}`.

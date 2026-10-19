@@ -51,6 +51,8 @@ fn try_send(tx: &mpsc::Sender<HubMessage>, message: HubMessage) -> Result<(), Di
     let kind = match &message {
         HubMessage::Hub(_) => "hub",
         HubMessage::Chat(_) => "chat",
+        HubMessage::Stream(_) => "stream",
+        HubMessage::StreamEvent(_) => "stream_event",
     };
     let (outcome, result) = match tx.try_send(message) {
         Ok(()) => ("ok", Ok(())),
@@ -135,6 +137,11 @@ impl Connections {
             connection_id,
             tx: connection.tx,
         })
+    }
+
+    /// Whether the connection is registered.
+    pub async fn contains(&self, connection_id: Uuid) -> bool {
+        self.registry.read().await.connections.contains_key(&connection_id)
     }
 
     /// The user's active `(connection_id, session_key)`, when connected.

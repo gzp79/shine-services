@@ -97,7 +97,8 @@ pub async fn connect(
 
 fn event_to_wire_message(message: HubMessage) -> Option<WSMessageResponse> {
     match message {
-        HubMessage::Hub(_) => None,
+        // Stream frames reach the client once the socket speaks the stream protocol.
+        HubMessage::Hub(_) | HubMessage::Stream(_) | HubMessage::StreamEvent(_) => None,
         HubMessage::Chat(batch) => {
             let messages = batch
                 .comments
