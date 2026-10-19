@@ -2,13 +2,15 @@
 //! rolling back Redis, and a Postgres outage.
 
 use crate::{
-    models::messages::StreamMessage,
+    app_config::KindRetentionConfig,
+    models::messages::{StreamMessage, StreamResume},
     repositories::command_stream::redis::RedisStreamEntry,
     services::command_stream::{
         test_utils::{
-            add, eventually, fast_cadence, ingest, setup_for_outage, setup_with, start_worker, unique_id, Running, Test,
+            add, eventually, fast_cadence, ingest, redis_versions, setup_for_outage, setup_with, start_worker,
+            unique_id, Running, Test,
         },
-        AllowAll, IngestOutcome,
+        AllowAll, IngestOutcome, WorkerCommand,
     },
 };
 use shine_game::replay::{encode_snapshot, stable_hash_of, ChatState};
@@ -69,6 +71,7 @@ async fn two_instances_order_and_deliver_the_same_commands() {
             && first.redis.meta(&stream_id).await.unwrap().unwrap().persisted == 20
     })
     .await;
+    // Snapshots prune the log from the oldest kept one on: what Postgres still holds is the delivered order.
     let stored: Vec<Uuid> = first
         .log
         .commands_after(&stream_id, 0, 100)
@@ -77,11 +80,11 @@ async fn two_instances_order_and_deliver_the_same_commands() {
         .iter()
         .map(|c| c.command_id)
         .collect();
-    assert_eq!(
-        stored,
-        command_ids(&worker_a),
+    assert!(
+        command_ids(&worker_a).ends_with(&stored),
         "Postgres holds the delivered order, without duplicates"
     );
+    assert!(!stored.is_empty());
 
     worker_a.stop().await;
     worker_b.stop().await;
@@ -309,5 +312,261 @@ async fn a_postgres_outage_does_not_stop_the_process_and_persistence_resumes() {
             .unwrap_or(false)
     })
     .await;
+    running.stop().await;
+}
+
+/// Writes commands in rounds of five (the snapshot cadence of the tests) and waits for each snapshot: a worker
+/// that is behind stores only the newest one, which would leave the stored snapshots uneven.
+async fn write_with_snapshots(test: &Test, stream_id: &StreamId, rounds: i64) {
+    for round in 1..=rounds {
+        for i in (round - 1) * 5 + 1..=round * 5 {
+            ingest(test, stream_id, &format!("m{i}")).await;
+        }
+        eventually("the next snapshot", || async {
+            test.log
+                .latest_snapshot(stream_id, round * 5)
+                .await
+                .unwrap()
+                .is_some_and(|snapshot| snapshot.version == round * 5)
+        })
+        .await;
+    }
+}
+
+/// A stream with snapshots at 5, 10 and 15 (two kept, so 5 and the commands below 10 are pruned) and its worker.
+async fn pruned_stream(test: &Test) -> (StreamId, Running) {
+    let stream_id = open(test).await;
+    let running = start_worker(test, &stream_id);
+    write_with_snapshots(test, &stream_id, 3).await;
+    eventually("the log pruned below the oldest kept snapshot", || async {
+        test.log.oldest_snapshot_version(&stream_id).await.unwrap() == Some(10)
+            && test
+                .log
+                .commands_after(&stream_id, 0, 100)
+                .await
+                .unwrap()
+                .first()
+                .map(|c| c.version)
+                == Some(10)
+    })
+    .await;
+    (stream_id, running)
+}
+
+#[test]
+async fn the_worker_prunes_after_storing_a_snapshot() {
+    let Some(test) = setup_with(Arc::new(AllowAll), fast_cadence).await else {
+        return;
+    };
+    let (stream_id, running) = pruned_stream(&test).await;
+
+    // The kept snapshots and the commands from the oldest of them are all there is.
+    let versions: Vec<i64> = test
+        .log
+        .commands_after(&stream_id, 0, 100)
+        .await
+        .unwrap()
+        .iter()
+        .map(|c| c.version)
+        .collect();
+    assert_eq!(versions.first(), Some(&10));
+    assert_eq!(versions.last(), Some(&15));
+    assert_eq!(test.log.snapshot_horizon(&stream_id, 2).await.unwrap(), Some(10));
+    assert_eq!(
+        test.log.head(&stream_id).await.unwrap().unwrap().version,
+        15,
+        "the head is not touched"
+    );
+    running.stop().await;
+}
+
+#[test]
+async fn hydration_after_pruning_starts_at_the_oldest_snapshot() {
+    let Some(test) = setup_with(Arc::new(AllowAll), fast_cadence).await else {
+        return;
+    };
+    let (stream_id, running) = pruned_stream(&test).await;
+    running.stop().await;
+
+    let meta = test.redis.meta(&stream_id).await.unwrap().unwrap();
+    assert!(test.redis.reset(&stream_id, meta.generation).await.unwrap());
+    test.service.ensure_hydrated(&stream_id).await.unwrap();
+    assert_eq!(
+        redis_versions(&test, &stream_id).await,
+        (10..=15).collect::<Vec<_>>(),
+        "Redis is rebuilt from what Postgres keeps"
+    );
+
+    // A worker starts from the newest snapshot.
+    let again = start_worker(&test, &stream_id);
+    eventually("the sync", || async {
+        !again.egress.sent_to(again.connection_id).is_empty()
+    })
+    .await;
+    let StreamMessage::Sync { snapshot, commands, .. } = again.egress.sent_to(again.connection_id).remove(0) else {
+        panic!("a sync first");
+    };
+    assert_eq!(snapshot.map(|s| s.version), Some(15));
+    assert!(commands.is_empty());
+    again.stop().await;
+}
+
+#[test]
+async fn a_resume_below_the_oldest_snapshot_gets_a_full_sync() {
+    let Some(test) = setup_with(Arc::new(AllowAll), fast_cadence).await else {
+        return;
+    };
+    let (stream_id, running) = pruned_stream(&test).await;
+    eventually("the newest checkpoint", || async {
+        running
+            .egress
+            .checkpoints(running.connection_id)
+            .last()
+            .map(|(v, _)| *v)
+            == Some(15)
+    })
+    .await;
+    let generation = test.redis.meta(&stream_id).await.unwrap().unwrap().generation;
+
+    let other = Uuid::new_v4();
+    let resume = StreamResume { generation, version: 3 };
+    running
+        .handle
+        .tx
+        .send(WorkerCommand::AddSubscriber(other, Some(resume)))
+        .unwrap();
+    eventually("the answer", || async { !running.egress.sent_to(other).is_empty() }).await;
+    let StreamMessage::Sync { snapshot, .. } = running.egress.sent_to(other).remove(0) else {
+        panic!("a position below the history is answered with a sync");
+    };
+    assert_eq!(snapshot.map(|s| s.version), Some(15));
+    running.stop().await;
+}
+
+#[test]
+async fn the_snapshot_route_after_pruning_returns_the_newest_snapshot_and_its_tail() {
+    let Some(test) = setup_with(Arc::new(AllowAll), fast_cadence).await else {
+        return;
+    };
+    let (stream_id, running) = pruned_stream(&test).await;
+    ingest(&test, &stream_id, "m16").await;
+    ingest(&test, &stream_id, "m17").await;
+    eventually("persisted", || async {
+        test.log.head(&stream_id).await.unwrap().unwrap().version == 17
+    })
+    .await;
+
+    let StreamMessage::Sync { snapshot, commands, .. } =
+        test.service.read_snapshot(Uuid::nil(), &stream_id).await.unwrap()
+    else {
+        panic!("a sync");
+    };
+    assert_eq!(snapshot.map(|s| s.version), Some(15));
+    assert_eq!(commands.iter().map(|c| c.version).collect::<Vec<_>>(), [16, 17]);
+    running.stop().await;
+}
+
+#[test]
+async fn a_worker_behind_the_pruned_history_starts_over_from_the_newest_snapshot() {
+    let Some(test) = setup_with(Arc::new(AllowAll), fast_cadence).await else {
+        return;
+    };
+    // A worker that only moves when woken, on the same stores.
+    let slow_test = test.with_stores(|stores| {
+        stores.settings.sync_interval = Duration::from_secs(60);
+        stores.settings.persist_delay = Duration::from_secs(60);
+    });
+    let stream_id = open(&test).await;
+    let slow = start_worker(&slow_test, &stream_id);
+    eventually("the initial sync", || async {
+        !slow.egress.sent_to(slow.connection_id).is_empty()
+    })
+    .await;
+    ingest(&test, &stream_id, "m1").await;
+    slow.handle.wake.notify_one();
+    eventually("the first command", || async {
+        slow.egress.versions(slow.connection_id) == [1]
+    })
+    .await;
+    let generation = test.redis.meta(&stream_id).await.unwrap().unwrap().generation;
+
+    // The rest of the history moves on without it: snapshots, persistence and the pruning.
+    let fast = start_worker(&test, &stream_id);
+    write_with_snapshots(&test, &stream_id, 4).await;
+    ingest(&test, &stream_id, "last").await; // version 22: the first command above made it 1
+    eventually("Redis and Postgres hold only what is above the horizon", || async {
+        test.log.oldest_snapshot_version(&stream_id).await.unwrap() == Some(15)
+            && redis_versions(&test, &stream_id).await.first() == Some(&15)
+    })
+    .await;
+
+    slow.handle.wake.notify_one();
+    eventually("the slow worker started over", || async {
+        // Its own ticks are a minute apart: the reload (after its backoff) needs a push.
+        slow.handle.wake.notify_one();
+        slow.egress.resets(slow.connection_id) == 1
+            && slow.egress.commands(slow.connection_id).last().map(|c| c.version) == Some(22)
+    })
+    .await;
+    let sent = slow.egress.sent_to(slow.connection_id);
+    let StreamMessage::Sync { snapshot, .. } = sent.last().unwrap() else {
+        panic!("a sync after the reset");
+    };
+    assert_eq!(snapshot.as_ref().map(|s| s.version), Some(20));
+    assert_eq!(
+        test.redis.meta(&stream_id).await.unwrap().unwrap().generation,
+        generation,
+        "the Redis copy was fine and is kept"
+    );
+    fast.stop().await;
+    slow.stop().await;
+}
+
+#[test]
+async fn a_kind_that_keeps_its_history_is_never_pruned() {
+    let Some(test) = setup_with(Arc::new(AllowAll), |config| {
+        fast_cadence(config);
+        config.kinds.insert(
+            "chat".to_string(),
+            KindRetentionConfig {
+                keep_history: true,
+                ..Default::default()
+            },
+        );
+    })
+    .await
+    else {
+        return;
+    };
+    let stream_id = open(&test).await;
+    let running = start_worker(&test, &stream_id);
+    // The snapshot at 20 is stored after the ones at 5, 10 and 15 were: a prune would have run by now.
+    write_with_snapshots(&test, &stream_id, 4).await;
+
+    let versions: Vec<i64> = test
+        .log
+        .commands_after(&stream_id, 0, 100)
+        .await
+        .unwrap()
+        .iter()
+        .map(|c| c.version)
+        .collect();
+    assert_eq!(versions.first(), Some(&1));
+    assert_eq!(test.log.oldest_snapshot_version(&stream_id).await.unwrap(), Some(5));
+    // Redis still trims to its window; the history lives in Postgres.
+    ingest(&test, &stream_id, "next").await;
+    eventually("Redis trimmed to its window", || async {
+        redis_versions(&test, &stream_id).await.first() == Some(&15)
+    })
+    .await;
+    assert_eq!(
+        test.log
+            .commands_after(&stream_id, 0, 1)
+            .await
+            .unwrap()
+            .first()
+            .map(|c| c.version),
+        Some(1)
+    );
     running.stop().await;
 }

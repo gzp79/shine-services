@@ -9,6 +9,8 @@ pub struct KindSettings {
     pub snapshot_every: i64,
     /// Snapshots kept per stream; the commands are kept from the oldest of them on.
     pub keep_snapshots: i64,
+    /// Nothing of the stream is pruned from Postgres.
+    pub keep_history: bool,
 }
 
 impl KindSettings {
@@ -41,20 +43,29 @@ pub struct CommandStreamSettings {
     pub max_command_bytes: usize,
 }
 
-fn kind_settings(name: &str, snapshot_every: i64, keep_snapshots: i64) -> Result<KindSettings, AnyError> {
+fn kind_settings(
+    name: &str,
+    snapshot_every: i64,
+    keep_snapshots: i64,
+    keep_history: bool,
+) -> Result<KindSettings, AnyError> {
     if snapshot_every < 1 {
         return Err(anyhow!("commandStream {name}: snapshotEvery must be at least 1"));
     }
     if keep_snapshots < 1 {
         return Err(anyhow!("commandStream {name}: keepSnapshots must be at least 1"));
     }
-    Ok(KindSettings { snapshot_every, keep_snapshots })
+    Ok(KindSettings {
+        snapshot_every,
+        keep_snapshots,
+        keep_history,
+    })
 }
 
 impl CommandStreamSettings {
     /// Validates the configuration; an invalid retention fails the start.
     pub fn from_config(config: &CommandStreamConfig) -> Result<Self, AnyError> {
-        let defaults = kind_settings("defaults", config.snapshot_every, config.keep_snapshots)?;
+        let defaults = kind_settings("defaults", config.snapshot_every, config.keep_snapshots, false)?;
         let kinds = config
             .kinds
             .iter()
@@ -63,6 +74,7 @@ impl CommandStreamSettings {
                     name,
                     kind.snapshot_every.unwrap_or(defaults.snapshot_every),
                     kind.keep_snapshots.unwrap_or(defaults.keep_snapshots),
+                    kind.keep_history,
                 )?;
                 Ok((name.clone(), settings))
             })

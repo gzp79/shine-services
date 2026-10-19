@@ -44,6 +44,7 @@ fn core(every: i64) -> StreamCore<ChatState> {
         KindSettings {
             snapshot_every: every,
             keep_snapshots: 3,
+            keep_history: false,
         },
     );
     core.begin_load(None);

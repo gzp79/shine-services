@@ -19,6 +19,8 @@ pub struct WsConfig {
 pub struct KindRetentionConfig {
     pub snapshot_every: Option<i64>,
     pub keep_snapshots: Option<i64>,
+    /// Keep every command and snapshot in Postgres: nothing of the stream is ever pruned.
+    pub keep_history: bool,
 }
 
 /// Raw command stream configuration loaded from config files.

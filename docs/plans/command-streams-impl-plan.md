@@ -27,7 +27,7 @@
 | S9 chat kind, switch from the old chat | done | `cargo test -p shine-builder` (156 tests); `pnpm exec playwright test api-tests/builder api-tests/shared` against the local builder (35 builder tests passed; the identity cases of `shared` need the identity service); `pnpm run lint` |
 | S10 test hardening and doc sync | done | `CI=true cargo test --workspace` (builder 161 tests, no database skips); builder API tests 21 passed; `cargo fmt --check`, clippy (only the existing `BitSet::len`) |
 | S12 client engine in `shine-game` | open (after S9) | |
-| S11 let the worker prune | decision pending | |
+| S11 let the worker prune | done | `cargo test -p shine-builder` (166 tests, 3 runs; 5 new in `stream_integration`) |
 
 **Decisions taken while implementing** (they supersede the older wording where they differ):
 - `ReplayState::apply` is infallible; a command the state does not accept changes nothing. `CommandEnvelope.command` is a plain `C`: an undecodable command is an error of the caller (ingest answers `streamNack invalid`; a stored one stops that stream's worker and the stream answers `unavailable`), never an ignored command.
@@ -51,7 +51,7 @@ export SHINE_TEST_TOXIPROXY_URL="http://localhost:8474"
 ```
 Run the shell commands one at a time (parallel Git Bash starts can crash).
 
-**Open questions**: Task S11 (whether the worker prunes commands as well as snapshots); the decode-error policy above; the `generation` -> `epoch` rename; the hardening plan's close codes and limits (H-D3, H-D4).
+**Open questions**: the decode-error policy above; the `generation` -> `epoch` rename; the hardening plan's close codes and limits (H-D3, H-D4).
 
 ## Global Constraints
 
@@ -253,7 +253,7 @@ The reference for the algorithms is the old plan's Tasks 6 and 7 (`docs/plans/co
 - [x] **Step 2:** Run the `shine-skills:sdp` Sync for `hub.md` against the code; update `hub_issues.md` statuses for items 10, 16, 29, 31, 40, 45, 49 and the test items.
 - [x] **Step 3: Final verification.** `cargo fmt --all --check`; `cargo clippy --workspace --all-targets`; `CI=true cargo test --workspace` with both connection strings set; `cd tests && pnpm test:local` with the service running. Expected: all green, no "skipping" lines. Checkpoint.
 
-## Task S11 (decision pending): let the worker prune
+## Task S11: let the worker prune
 
 `PgCommandLogDb::prune` is built and tested in S2 (it deletes the old snapshots and the commands below the oldest kept snapshot in one transaction) and has no caller. The worker would call it after storing a snapshot, which also starts deleting commands, so the call is switched on only after the decision. Until then S6 leaves snapshots (and commands) unpruned. Tests when wired: `the_worker_prunes_after_storing_a_snapshot`, `hydration_after_pruning_starts_at_the_oldest_snapshot`, `a_resume_below_the_oldest_snapshot_gets_a_full_sync`, `the_snapshot_route_after_pruning_returns_the_newest_snapshot_and_its_tail`.
 
@@ -279,3 +279,5 @@ The web client lives in another repository and replays the same states. Its logi
 **S9 notes.** Access is `chat_access()` (`AllowList` with `chat-global` only): users may read and write the global chat, and no other stream can be created. The API tests assert the protocol (ordering, delivery to every subscriber, nacks, resume, snapshot route statuses); what a remove or replace does to the state is asserted in Rust (`chat_test.rs`), because the TS side has no replay engine until S12. A resume is served as a tail only by a worker that already holds the history (another subscriber keeps it loaded); a cold worker answers every subscriber with a full sync. `commandStream.enabled` is true in the test and prod configs: production needs `builder.db.sqlCns` in the key vault before it is deployed. The generic hub tests now use a Stream-topic payload (`payload(id)`) where they used chat batches. `connection_tracker`'s wake support has no production user left (only its tests).
 
 **S10 notes.** The fixed sleeps wait for the consumers' tick counters (`HubService::ticks`, `wait_ticks`; the counters are also in the hub status) or for an ordered marker. `heartbeat_enabled_stress_with_300_connections` is `hub/tests/stress.rs`. `app_state_wires_the_intervals` became tests of `HubTiming::from_config` (`app_state_test.rs`): building the real `AppState::new` needs the whole web-app configuration, and it runs in the API tests. `hub.md` was synced with the code (access, statuses of the snapshot route, retention as built, configuration, metrics, tests) and `hub_issues.md` statuses updated (10, 16, 29, 31, 49, 14, 34 fixed; 40 by design). `*.sql` files are checked out with CRLF (`.gitattributes`), which is part of the refinery checksum: a database migrated from a file with LF line endings reports "applied migration is different"; drop the `cl_*` tables and `__migration__command_log` of the dev database to migrate again.
+
+**S11 notes.** The worker that stored a snapshot (`SnapshotOutcome::Stored`) calls `PgCommandLogDb::prune(stream, keepSnapshots)` right after; a failure only logs and the next snapshot prunes again. Redis already trims to the same horizon (the `keepSnapshots`-th newest snapshot), so the two stores keep the same window. A worker that fell behind the Redis window finds the commands missing in Postgres too: it now reloads from the newest snapshot (`Fault::Reload`), where it used to drop the Redis copy. Pruned commands are gone for good: a stream whose full history must be kept needs a consumer that copies the commands out before they are pruned. A kind can opt out per `commandStream.kinds.<kind>.keepHistory`: nothing of its streams is pruned from Postgres (the Redis window stays), which is the way to keep a stream whole until an audit consumer exists.

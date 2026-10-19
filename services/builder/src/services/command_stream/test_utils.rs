@@ -100,6 +100,18 @@ impl Test {
         self.with_access(Arc::new(AllowAll))
     }
 
+    /// Another service instance whose stores are adjusted by `tweak`, e.g. a slower cadence.
+    pub fn with_stores(&self, tweak: impl FnOnce(&mut StreamStores)) -> Test {
+        let mut stores = self.service.stores().clone();
+        tweak(&mut stores);
+        Test {
+            service: CommandStreamService::new(stores, self.service.kinds().clone(), Arc::new(AllowAll)),
+            redis: self.redis.clone(),
+            log: self.log.clone(),
+            _gate: None,
+        }
+    }
+
     /// Another service on the same stores with the given access.
     pub fn with_access(&self, access: Arc<dyn StreamAccess>) -> Test {
         Test {

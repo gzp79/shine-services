@@ -10,7 +10,7 @@ use crate::{
 };
 use shine_game::replay::{decode_snapshot, ReplayState};
 use shine_infra::db::{
-    command_log::{CommandLogError, StreamId},
+    command_log::{CommandLogError, SnapshotOutcome, StreamId},
     redis::RedisError,
 };
 use std::{collections::HashSet, future::Future, pin::Pin, sync::Arc, time::Duration};
@@ -316,6 +316,7 @@ impl<S: ReplayState> StreamWorker<S> {
                 .log
                 .try_store_snapshot(&self.stream_id, checkpoint.version, checkpoint.hash, &checkpoint.data)
                 .await?;
+            let stored = outcome == SnapshotOutcome::Stored;
             if let Some(version) = self.core.on_snapshot(&checkpoint, outcome) {
                 tracing::error!(
                     "[{}] State drift at version {version}: the local state differs from the authoritative snapshot",
@@ -324,8 +325,31 @@ impl<S: ReplayState> StreamWorker<S> {
                 command_stream_metrics().drift.add(1, &[]);
                 self.rebase(version).await?;
             }
+            // Only the instance that stored a snapshot prunes.
+            if stored {
+                self.prune().await;
+            }
         }
         Ok(())
+    }
+
+    /// Drops the snapshots beyond the kept ones and the commands below the oldest kept snapshot: nothing
+    /// replays from before it. A failure only postpones the pruning to the next snapshot.
+    async fn prune(&self) {
+        let kind = self.stores.settings.for_kind(S::KIND);
+        if kind.keep_history {
+            return;
+        }
+        match self.stores.log.prune(&self.stream_id, kind.keep_snapshots).await {
+            Ok(pruned) if pruned.snapshots > 0 || pruned.commands > 0 => tracing::debug!(
+                "[{}] Pruned {} snapshots and {} commands",
+                self.stream_id,
+                pruned.snapshots,
+                pruned.commands
+            ),
+            Ok(_) => {}
+            Err(err) => tracing::warn!("[{}] Failed to prune the command log: {err:#?}", self.stream_id),
+        }
     }
 
     async fn rebase(&mut self, version: i64) -> Result<(), StepError> {
@@ -458,11 +482,9 @@ impl<S: ReplayState> StreamWorker<S> {
                     .commands_after(&self.stream_id, tip, first.version - expected)
                     .await?;
                 if filled.first().map(|c| c.version) != Some(expected) {
-                    return Err(Fault::Reset {
-                        generation: meta.generation,
-                        reason: "commands missing from Redis and Postgres",
-                    }
-                    .into());
+                    // Pruned from Postgres as well: this worker fell behind the retained history, so it
+                    // starts over from the newest snapshot. The Redis copy is fine.
+                    return Err(Fault::Reload("behind the retained history").into());
                 }
                 applied += filled.len();
                 for command in filled {

@@ -17,6 +17,7 @@ fn config(snapshot_every: i64, keep_snapshots: i64, kinds: &[(&str, Option<i64>,
                     KindRetentionConfig {
                         snapshot_every: *every,
                         keep_snapshots: *keep,
+                        ..Default::default()
                     },
                 )
             })
@@ -86,4 +87,14 @@ fn the_config_reads_camel_case_json() {
     assert_eq!(settings.sync_interval, std::time::Duration::from_millis(200));
     assert_eq!(settings.for_kind("chat").snapshot_every, 50);
     assert_eq!(settings.for_kind("demo").snapshot_every, 5);
+}
+
+#[test]
+fn history_is_pruned_unless_a_kind_keeps_it() {
+    let config: CommandStreamConfig =
+        serde_json::from_str(r#"{"kinds":{"audit":{"keepHistory":true},"chat":{}}}"#).unwrap();
+    let settings = CommandStreamSettings::from_config(&config).unwrap();
+    assert!(settings.for_kind("audit").keep_history);
+    assert!(!settings.for_kind("chat").keep_history);
+    assert!(!settings.for_kind("other").keep_history);
 }

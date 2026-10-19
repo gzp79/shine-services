@@ -32,6 +32,7 @@ async fn a_failed_send_stops_all_later_frames() {
         KindSettings {
             snapshot_every: 10_000,
             keep_snapshots: 2,
+            keep_history: false,
         },
     );
     core.begin_load(None);
