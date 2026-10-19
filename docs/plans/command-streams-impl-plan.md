@@ -17,8 +17,9 @@
 | S1 Replay core and chat state | done | `cargo test -p shine-game --test replay` (25 tests), wasm build |
 | S2 Postgres command log | done | `cargo test -p shine-infra --test pg_command_log` (15 tests, `database-test`) |
 | S3 Builder Postgres and settings | done | `cargo test -p shine-builder` (56 tests; 7 new: settings, schema on startup) |
-| S4 Redis stream repository | next | |
-| S5 - S10 | open | |
+| S4 Redis stream repository | done, scripts reviewed | `cargo test -p shine-builder` (76 tests; 20 in `redis_command_stream`) |
+| S5 Hub subscriptions | next | |
+| S6 - S10 | open | |
 | S11 let the worker prune | decision pending | |
 
 **Decisions taken while implementing** (they supersede the older wording where they differ):
@@ -29,6 +30,8 @@
 - `PgCommandLogDb::prune(stream, keep)` deletes old snapshots and the commands below the oldest kept snapshot in one statement; it has no caller yet (S11).
 - `generation` is the history epoch (a fencing token owned by the log); the comments say so, the name stays. Renaming it to `epoch` is open.
 - `db.sqlCns` is optional; the Postgres pool is created only when `commandStream.enabled`. Production needs `builder.db.sqlCns` in the key vault before enabling.
+- The Redis repository has no keep-count setting: `mark_persisted(stream, generation, version, command_id, keep_from)` trims only below `keep_from` (the oldest stored snapshot version, 1 when none) and never above what is persisted. Stream ids are `StreamId` strings in the keys; the module carries a temporary `allow(dead_code, unused_imports)` until S6 uses it. The eviction-policy warning is part of the hardening plan (H4), not here.
+- Script review of S4 (line by line, plus concurrency, TTL, trim-boundary, payload and idle tests): `INGEST`, `MARK_PERSISTED`, `RESET`, `RETIRE_ACTIVE`, `IDLE_STREAMS` and `UNLOCK` held up. Two defects were fixed: `HYDRATE` deleted the old log before it wrote the new one, so a tail that is not contiguous or does not end at the head left a wiped log (the Rust side now checks the tail and returns an error before any write), and a configured TTL of 0 made `EXPIRE` delete every key (the config is clamped to at least 1; `max_unpersisted` too). Known limits: the dedupe window covers only the commands still in Redis; multi-key scripts need a single-primary Redis; the scripts call `TIME`, which needs effect replication (always so on the required Redis 6.2).
 - Connection strings for tests come from `shine_test::db::{get_redis_cns, get_pg_cns}`; with `CI` set a missing string fails the test. Test files of the builder are declared at the bottom of the owning file with `#[path]`.
 
 **Running the database tests locally** (Docker dev environment, see the `local-development` skill; the compose file needs the external network once: `docker network create shine`):
@@ -141,7 +144,7 @@ S1, S2 and S5 are independent and can be done in any order.
 - [ ] **Step 2:** Implement; remove builder's never-applied `sql_migrations/V1__commands.sql` if present (the command-log schema comes from `shine-infra`). Test config: `snapshotEvery` 5, `keepSnapshots` 2, `syncIntervalMs` 200 for API tests.
 - [ ] **Step 3: Verify. Step 4: Checkpoint.**
 
-## Task S4: Redis stream repository
+## Task S4: Redis stream repository - done (20 tests)
 
 **Files:** Create `services/builder/src/repositories/command_stream/{mod.rs, redis/{mod.rs, scripts.rs, redis_command_stream_db.rs, redis_command_stream_test.rs}}`.
 
