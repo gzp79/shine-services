@@ -1,4 +1,8 @@
+mod command_stream;
+
 use regex::bytes::Regex;
+
+pub use self::command_stream::CommandStreamSettings;
 
 pub struct WsSettings {
     pub allowed_origins: Vec<Regex>,
@@ -17,4 +21,6 @@ impl WsSettings {
 
 pub struct BuilderSettings {
     pub ws: WsSettings,
+    #[allow(dead_code)] // read by the stream service and worker
+    pub command_stream: CommandStreamSettings,
 }

@@ -3,7 +3,7 @@ use crate::{
     repositories::chat_comments::redis::RedisChatCommentsDb,
     repositories::hub_registry::redis::RedisHubConnectionDb,
     services::{ChatService, HubIntervals, HubService},
-    settings::{BuilderSettings, WsSettings},
+    settings::{BuilderSettings, CommandStreamSettings, WsSettings},
 };
 use anyhow::{anyhow, Error as AnyError};
 use shine_infra::{
@@ -44,6 +44,7 @@ impl AppState {
 
             BuilderSettings {
                 ws: WsSettings { allowed_origins, allowed_hosts },
+                command_stream: CommandStreamSettings::from_config(&config.feature.command_stream)?,
             }
         };
 

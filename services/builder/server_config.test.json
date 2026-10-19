@@ -12,6 +12,14 @@
     "chat": {
       "syncIntervalSeconds": 1
     },
+    "commandStream": {
+      "snapshotEvery": 5,
+      "keepSnapshots": 2,
+      "syncIntervalMs": 200,
+      "kinds": {
+        "chat": { "snapshotEvery": 5, "keepSnapshots": 2 }
+      }
+    },
     "db": {
       "redisCns": "redis://redis.mockbox.foo:6379",
       "sqlCns": "postgres://username:password@postgres.mockbox.foo:5432/database-builder?sslmode=disable"

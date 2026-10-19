@@ -8,9 +8,12 @@ mod settings;
 
 use self::{app_config::AppConfig, app_state::AppState, services::HubStatus};
 use anyhow::Error as AnyError;
-use repositories::create_redis_pool;
+use repositories::{create_postgres_pool, create_redis_pool};
 use routes::ws::ws_routes;
-use shine_infra::web::{AppBuildContext, FeatureConfig, WebAppConfig, WebApplication};
+use shine_infra::{
+    db::postgres::PostgresPoolStatus,
+    web::{AppBuildContext, FeatureConfig, WebAppConfig, WebApplication},
+};
 use utoipa_axum::router::OpenApiRouter;
 
 struct Application;
@@ -27,6 +30,12 @@ impl WebApplication for Application {
     ) -> Result<Self::AppState, AnyError> {
         let redis_pool = create_redis_pool(&config.feature.db).await?;
         let state = AppState::new(config, &redis_pool, context.core_services()).await?;
+
+        // The builder's own Postgres database holds the command streams, so it is only needed with them.
+        if config.feature.command_stream.enabled {
+            let pg_pool = create_postgres_pool(&config.feature.db).await?;
+            context.add_health_provider(PostgresPoolStatus::new(pg_pool));
+        }
 
         context.add_health_provider(HubStatus::new(state.hub_service().clone()));
 

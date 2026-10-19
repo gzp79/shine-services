@@ -40,7 +40,6 @@ tokio-postgres = { workspace = true, features = [
 ] }
 tokio-postgres-rustls = { workspace = true }
 postgres-from-row = { workspace = true }
-refinery = { workspace = true }
 
 ############################# WEB #############################
 axum = { workspace = true, features = ["ws"] }
@@ -53,3 +52,5 @@ shine-core = { workspace = true }
 
 [dev-dependencies]
 shine-test = { workspace = true, features = ["toxiproxy"] }
+# The Postgres tests install the ring crypto provider: both ring and aws-lc-rs are compiled in.
+rustls = { workspace = true, features = ["ring"] }
