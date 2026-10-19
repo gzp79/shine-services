@@ -1,7 +1,7 @@
 use redis::{aio::ConnectionLike, AsyncCommands, Client};
 use shine_infra::db::redis::{create_redis_pool, RedisError, RedisListener};
-use shine_test::test;
-use std::{collections::HashSet, env, sync::Arc, time::Duration};
+use shine_test::{db::get_redis_cns, test};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 use tokio::{
     sync::{Mutex, Notify},
     time::{sleep, timeout},
@@ -9,8 +9,8 @@ use tokio::{
 
 #[test(serial = "redis-listener")]
 async fn test_redis_listener_pub_sub() {
-    match env::var("SHINE_TEST_REDIS_CNS") {
-        Ok(cns) => {
+    match get_redis_cns() {
+        Some(cns) => {
             let pool = create_redis_pool(&cns).await.unwrap();
             let conn = pool.get().await.unwrap();
 
@@ -50,8 +50,8 @@ async fn test_redis_listener_pub_sub() {
 
 #[test(serial = "redis-listener")]
 async fn test_redis_listener_shared_connection_multi_channel() {
-    match env::var("SHINE_TEST_REDIS_CNS") {
-        Ok(cns) => {
+    match get_redis_cns() {
+        Some(cns) => {
             let pool = create_redis_pool(&cns).await.unwrap();
             let conn = pool.get().await.unwrap();
 
@@ -149,8 +149,8 @@ async fn count_pubsub_clients<C: ConnectionLike + Send>(conn: &mut C) -> usize {
 // that a message dropped during the outage would have updated. Serial: it kills ALL pub/sub clients.
 #[test(serial = "redis-listener")]
 async fn test_redis_listener_reconnect_signal() {
-    match env::var("SHINE_TEST_REDIS_CNS") {
-        Ok(cns) => {
+    match get_redis_cns() {
+        Some(cns) => {
             let pool = create_redis_pool(&cns).await.unwrap();
             let conn = pool.get().await.unwrap();
 
@@ -228,8 +228,8 @@ async fn test_redis_listener_reconnect_signal() {
 // lifetime). Serial: it counts pub/sub clients globally.
 #[test(serial = "redis-listener")]
 async fn test_redis_listener_closes_connection_on_drop() {
-    match env::var("SHINE_TEST_REDIS_CNS") {
-        Ok(cns) => {
+    match get_redis_cns() {
+        Some(cns) => {
             // A separate, independent pool used only to observe CLIENT LIST. It must outlive the
             // pool under test.
             let observer_pool = create_redis_pool(&cns).await.unwrap();
@@ -299,8 +299,8 @@ async fn test_redis_listener_closes_connection_on_drop() {
 // safe (no split-brain second connection, no lost subscriptions).
 #[test(serial = "redis-listener")]
 async fn test_redis_listener_parallel_connect() {
-    match env::var("SHINE_TEST_REDIS_CNS") {
-        Ok(cns) => {
+    match get_redis_cns() {
+        Some(cns) => {
             let pool = create_redis_pool(&cns).await.unwrap();
 
             const N: usize = 16;
@@ -416,8 +416,8 @@ async fn test_redis_listener_listen_times_out_when_unreachable() {
 // handler. Needs a server: the first listen() opens the shared connection.
 #[test(serial = "redis-listener")]
 async fn test_redis_listener_duplicate_listen_is_rejected() {
-    match env::var("SHINE_TEST_REDIS_CNS") {
-        Ok(cns) => {
+    match get_redis_cns() {
+        Some(cns) => {
             let pool = create_redis_pool(&cns).await.unwrap();
             let conn = pool.get().await.unwrap();
 
