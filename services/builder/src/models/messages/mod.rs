@@ -3,5 +3,5 @@ mod hub;
 
 pub use self::{
     chat::{ChatBatch, ChatComment},
-    hub::{HubEvent, HubMessage, ToTopic, TopicKey},
+    hub::{DisconnectReason, HubEvent, HubMessage, ToTopic, TopicKey},
 };

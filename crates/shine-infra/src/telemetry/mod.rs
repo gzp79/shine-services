@@ -1,12 +1,20 @@
+mod log_metrics;
+mod metric_label;
 mod otel_http;
-
 mod otel_layer;
-pub use self::otel_layer::*;
-mod telemetry_error;
-pub use self::telemetry_error::*;
+mod secret_tag;
 mod telemetry_config;
-pub use self::telemetry_config::*;
-mod telemetry_service;
-pub use self::telemetry_service::*;
+mod telemetry_error;
 mod telemetry_router;
-pub use self::telemetry_router::*;
+mod telemetry_service;
+
+pub use self::{
+    metric_label::{label, SECONDS_BUCKETS},
+    otel_http::{current_span_context, link_span, make_console_span, record_user_id, RequestSpan, TRACE_ID_HEADER},
+    otel_layer::*,
+    secret_tag::{secret_tag, SecretTag},
+    telemetry_config::*,
+    telemetry_error::*,
+    telemetry_router::*,
+    telemetry_service::*,
+};

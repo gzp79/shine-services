@@ -60,8 +60,6 @@ pub async fn email_login(
         return page;
     }
 
-    log::debug!("Query: {query:#?}");
-
     // 4. Validate captcha
     if let Some(page) = req
         .validate_captcha(query.captcha.as_deref(), query.error_url.as_ref())
@@ -71,7 +69,7 @@ pub async fn email_login(
     }
 
     // 5. Clear auth state
-    log::debug!("Email login flow triggered...");
+    tracing::debug!("Email login flow triggered...");
     let req = req.clear_auth_state().await;
 
     // 6. Business logic
@@ -91,6 +89,6 @@ pub async fn email_login(
     };
 
     // 7. Return response
-    log::info!("Email flow completed for: {}", identity.id);
+    tracing::info!("Email flow completed for: {}", identity.id);
     req.error_page(AuthError::EmailLogin, query.error_url.as_ref())
 }

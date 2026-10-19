@@ -53,7 +53,7 @@ impl RedisHubConnectionDb {
 
                 // Payload is "{instance_id}:{user_id}".
                 let Some((origin, raw_user_id)) = payload.split_once(':') else {
-                    log::error!("Malformed hub registry payload {payload:?}");
+                    tracing::error!("Malformed hub registry payload {payload:?}");
                     return;
                 };
 
@@ -65,10 +65,17 @@ impl RedisHubConnectionDb {
 
                 match Uuid::parse_str(raw_user_id) {
                     Ok(user_id) => handler(user_id),
-                    Err(err) => log::error!("Failed to parse hub registry user id {raw_user_id:?}: {err:#?}"),
+                    Err(err) => tracing::error!("Failed to parse hub registry user id {raw_user_id:?}: {err:#?}"),
                 }
             })
             .await?;
+        Ok(())
+    }
+
+    /// Stops listening for registry changes.
+    pub async fn unlisten_registry_changes(&self) -> Result<(), HubError> {
+        let client = self.client.get().await.map_err(RedisError::PoolError)?;
+        client.unlisten(HUB_REGISTRY_CHANGED_CHANNEL).await?;
         Ok(())
     }
 }

@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use serde_json::Value as JsonValue;
 use shine_infra::health::StatusProvider;
 
-/// Health/status provider that reports live hub counts (connected users and active subscribers).
+/// Health/status provider that reports live hub counts.
 pub struct HubStatus {
     hub_service: HubService,
 }

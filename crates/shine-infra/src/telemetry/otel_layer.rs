@@ -53,7 +53,10 @@ impl<S> Layer<S> for OtelLayer {
     fn layer(&self, inner: S) -> Self::Service {
         let meters = self.meter.as_ref().map(|meter| OtelMeters {
             request_counter: meter.u64_counter("request_count").build(),
-            request_duration: meter.f64_histogram("request_duration").build(),
+            request_duration: meter
+                .f64_histogram("request_duration")
+                .with_boundaries(crate::telemetry::SECONDS_BUCKETS.to_vec())
+                .build(),
             error_counter: meter.u64_counter("error_count").build(),
         });
 
@@ -100,7 +103,7 @@ where
     }
 
     fn call(&mut self, req: Request<ReqBody>) -> Self::Future {
-        let req = req;
+        let mut req = req;
 
         let route = req
             .extensions()
@@ -120,8 +123,9 @@ where
         } else {
             tracing::Span::none()
         };
+        req.extensions_mut().insert(otel_http::RequestSpan(span.clone()));
         let future = {
-            let _ = span.enter();
+            let _guard = span.enter();
             self.inner.call(req)
         };
         ResponseFuture {
@@ -152,7 +156,7 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
         let _guard = this.span.enter();
-        let result = ready!(this.inner.poll(cx));
+        let mut result = ready!(this.inner.poll(cx));
 
         if let Some(meters) = this.meters.as_ref() {
             let ep_attribute = [
@@ -170,6 +174,9 @@ where
         }
 
         otel_http::update_span_from_response_or_error(this.span, &result);
+        if let Ok(response) = &mut result {
+            otel_http::add_trace_id_header(this.span, response);
+        }
         Poll::Ready(result)
     }
 }

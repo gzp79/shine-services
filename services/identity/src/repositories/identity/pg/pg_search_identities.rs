@@ -12,7 +12,7 @@ use tracing::instrument;
 use super::pg_identities::IdentityRow;
 
 impl IdentitySearch for PgIdentityDbContext<'_> {
-    #[instrument(skip(self))]
+    #[instrument(level = "info", skip_all)]
     async fn search_identity(&mut self, search: SearchIdentityQuery<'_>) -> Result<Vec<Identity>, IdentityError> {
         let mut builder = QueryBuilder::new(
             "SELECT user_id, kind, name, encrypted_email, encrypted_normalized_email, email_confirmed, created FROM identities",

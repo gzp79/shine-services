@@ -59,8 +59,6 @@ pub async fn token_login(
         return page;
     }
 
-    log::debug!("Query: {query:#?}");
-
     let auth_session = req.into_auth_session().with_external_login(None);
 
     let AuthenticationSuccess {

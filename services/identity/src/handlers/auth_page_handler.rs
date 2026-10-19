@@ -46,10 +46,9 @@ impl<'a> AuthPageHandler<'a> {
     where
         E: Into<AuthError>,
     {
-        let error = error.into();
-        log::error!("Page Error: {error:#?}");
-        let problem: Problem = self.problem_config.transform(error);
-        log::error!("Page Problem: {problem:#?}");
+        let problem = Problem::from(error.into());
+        problem.log("Page Error");
+        let problem = self.problem_config.transform(problem);
 
         let mut target_url = error_url.unwrap_or(&self.settings.error_url).to_owned();
 

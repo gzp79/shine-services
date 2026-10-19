@@ -77,8 +77,6 @@ pub async fn oidc_auth(
         return page;
     }
 
-    log::debug!("Query: {query:#?}");
-
     // 5. Business logic - OIDC authentication
     let auth_code = AuthorizationCode::new(query.code);
     let auth_csrf_state = query.state;
@@ -95,7 +93,7 @@ pub async fn oidc_auth(
 
     // Check for Cross Site Request Forgery
     if csrf_state != auth_csrf_state {
-        log::debug!("CSRF test failed: [{csrf_state}], [{auth_csrf_state}]");
+        tracing::trace!("CSRF test failed: [{csrf_state}], [{auth_csrf_state}]");
         return req.error_page(ExternalLoginError::InvalidCSRF, error_url.as_ref());
     }
 
@@ -116,7 +114,6 @@ pub async fn oidc_auth(
     {
         Ok(token) => token,
         Err(err) => {
-            log::warn!("Token exchange error: {err:#?}");
             return req.error_page(
                 ExternalLoginError::TokenExchangeFailed(format!("{err:#?}")),
                 error_url.as_ref(),
@@ -126,10 +123,7 @@ pub async fn oidc_auth(
 
     let external_user = match core_client.get_external_user_info(client.provider.clone(), &token, nonce) {
         Ok(external_user) => external_user,
-        Err(err) => {
-            log::error!("{err:?}");
-            return req.error_page(err, error_url.as_ref());
-        }
+        Err(err) => return req.error_page(err, error_url.as_ref()),
     };
 
     // 6. Return response

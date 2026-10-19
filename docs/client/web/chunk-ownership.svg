@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 240" width="340" role="img" aria-label="Hex chunk (q, r) owning its NE, N, NW edges and E, NE, NW corners">
+  <style>
+    .face { fill: rgba(128,128,128,0.06); stroke: rgba(128,128,128,0.55); stroke-width: 1.5; }
+    .edge-owned { stroke: #fb923c; stroke-width: 4; fill: none; stroke-linecap: round; }
+    .edge-shared { stroke: rgba(128,128,128,0.45); stroke-width: 1.5; fill: none; }
+    .corner-owned { fill: #22c55e; stroke: #ffffff; stroke-width: 1.5; }
+    .corner-shared { fill: rgba(128,128,128,0.6); }
+    text { fill: #475569; font-family: system-ui, sans-serif; font-size: 11px; }
+    .strong { fill: #0f172a; font-weight: 700; }
+    .mono { font-family: ui-monospace, 'JetBrains Mono', monospace; font-size: 10px; }
+    @media (prefers-color-scheme: dark) {
+      text { fill: #94a3b8; }
+      .strong { fill: #e2e8f0; }
+      .corner-owned { stroke: #0f1117; }
+    }
+  </style>
+
+  <polygon class="face" points="225,150 193,94 128,94 95,150 128,206 193,206"/>
+
+  <!-- owned edges: NE, N, NW (upper three) -->
+  <line class="edge-owned" x1="225" y1="150" x2="193" y2="94"/>
+  <line class="edge-owned" x1="193" y1="94"  x2="128" y2="94"/>
+  <line class="edge-owned" x1="128" y1="94"  x2="95"  y2="150"/>
+  <!-- shared edges: SW, S, SE (owned by lower neighbours) -->
+  <line class="edge-shared" x1="95"  y1="150" x2="128" y2="206"/>
+  <line class="edge-shared" x1="128" y1="206" x2="193" y2="206"/>
+  <line class="edge-shared" x1="193" y1="206" x2="225" y2="150"/>
+
+  <!-- owned corners: E, NE, NW -->
+  <circle class="corner-owned" cx="225" cy="150" r="5"/>
+  <circle class="corner-owned" cx="193" cy="94"  r="5"/>
+  <circle class="corner-owned" cx="128" cy="94"  r="5"/>
+  <!-- shared corners: W, SW, SE -->
+  <circle class="corner-shared" cx="95"  cy="150" r="3.5"/>
+  <circle class="corner-shared" cx="128" cy="206" r="3.5"/>
+  <circle class="corner-shared" cx="193" cy="206" r="3.5"/>
+
+  <text class="mono strong" x="160" y="154" text-anchor="middle">(q, r)</text>
+
+  <text class="strong" x="233" y="153" text-anchor="start">E</text>
+  <text class="strong" x="199" y="87"  text-anchor="start">NE</text>
+  <text class="strong" x="124" y="87"  text-anchor="end">NW</text>
+  <text x="88"  y="153" text-anchor="end">W</text>
+  <text x="124" y="222" text-anchor="end">SW</text>
+  <text x="199" y="222" text-anchor="start">SE</text>
+
+  <text class="mono" x="160" y="236" text-anchor="middle">owns NE·N·NW edges, E·NE·NW corners</text>
+</svg>

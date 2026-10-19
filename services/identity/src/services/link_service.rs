@@ -21,6 +21,7 @@ impl<DB: IdentityDb> LinkService<DB> {
         Self { db, events }
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn find_by_external_link(
         &self,
         provider: &str,
@@ -30,6 +31,7 @@ impl<DB: IdentityDb> LinkService<DB> {
         ctx.find_by_external_link(provider, provider_id).await
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn add_external_link(
         &self,
         user_id: Uuid,
@@ -42,6 +44,7 @@ impl<DB: IdentityDb> LinkService<DB> {
         Ok(())
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn delete_extern_link(
         &self,
         user_id: Uuid,
@@ -59,11 +62,13 @@ impl<DB: IdentityDb> LinkService<DB> {
         }
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn is_linked(&self, user_id: Uuid) -> Result<bool, IdentityError> {
         let mut ctx = self.db.create_context().await?;
         ctx.is_linked(user_id).await
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn list_external_links_by_user(&self, user_id: Uuid) -> Result<Vec<ExternalLink>, IdentityError> {
         let mut ctx = self.db.create_context().await?;
         ctx.find_all_links(user_id).await

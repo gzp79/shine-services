@@ -28,6 +28,6 @@ async fn test_stored_statements() {
             let p2: i32 = p2.get(0);
             assert_eq!(p1, p2);
         }
-        _ => log::warn!("Skipping test_stored_statements"),
+        _ => tracing::warn!("Skipping test_stored_statements"),
     }
 }

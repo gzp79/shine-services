@@ -57,8 +57,6 @@ pub async fn oauth2_link(
         return page;
     }
 
-    log::debug!("Query: {query:#?}");
-
     // 4. Verify user is logged in
     if req.auth_session().user_session().is_none() {
         return req.error_page(AuthError::LoginRequired, query.error_url.as_ref());

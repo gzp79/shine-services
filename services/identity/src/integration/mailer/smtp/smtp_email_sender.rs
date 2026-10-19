@@ -16,21 +16,21 @@ pub enum SmtpEmailSenderBuildError {
 
 impl From<AddressError> for EmailSenderError {
     fn from(err: AddressError) -> Self {
-        log::warn!("Invalid email address, {err}");
+        tracing::warn!("Invalid email address, {err}");
         EmailSenderError::InvalidEmailAddress
     }
 }
 
 impl From<EmailError> for EmailSenderError {
     fn from(err: EmailError) -> Self {
-        log::warn!("Invalid email content, {err}");
+        tracing::warn!("Invalid email content, {err}");
         EmailSenderError::InvalidContent
     }
 }
 
 impl From<smtp::Error> for EmailSenderError {
     fn from(err: smtp::Error) -> Self {
-        log::warn!("Email send failed: {err}");
+        tracing::warn!("Email send failed: {err}");
         EmailSenderError::SendFailed(err.to_string())
     }
 }
@@ -54,7 +54,7 @@ impl SmtpEmailSender {
             let relay = iter.next().ok_or(SmtpEmailSenderBuildError::InvalidSmtpUrl)?;
             let port = iter.next().map_or(Ok(SUBMISSIONS_PORT), |p| {
                 p.parse().map_err(|err| {
-                    log::error!("Failed to parse SMTP port: {err}");
+                    tracing::error!("Failed to parse SMTP port: {err}");
                     SmtpEmailSenderBuildError::InvalidSmtpUrl
                 })
             })?;
@@ -64,18 +64,19 @@ impl SmtpEmailSender {
         let credentials = Credentials::new(smtp_username.to_owned(), smtp_password.to_owned());
         let mut mailer_builder = SmtpTransport::relay(relay)
             .map_err(|err| {
-                log::error!("Failed to create SMTP transport: {err}");
+                tracing::error!("Failed to create SMTP transport: {err}");
                 SmtpEmailSenderBuildError::InvalidSmtpUrl
             })?
             .port(port)
             .credentials(credentials);
 
         if !use_tls {
-            log::warn!("TLS is disabled for SMTP transport");
+            tracing::warn!("TLS is disabled for SMTP transport");
             mailer_builder = mailer_builder.tls(Tls::None);
         }
 
         let mailer = mailer_builder.build();
+        tracing::info!("SMTP mailer configured, relay:[{relay}:{port}], tls:[{use_tls}], domain:[{email_domain}]");
 
         Ok(Self {
             email_domain: email_domain.to_owned(),
@@ -86,12 +87,8 @@ impl SmtpEmailSender {
 
 impl EmailSender for SmtpEmailSender {
     async fn send(&self, from_name: &str, to: &str, content: Email) -> Result<(), EmailSenderError> {
-        log::info!(
-            "Sending email from {} to {} with subject {}...",
-            to,
-            from_name,
-            content.subject
-        );
+        tracing::debug!("Sending email from {from_name}, subject: {}", content.subject);
+        tracing::trace!("Sending email to {to}");
 
         let builder = Message::builder()
             .from(format!("{}@{}", from_name, self.email_domain).parse()?)

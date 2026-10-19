@@ -74,15 +74,13 @@ pub async fn oauth2_auth(
         return page;
     }
 
-    log::debug!("Query: {query:#?}");
-
     // 5. Business logic - OAuth2 authentication
     let auth_code = AuthorizationCode::new(query.code);
     let auth_csrf_state = query.state;
 
     // Check for Cross Site Request Forgery
     if csrf_state != auth_csrf_state {
-        log::debug!("CSRF test failed: [{csrf_state}], [{auth_csrf_state}]");
+        tracing::trace!("CSRF test failed: [{csrf_state}], [{auth_csrf_state}]");
         return req.error_page(ExternalLoginError::InvalidCSRF, error_url.as_ref());
     }
 
@@ -96,7 +94,6 @@ pub async fn oauth2_auth(
     {
         Ok(token) => token,
         Err(err) => {
-            log::warn!("Token exchange error: {err:?}");
             return req.error_page(
                 ExternalLoginError::TokenExchangeFailed(format!("{err:#?}")),
                 error_url.as_ref(),

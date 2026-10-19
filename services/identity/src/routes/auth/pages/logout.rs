@@ -50,8 +50,6 @@ pub async fn logout(
         return page;
     }
 
-    log::debug!("Query: {query:#?}");
-
     state
         .logout_handler()
         .logout(

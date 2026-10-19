@@ -35,7 +35,7 @@ impl AuthRouter {
             {
                 openid_clients.push(connect);
             } else {
-                log::error!("Skipping {provider} provider");
+                tracing::error!("Skipping {provider} provider");
             }
         }
 
@@ -50,7 +50,7 @@ impl AuthRouter {
         let mut auth_routes = pages::page_routes();
 
         for client in self.oauth2_clients {
-            log::info!("Registering OAuth2 provider {}", client.provider);
+            tracing::info!("Registering OAuth2 provider {}", client.provider);
 
             let provider_route = pages::oauth2_provider_routes(client);
 
@@ -58,7 +58,7 @@ impl AuthRouter {
         }
 
         for client in self.openid_clients {
-            log::info!("Registering OpenId Connect provider {}", client.provider);
+            tracing::info!("Registering OpenId Connect provider {}", client.provider);
 
             let provider_route = pages::oidc_provider_routes(client);
 

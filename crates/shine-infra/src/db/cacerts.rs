@@ -15,14 +15,14 @@ pub fn get_root_cert_store() -> Result<RootCertStore, CertError> {
     // own: only fail if we could not add a single usable cert to the store. Otherwise a lone bad
     // cert in the OS trust store would refuse service startup despite a working trust anchor set.
     if !certs_result.errors.is_empty() {
-        log::warn!(
+        tracing::warn!(
             "Some native certs failed to load (continuing with the usable ones): {:?}",
             certs_result.errors
         );
     }
 
     let (added, ignored) = store.add_parsable_certificates(certs_result.certs);
-    log::debug!("Loaded {added} native root certs ({ignored} ignored as unparsable)");
+    tracing::debug!("Loaded {added} native root certs ({ignored} ignored as unparsable)");
 
     if store.is_empty() {
         Err(CertError)

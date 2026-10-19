@@ -1,7 +1,11 @@
 use crate::{
     db::{
-        redis::{RedisError, RedisListener},
-        CnsParamError,
+        pool_error_logger::PoolErrorLogger,
+        redis::{
+            redis_commands::{assert_not_blocking, redis_command_name},
+            RedisError, RedisListener,
+        },
+        time_db_operation, CnsParamError,
     },
     health::StatusProvider,
 };
@@ -16,12 +20,14 @@ use std::{
     time::Duration,
 };
 
+use tracing::Instrument;
+
 pub use shine_infra_macros::RedisJsonValue;
 
-/// A pooled connection paired with a clone of the manager's `RedisListener` — mirrors
-/// `PGConnection`'s relationship to `PGListener`. Regular commands go through the
-/// `MultiplexedConnection` (via `ConnectionLike`/`Deref`/`DerefMut`); `listen` delegates
+/// A pooled connection paired with a clone of the manager's `RedisListener`.
+/// Regular commands go through the `MultiplexedConnection`, `listen` delegates
 /// to the listener, which owns its own dedicated connection, independent of this pooled one.
+#[derive(Clone)]
 pub struct RedisConnection {
     listener: RedisListener,
     client: MultiplexedConnection,
@@ -49,7 +55,21 @@ impl RedisConnection {
 
 impl ConnectionLike for RedisConnection {
     fn req_packed_command<'a>(&'a mut self, cmd: &'a Cmd) -> RedisFuture<'a, Value> {
-        self.client.req_packed_command(cmd)
+        let name = redis_command_name(cmd);
+        assert_not_blocking(name);
+        let span = tracing::trace_span!(
+            "redis",
+            otel.name = name,
+            otel.kind = "client",
+            db.system = "redis",
+            db.operation.name = name,
+            db.query.text = name,
+        );
+        Box::pin(time_db_operation(
+            "redis",
+            name,
+            self.client.req_packed_command(cmd).instrument(span),
+        ))
     }
 
     fn req_packed_commands<'a>(
@@ -58,7 +78,29 @@ impl ConnectionLike for RedisConnection {
         offset: usize,
         count: usize,
     ) -> RedisFuture<'a, Vec<Value>> {
-        self.client.req_packed_commands(cmd, offset, count)
+        let span = tracing::trace_span!(
+            "redis",
+            otel.name = "PIPELINE",
+            otel.kind = "client",
+            db.system = "redis",
+            db.operation.name = "PIPELINE",
+            db.operation.batch.size = tracing::field::Empty,
+            db.query.text = tracing::field::Empty,
+        );
+        for name in cmd.cmd_iter().map(redis_command_name) {
+            assert_not_blocking(name);
+        }
+        // Command names only: arguments carry keys and user data.
+        if !span.is_disabled() {
+            let names: Vec<&str> = cmd.cmd_iter().map(redis_command_name).collect();
+            span.record("db.operation.batch.size", names.len());
+            span.record("db.query.text", names.join("; "));
+        }
+        Box::pin(time_db_operation(
+            "redis",
+            "PIPELINE",
+            self.client.req_packed_commands(cmd, offset, count).instrument(span),
+        ))
     }
 
     fn get_db(&self) -> i64 {
@@ -222,9 +264,13 @@ pub async fn create_redis_pool(cns: &str) -> Result<RedisConnectionPool, RedisCo
     let redis = bb8::Pool::builder()
         .max_size(max_size)
         .connection_timeout(pool_timeout)
+        .error_sink(Box::new(PoolErrorLogger("redis")))
         .build(redis_manager)
         .await?;
 
+    tracing::info!(
+        "Redis pool created (max_size: {max_size}, pool_timeout: {pool_timeout:?}, timeout_ms: {timeout_ms:?})"
+    );
     Ok(redis)
 }
 

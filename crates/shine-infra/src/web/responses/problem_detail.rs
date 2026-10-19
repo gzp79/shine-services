@@ -33,9 +33,9 @@ pub struct Problem {
     pub instance: Option<Url>,
     #[serde(rename = "detail")]
     pub detail: String,
-
     #[serde(rename = "extension")]
     pub extension: JsonValue,
+
     // This property is returned only if service configuration allows it
     #[serde(rename = "sensitive")]
     pub sensitive: JsonValue,
@@ -145,6 +145,19 @@ impl Problem {
     {
         self.with_sensitive(format!("{extension}"))
     }
+
+    /// Log the problem with a level matching its status; `context` prefixes each message.
+    pub fn log(&self, context: &str) {
+        // EXCEPTION to the "sensitive data: trace only" rule: the dump includes the internal cause, the only root-cause
+        // info in prod. Remove once errors carry a safe cause label (e.g. pg.connection, redis.timeout).
+        if self.status.is_server_error() {
+            tracing::error!("{context}: {self:#?}");
+        } else if self.status.is_client_error() {
+            tracing::info!("{context}: {self:#?}");
+        } else {
+            tracing::debug!("{context}: {self:#?}");
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -211,7 +224,7 @@ impl ProblemResponse {
 impl IntoResponse for ProblemResponse {
     fn into_response(self) -> Response {
         let ProblemResponse { problem, config } = self;
-        log::info!("problem response: {problem:#?}");
+        problem.log("Problem response");
         let problem = config.transform(problem);
         (problem.status, Json(problem)).into_response()
     }

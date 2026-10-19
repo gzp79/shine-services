@@ -15,7 +15,8 @@ impl ExternalUserInfo {
         if let Some(name) = &self.name {
             if name.chars().count() > 20 {
                 let truncated_name: String = name.chars().take(20).collect();
-                log::info!("Truncating name from '{name}' to '{truncated_name}'");
+                tracing::debug!("Truncating external user name, provider:[{}]", self.provider);
+                tracing::trace!("Truncating name from '{name}' to '{truncated_name}'");
                 self.name = Some(truncated_name);
             }
         }

@@ -21,7 +21,7 @@ use std::{env, fmt::Debug, fs, future::Future, net::SocketAddr, time::Duration a
 use tokio::{net::TcpListener, runtime::Runtime, signal, time::sleep};
 use tower_http::{
     cors::{AllowOrigin, CorsLayer},
-    trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
+    trace::{DefaultOnResponse, TraceLayer},
 };
 use tracing::{instrument, level_filters::LevelFilter, Level};
 use tracing_log::LogTracer;
@@ -67,7 +67,7 @@ impl ApiDoc {
 async fn shutdown_signal() {
     let ctrl_c = async {
         signal::ctrl_c().await.expect("failed to install Ctrl+C handler");
-        log::warn!("Received ctrl-c, shutting down the server...")
+        tracing::warn!("Received ctrl-c, shutting down the server...")
     };
 
     #[cfg(unix)]
@@ -76,7 +76,7 @@ async fn shutdown_signal() {
             .expect("Failed to install signal handler")
             .recv()
             .await;
-        log::warn!("Received SIGTERM, shutting down the server...")
+        tracing::warn!("Received SIGTERM, shutting down the server...")
     };
 
     #[cfg(not(unix))]
@@ -101,7 +101,7 @@ async fn graceful_shutdown(handle: Handle<SocketAddr>, shutdown_hooks: Vec<Shutd
 
     loop {
         sleep(StdDuration::from_secs(1)).await;
-        log::info!("alive connections: {}", handle.connection_count());
+        tracing::info!("alive connections: {}", handle.connection_count());
     }
 }
 
@@ -181,6 +181,7 @@ fn create_cors_layer(allowed_origins: &[String]) -> Result<CorsLayer, AnyError> 
             Method::OPTIONS,
         ])
         .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT])
+        .expose_headers([header::HeaderName::from_static(crate::telemetry::TRACE_ID_HEADER)])
         .allow_credentials(true);
     Ok(cors)
 }
@@ -211,7 +212,7 @@ async fn load_app_config<A: WebApplication>() -> Result<WebAppConfig<A::AppConfi
     tracing::error!("init-error - tracing: ok");
 
     let config = WebAppConfig::<A::AppConfig>::load(&stage, None).await?;
-    log::info!("pre-init completed");
+    tracing::info!("pre-init completed");
 
     Ok(config)
 }
@@ -221,46 +222,52 @@ async fn create_web_app<A: WebApplication>(
     config: &WebAppConfig<A::AppConfig>,
     app: &A,
 ) -> Result<(Router<()>, Vec<ShutdownHook>), AnyError> {
-    log::trace!("Creating telemetry service...");
+    tracing::trace!("Creating telemetry service...");
     let telemetry_service = TelemetryService::new(app.feature_name(), &config.telemetry).await?;
-    log::trace!("Creating health service...");
+    tracing::trace!("Creating health service...");
     let mut health_service = HealthService::new(app.feature_name(), config)?;
-    log::trace!("Creating problem service...");
+    tracing::trace!("Creating problem service...");
     let problem_service = ProblemConfig::new(config.service.full_problem_response);
-    log::trace!("Creating in-flight service...");
+    tracing::trace!("Creating in-flight service...");
     let in_flight_service = crate::health::InFlightService::new();
-    log::trace!("Creating current user service...");
+    tracing::trace!("Creating current user service...");
     let current_user_service = Arc::new(CurrentUserService::from_config(&config.service).await?);
     let core_services = CoreServices {
         current_user_service: Arc::clone(&current_user_service),
     };
 
-    log::trace!("Creating layer...");
+    tracing::trace!("Creating layer...");
     let cors_layer = create_cors_layer(&config.service.allowed_origins)?;
     let powered_by_layer = if config.service.expose_powered_by {
         Some(PoweredBy::from_service_info(app.feature_name(), &config.core.version)?)
     } else {
         None
     };
-    let log_layer = TraceLayer::new_for_http()
-        .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
+
+    // Each request has 2 spans:
+    // - a trace-backend-only span (OpenTelemetry attributes)
+    // - a console-only span (method, uri, access log)
+    // Keeping them apart lets each output have its own fields and filters.
+    let trace_layer = telemetry_service.create_layer();
+    let console_layer = TraceLayer::new_for_http()
+        .make_span_with(crate::telemetry::make_console_span)
         .on_response(DefaultOnResponse::new().level(Level::INFO));
 
     // Register built-in status providers
     health_service.add_provider(crate::health::UptimeStatus::new());
     health_service.add_provider(in_flight_service.clone());
 
-    log::trace!("Creating common routes...");
+    tracing::trace!("Creating common routes...");
     let mut router = OpenApiRouter::new();
     router = router.nest(&format!("/{}", app.feature_name()), health_service.create_router());
     router = router.nest(&format!("/{}", app.feature_name()), telemetry_service.create_router());
 
-    log::trace!("Creating app state...");
+    tracing::trace!("Creating app state...");
     let mut shutdown_hooks: Vec<ShutdownHook> = Vec::new();
     let mut app_context = AppBuildContext::new(&core_services, &mut health_service, &mut shutdown_hooks);
     let app_state = app.create(config, &mut app_context, &mut router).await?;
 
-    log::trace!("Setting up open API...");
+    tracing::trace!("Setting up open API...");
     let (router, open_api) = router.split_for_parts();
     let router = if config.service.expose_api_docs {
         let mut doc = ApiDoc::with_default_components();
@@ -278,7 +285,7 @@ async fn create_web_app<A: WebApplication>(
         router
     };
 
-    log::trace!("Creating app routes...");
+    tracing::trace!("Creating app routes...");
     Ok((
         router
             .layer(Extension(current_user_service))
@@ -287,8 +294,9 @@ async fn create_web_app<A: WebApplication>(
             .layer(tower::util::option_layer(powered_by_layer))
             .layer(SecurityHeaders::default())
             .layer(cors_layer)
-            .layer(telemetry_service.create_layer())
-            .layer(log_layer)
+            // trace_layer must be inside console_layer: the trace span is the current span in the handlers
+            .layer(trace_layer)
+            .layer(console_layer)
             .with_state(app_state),
         shutdown_hooks,
     ))
@@ -297,12 +305,12 @@ async fn create_web_app<A: WebApplication>(
 async fn start_web_app<A: WebApplication>(app: A) -> Result<(), AnyError> {
     let config = load_app_config::<A>().await?;
     let (router, shutdown_hooks) = create_web_app(&config, &app).await?;
-    log::info!("Starting web app with config...");
+    tracing::info!("Starting web app with config...");
 
     let addr = SocketAddr::from(([0, 0, 0, 0], config.service.port));
 
     if let Some(tls_config) = &config.service.tls {
-        log::info!("Starting service on https://{addr:?} ...");
+        tracing::info!("Starting service on https://{addr:?} ...");
         let cert = fs::read(&tls_config.cert)?;
         let key = fs::read(&tls_config.key)?;
         //todo: workaround for https://github.com/programatik29/axum-server/issues/153
@@ -320,7 +328,7 @@ async fn start_web_app<A: WebApplication>(app: A) -> Result<(), AnyError> {
             .await
             .map_err(|e| anyhow!(e))
     } else {
-        log::info!("Starting service on http://{addr:?} ...");
+        tracing::info!("Starting service on http://{addr:?} ...");
         let listener = TcpListener::bind(&addr).await.unwrap();
         let shutdown = async move {
             shutdown_signal().await;

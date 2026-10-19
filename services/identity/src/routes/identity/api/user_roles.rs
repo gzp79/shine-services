@@ -79,14 +79,14 @@ pub async fn add_user_role(
         auth_key.map(|auth| auth.token().to_owned()),
         &state.settings().super_user_api_key_hash,
     ) {
-        log::trace!("Using api key");
+        tracing::trace!("Using api key");
         if !bcrypt::verify(auth_key, master_key_hash).unwrap_or(false) {
             return Err(
                 PermissionError::MissingPermission(permissions::UPDATE_ANY_USER_ROLE).into_response(&problem_config)
             );
         }
     } else {
-        log::trace!("Using cookie");
+        tracing::trace!("Using cookie");
         user.identity_permissions()
             .check(permissions::UPDATE_ANY_USER_ROLE)
             .map_err(|err| err.into_response(&problem_config))?;
@@ -129,14 +129,14 @@ pub async fn get_user_roles(
         auth_key.map(|auth| auth.token().to_owned()),
         &state.settings().super_user_api_key_hash,
     ) {
-        log::trace!("Using api key");
+        tracing::trace!("Using api key");
         if !bcrypt::verify(auth_key, master_key_hash).unwrap_or(false) {
             return Err(
                 PermissionError::MissingPermission(permissions::READ_ANY_USER_ROLE).into_response(&problem_config)
             );
         }
     } else {
-        log::trace!("Using cookie");
+        tracing::trace!("Using cookie");
         user.identity_permissions()
             .check(permissions::READ_ANY_USER_ROLE)
             .map_err(|err| err.into_response(&problem_config))?;
@@ -191,14 +191,14 @@ pub async fn delete_user_role(
         auth_key.map(|auth| auth.token().to_owned()),
         &state.settings().super_user_api_key_hash,
     ) {
-        log::trace!("Using api key");
+        tracing::trace!("Using api key");
         if !bcrypt::verify(auth_key, master_key).unwrap_or(false) {
             return Err(
                 PermissionError::MissingPermission(permissions::UPDATE_ANY_USER_ROLE).into_response(&problem_config)
             );
         }
     } else {
-        log::trace!("Using cookie");
+        tracing::trace!("Using cookie");
         user.identity_permissions()
             .check(permissions::UPDATE_ANY_USER_ROLE)
             .map_err(|err| err.into_response(&problem_config))?;

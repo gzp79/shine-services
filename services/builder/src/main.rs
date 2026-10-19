@@ -33,7 +33,7 @@ impl WebApplication for Application {
         let hub_service = state.hub_service().clone();
         context.add_shutdown_hook(move || {
             if let Err(err) = hub_service.request_shutdown() {
-                log::warn!("Failed to send hub shutdown command from shutdown hook: {err:#?}");
+                tracing::warn!("Failed to send hub shutdown command from shutdown hook: {err:#?}");
             }
         });
 

@@ -7,6 +7,7 @@ use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use shine_infra::{
     session::CheckedCurrentUser,
+    telemetry::secret_tag,
     web::{
         extracts::{ClientFingerprint, SiteInfo, ValidatedJson, ValidatedPath, ValidationErrorEx},
         responses::{IntoProblemResponse, Problem, ProblemConfig, ProblemResponse},
@@ -192,10 +193,10 @@ pub async fn get_token(
             if t.user_id == user.user_id {
                 Some(ActiveToken::from(t))
             } else {
-                log::warn!(
+                tracing::warn!(
                     "User {} tried to access token-hash ({}) of user {}",
                     user.user_id,
-                    params.hash,
+                    secret_tag(&params.hash),
                     t.user_id
                 );
                 None

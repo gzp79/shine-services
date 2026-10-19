@@ -49,7 +49,7 @@ pub struct AppConfig {
     pub ws: WsConfig,
     #[serde(default)]
     pub chat: ChatConfig,
-    /// Hub heartbeat interval in seconds; Redis TTL is derived as heartbeat * 2.
+    /// Hub heartbeat interval in seconds; Redis TTL is derived from  heartbeat timeout.
     #[serde(default = "AppConfig::default_hub_heartbeat_seconds")]
     pub hub_heartbeat_seconds: u64,
     /// Interval in seconds between session-liveness re-checks.

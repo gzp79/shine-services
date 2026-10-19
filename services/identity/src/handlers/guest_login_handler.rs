@@ -47,6 +47,7 @@ where
     /// Creates the user then delegates token minting and session setup to
     /// `CredentialHandler`. The auth_session must already have its prior state
     /// cleared by the caller.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn register_guest(
         &self,
         auth_session: AuthSession,
@@ -59,7 +60,8 @@ where
             Ok(identity) => identity,
             Err(err) => return self.page_handler.error(auth_session, err, error_url),
         };
-        log::debug!("New guest user created: {identity:#?}");
+        tracing::info!("Guest user {} registered", identity.id);
+        tracing::trace!("New guest user created: {identity:#?}");
 
         self.credential_handler
             .establish(

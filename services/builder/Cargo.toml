@@ -4,7 +4,6 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-log = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
@@ -21,6 +20,10 @@ regex = { workspace = true }
 futures = { workspace = true }
 futures-channel = { workspace = true }
 tokio = { workspace = true }
+
+############################# TRACING #############################
+tracing = { workspace = true }
+opentelemetry = { workspace = true }
 
 ############################# DB #############################
 bb8 = { workspace = true }
@@ -49,4 +52,4 @@ shine-infra = { workspace = true }
 shine-core = { workspace = true }
 
 [dev-dependencies]
-shine-test = { workspace = true }
+shine-test = { workspace = true, features = ["toxiproxy"] }

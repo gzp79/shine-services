@@ -96,7 +96,7 @@ where
             .and_then(|cookie| serde_json::from_str::<SessionCookie>(cookie.value()).ok())
             .ok_or_else(|| ErrorResponse::new(&problem_config, UserSessionError::Unauthenticated))?;
 
-        log::debug!("Checking fingerprint: {:?}", session_cookie.user_id);
+        tracing::debug!("Checking fingerprint: {:?}", session_cookie.user_id);
         if session_cookie.fingerprint != fingerprint.as_str() {
             return Err(ErrorResponse::new(
                 &problem_config,
@@ -104,11 +104,15 @@ where
             ));
         }
 
-        log::debug!("Finding user session: {:?}", session_cookie.user_id);
+        tracing::debug!("Finding user session: {:?}", session_cookie.user_id);
         let current_user = session_service
             .get_current_user(session_cookie.user_id, session_cookie.key)
             .await
             .map_err(|err| ErrorResponse::new(&problem_config, err))?;
+        crate::telemetry::record_user_id(
+            &crate::telemetry::RequestSpan::from_extensions(&parts.extensions),
+            current_user.user_id,
+        );
         Ok(CheckedCurrentUser(current_user))
     }
 }

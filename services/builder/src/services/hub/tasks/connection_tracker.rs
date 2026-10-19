@@ -1,8 +1,8 @@
 use crate::{
     models::messages::{HubEvent, HubMessage, TopicKey},
-    services::HubService,
+    services::{hub::hub_metrics::hub_metrics, HubService},
 };
-use shine_infra::session::SessionKey;
+use shine_infra::{session::SessionKey, telemetry::label};
 use std::{collections::HashMap, future::Future, sync::Arc, time::Duration};
 use tokio::{
     sync::{mpsc, Notify},
@@ -34,7 +34,7 @@ impl ConnectionTracker {
                 self.connections.insert(user_id, (connection_id, session_key));
                 false
             }
-            HubMessage::Hub(HubEvent::UserDisconnected { user_id, connection_id }) => {
+            HubMessage::Hub(HubEvent::UserDisconnected { user_id, connection_id, .. }) => {
                 // Only forget the user when the disconnected connection is the one we track; a
                 // stale disconnect for a replaced connection must not drop the fresh reconnect.
                 if self.connections.get(&user_id).map(|(id, _)| *id) == Some(connection_id) {
@@ -55,6 +55,7 @@ impl ConnectionTracker {
 
 /// A periodic consumer of the connection view, providing only the per-tick work.
 pub trait ConnectionConsumer: Send + 'static {
+    /// The work of a tick.
     fn on_tick(&mut self, tracker: &ConnectionTracker) -> impl Future<Output = ()> + Send;
 }
 
@@ -81,6 +82,21 @@ pub async fn spawn_connection_loop_with_wake<C: ConnectionConsumer>(
 ) -> JoinHandle<()> {
     let subscription = service.subscribe(vec![TopicKey::Hub]).await;
     tokio::spawn(run_connection_loop(subscription, interval, Some(wake), consumer))
+}
+
+/// Short type name of a consumer, for metric labels and logs.
+fn consumer_name<C: ConnectionConsumer>() -> &'static str {
+    std::any::type_name::<C>().rsplit("::").next().unwrap_or_default()
+}
+
+/// Runs a single tick and measures its duration, labelled by the consumer's type name.
+async fn run_tick<C: ConnectionConsumer>(consumer: &mut C, tracker: &ConnectionTracker) {
+    let start = std::time::Instant::now();
+    consumer.on_tick(tracker).await;
+    let name = consumer_name::<C>();
+    hub_metrics()
+        .tick_duration
+        .record(start.elapsed().as_secs_f64(), &[label("consumer", name)]);
 }
 
 /// Drives a self-contained loop that event-sources its own [`ConnectionTracker`] from
@@ -111,73 +127,32 @@ pub async fn run_connection_loop<C: ConnectionConsumer>(
 
         tokio::select! {
             // The tick is prioritized so a heavy event stream cannot starve TTL refreshes and let a
-            // live connection expire.
+            // live connection expire. Lifecycle events come before wakes: a wake permit stored during
+            // `on_tick` is ready at once, so steady wakes would otherwise starve the connection view.
             biased;
             _ = ticker.tick() => {
-                consumer.on_tick(&tracker).await;
-            }
-            _ = woken => {
-                consumer.on_tick(&tracker).await;
+                run_tick(&mut consumer, &tracker).await;
             }
             message = subscription.recv() => match message {
                 Some(message) => {
                     if tracker.apply(message) {
+                        tracing::info!("{} loop stopped on hub shutdown", consumer_name::<C>());
                         break;
                     }
                 }
                 // Channel closed without a Shutdown event: stop instead of busy-looping.
-                None => break,
+                None => {
+                    tracing::warn!("{} loop stopped: hub subscription closed", consumer_name::<C>());
+                    break;
+                }
             },
+            _ = woken => {
+                run_tick(&mut consumer, &tracker).await;
+            }
         }
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use ring::rand::SystemRandom;
-    use shine_test::test;
-    use tokio::sync::mpsc;
-
-    fn connected(user_id: Uuid, connection_id: Uuid) -> HubMessage {
-        HubMessage::Hub(HubEvent::UserConnected {
-            user_id,
-            connection_id,
-            session_key: SessionKey::new_random(&SystemRandom::new()).unwrap(),
-        })
-    }
-
-    struct Probe {
-        tx: mpsc::UnboundedSender<usize>,
-    }
-
-    impl ConnectionConsumer for Probe {
-        async fn on_tick(&mut self, tracker: &ConnectionTracker) {
-            let _ = self.tx.send(tracker.connections().len());
-        }
-    }
-
-    #[test]
-    async fn loop_feeds_current_connections_to_consumer() {
-        let (sub_tx, sub_rx) = mpsc::unbounded_channel();
-        let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
-        tokio::spawn(run_connection_loop(
-            sub_rx,
-            Duration::from_millis(5),
-            None,
-            Probe { tx: probe_tx },
-        ));
-
-        sub_tx.send(connected(Uuid::new_v4(), Uuid::new_v4())).unwrap();
-
-        // Wait until a tick observes the tracked connection.
-        let saw_one = tokio::time::timeout(Duration::from_secs(1), async {
-            while probe_rx.recv().await != Some(1) {}
-        })
-        .await;
-        assert!(
-            saw_one.is_ok(),
-            "consumer should observe the connection the loop event-sourced"
-        );
-    }
-}
+#[path = "connection_tracker_test.rs"]
+mod connection_tracker_test;

@@ -162,11 +162,8 @@ where
         let config = builder.build().await?;
 
         let cfg: Self = config.try_deserialize()?;
-        if stage != "prod" {
-            log::info!("Config loaded [{}]: {:#?}", cfg.core.root_file, cfg);
-        } else {
-            log::info!("Config loaded [{}]", cfg.core.root_file);
-        }
+        tracing::info!("Config loaded [{}]", cfg.core.root_file);
+        tracing::trace!("Config: {cfg:#?}");
 
         if pre_init != cfg.core {
             Err(anyhow!("Core config mismatch"))
