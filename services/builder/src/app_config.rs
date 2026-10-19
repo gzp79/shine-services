@@ -96,16 +96,6 @@ impl AppConfig {
     }
 }
 
-impl Default for ChatConfig {
-    fn default() -> Self {
-        Self {
-            stream_max_messages: Self::default_stream_max_messages(),
-            stream_ttl_seconds: Self::default_stream_ttl_seconds(),
-            sync_interval_seconds: Self::default_sync_interval_seconds(),
-        }
-    }
-}
-
 impl FeatureConfig for AppConfig {
     const NAME: &'static str = "builder";
 }

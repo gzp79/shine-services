@@ -1,11 +1,8 @@
 use crate::{
     app_state::AppState,
     models::messages::{DisconnectReason, HubEvent, HubMessage, TopicKey},
-    routes::ws::{
-        message::{stream_frame, ChatWireComment, Incoming, WSMessageOut, WSMessageResponse},
-        stream_socket::StreamSession,
-    },
-    services::{hub_metrics, ChatService, CommandStreamService, HubService},
+    routes::ws::{message::stream_frame, stream_socket::StreamSession},
+    services::{hub_metrics, CommandStreamService, HubService},
 };
 use axum::{
     extract::{
@@ -17,6 +14,7 @@ use axum::{
 };
 use futures::{Sink, SinkExt, Stream, StreamExt};
 use opentelemetry::trace::SpanContext;
+use shine_game::replay::protocol::{ClientFrame, ServerFrame};
 use shine_infra::{
     session::{CheckedCurrentUser, CurrentUser, SessionKey},
     telemetry::{current_span_context, label, link_span},
@@ -93,30 +91,16 @@ pub async fn connect(
     tracing::debug!("[{}] Requesting a connection", user.user_id);
 
     let hub_service = state.hub_service().clone();
-    let chat_service = state.chat_service().clone();
     let command_streams = state.command_stream_service().cloned();
     let span_context = current_span_context();
-    Ok(ws.on_upgrade(move |socket| {
-        handle_socket(socket, user, hub_service, chat_service, command_streams, span_context)
-    }))
+    Ok(ws.on_upgrade(move |socket| handle_socket(socket, user, hub_service, command_streams, span_context)))
 }
 
-fn event_to_wire_message(message: HubMessage) -> Option<WSMessageOut> {
+/// The frame for a hub message; the socket forwards the stream frames only.
+fn event_to_wire_message(message: HubMessage) -> Option<ServerFrame> {
     match message {
         HubMessage::Hub(_) | HubMessage::StreamEvent(_) => None,
-        HubMessage::Stream(message) => Some(WSMessageOut::Stream(stream_frame(message))),
-        HubMessage::Chat(batch) => {
-            let messages = batch
-                .comments
-                .into_iter()
-                .map(|comment| ChatWireComment {
-                    id: comment.id,
-                    from: comment.user_id,
-                    text: comment.text,
-                })
-                .collect();
-            Some(WSMessageOut::Chat(WSMessageResponse::Chat { messages }))
-        }
+        HubMessage::Stream(message) => Some(stream_frame(message)),
     }
 }
 
@@ -124,7 +108,6 @@ async fn handle_socket(
     socket: WebSocket,
     user: CurrentUser,
     hub_service: HubService,
-    chat_service: ChatService,
     command_streams: Option<CommandStreamService>,
     span_context: SpanContext,
 ) {
@@ -135,7 +118,6 @@ async fn handle_socket(
         user.user_id,
         user.key,
         hub_service,
-        chat_service,
         command_streams,
         span_context,
     )
@@ -149,7 +131,6 @@ async fn serve_socket<S, R, E>(
     current_user_id: Uuid,
     session_key: SessionKey,
     hub_service: HubService,
-    chat_service: ChatService,
     command_streams: Option<CommandStreamService>,
     span_context: SpanContext,
 ) where
@@ -182,9 +163,8 @@ async fn serve_socket<S, R, E>(
             while let Some(Ok(message)) = ws_receiver.next().await {
                 tracing::debug!("[{current_user_id}] WsMessage received");
                 if let WsMessage::Text(text) = message {
-                    let msg = match Incoming::parse(&text) {
-                        Some(Incoming::Chat(text)) => Some(text),
-                        Some(Incoming::Stream(frame)) => {
+                    match serde_json::from_str::<ClientFrame>(&text) {
+                        Ok(frame) => {
                             let span = info_span!(
                                 parent: None,
                                 "ws message",
@@ -193,35 +173,12 @@ async fn serve_socket<S, R, E>(
                                 ws.message.kind = "stream"
                             );
                             streams.handle(frame).instrument(span).await;
-                            None
                         }
-                        None => {
+                        Err(_) => {
                             hub_metrics()
                                 .ws_messages_received
                                 .add(1, &[label("kind", "unknown"), label("outcome", "invalid")]);
                             tracing::trace!("[{current_user_id}] Received invalid message: {text}");
-                            None
-                        }
-                    };
-
-                    if let Some(text) = msg {
-                        let span = info_span!(
-                            parent: None,
-                            "ws message",
-                            enduser.id = %current_user_id,
-                            ws.connection_id = %connection_id,
-                            ws.message.kind = "chat"
-                        );
-                        let appended = chat_service
-                            .append_comment(current_user_id, &text)
-                            .instrument(span)
-                            .await;
-                        let outcome = if appended.is_ok() { "ok" } else { "append_failed" };
-                        hub_metrics()
-                            .ws_messages_received
-                            .add(1, &[label("kind", "chat"), label("outcome", outcome)]);
-                        if let Err(err) = appended {
-                            tracing::error!("[{current_user_id}] Failed to append chat message: {err:#?}");
                         }
                     }
                 }
@@ -327,7 +284,7 @@ fn open_connection(
 ) -> Option<Uuid> {
     link_span(&Span::current(), span_context);
     // The Hub topic is low frequency; the socket ignores every event but its own end.
-    match hub_service.request_connection(user_id, session_key, tx, vec![TopicKey::Chat, TopicKey::Hub]) {
+    match hub_service.request_connection(user_id, session_key, tx, vec![TopicKey::Hub]) {
         Ok(connection_id) => {
             Span::current().record("ws.connection_id", display(connection_id));
             Some(connection_id)

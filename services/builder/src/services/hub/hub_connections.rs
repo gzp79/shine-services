@@ -50,7 +50,6 @@ impl RemovedConnection {
 fn try_send(tx: &mpsc::Sender<HubMessage>, message: HubMessage) -> Result<(), DisconnectReason> {
     let kind = match &message {
         HubMessage::Hub(_) => "hub",
-        HubMessage::Chat(_) => "chat",
         HubMessage::Stream(_) => "stream",
         HubMessage::StreamEvent(_) => "stream_event",
     };

@@ -50,11 +50,7 @@ pub fn stream_frame(message: StreamMessage) -> ServerFrame {
         StreamMessage::Reset { stream_id } => ServerFrame::StreamReset {
             stream_id: stream_id.to_string(),
         },
-        StreamMessage::Nack {
-            stream_id,
-            command_id,
-            reason,
-        } => ServerFrame::StreamNack {
+        StreamMessage::Nack { stream_id, command_id, reason } => ServerFrame::StreamNack {
             stream_id: stream_id.to_string(),
             command_id,
             reason: reason.to_string(),
