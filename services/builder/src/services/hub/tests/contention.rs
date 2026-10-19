@@ -4,8 +4,8 @@
 use crate::{
     models::messages::{DisconnectReason, HubEvent, TopicKey},
     services::hub_test_utils::{
-        assert_consistent, barrier, chat, closed_with, connect, connect_on, count_connects, create_test_hub, dropped,
-        drops, egress_state, find_registry_connection, lifecycle_by_user, lifecycle_of, open, replay, spawn_reader,
+        assert_consistent, barrier, closed_with, connect, connect_on, count_connects, create_test_hub, dropped, drops,
+        egress_state, find_registry_connection, lifecycle_by_user, lifecycle_of, open, payload, replay, spawn_reader,
         wait_event, Egress, EgressState, Lifecycle, Rng, TestHub, TestHubOptions, BARRIER_TIMEOUT,
     },
     services::HubService,
@@ -236,7 +236,7 @@ async fn same_user_contention_keeps_a_single_active_connection() {
     let mut closed = 0;
     for (connection_id, rx) in &mut connections {
         let state = egress_state(rx);
-        assert!(state.chats.is_empty());
+        assert!(state.payloads.is_empty());
         assert_eq!(
             state.closed,
             active.get(&user) != Some(connection_id),
@@ -306,7 +306,7 @@ async fn churn_under_traffic_stays_consistent() {
         tokio::spawn(async move {
             let mut seq = 0u64;
             while !*stop.borrow() {
-                hub.broadcast(chat(format!("b-{seq:08}"))).await.unwrap();
+                hub.broadcast(payload(format!("b-{seq:08}"))).await.unwrap();
                 seq += 1;
                 tokio::task::yield_now().await;
             }
@@ -324,7 +324,7 @@ async fn churn_under_traffic_stays_consistent() {
                 }
                 if !known.is_empty() {
                     let target = known[rng.below(known.len() as u64) as usize];
-                    hub.send_to_connection(target, chat("d")).await.unwrap();
+                    hub.send_to_connection(target, payload("d")).await.unwrap();
                 }
                 tokio::task::yield_now().await;
             }
@@ -349,7 +349,7 @@ async fn churn_under_traffic_stays_consistent() {
                             (connection_id, Client::Slow(rx))
                         }
                         1 => {
-                            let (connection_id, rx) = connect_on(&hub, user, 64, vec![TopicKey::Chat, TopicKey::Hub]);
+                            let (connection_id, rx) = connect_on(&hub, user, 64, vec![TopicKey::Stream, TopicKey::Hub]);
                             (connection_id, Client::Reader(spawn_reader(connection_id, rx)))
                         }
                         _ => {
@@ -390,7 +390,7 @@ async fn churn_under_traffic_stays_consistent() {
     assert_eq!(
         egress_state(&mut slow_rx),
         EgressState {
-            chats: vec!["b-00000000".into(), "b-00000001".into()],
+            payloads: vec!["b-00000000".into(), "b-00000001".into()],
             notices: vec![],
             closed: true,
         },
@@ -426,7 +426,7 @@ async fn churn_under_traffic_stays_consistent() {
             "{connection_id} got several notices: {:?}",
             state.notices
         );
-        let broadcasts: Vec<_> = state.chats.iter().filter(|id| id.starts_with("b-")).collect();
+        let broadcasts: Vec<_> = state.payloads.iter().filter(|id| id.starts_with("b-")).collect();
         assert!(
             broadcasts.windows(2).all(|pair| pair[0] < pair[1]),
             "{connection_id} got broadcasts out of order"

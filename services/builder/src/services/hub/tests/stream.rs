@@ -150,7 +150,7 @@ async fn a_socket_replies_through_a_weak_sender_without_keeping_its_channel_open
     let weak = tx.downgrade();
     let connection_id = test
         .hub
-        .request_connection(user_id, key(), tx, vec![TopicKey::Chat])
+        .request_connection(user_id, key(), tx, vec![TopicKey::Stream])
         .unwrap();
 
     // The socket replies at once, before the command loop registered the connection.

@@ -5,8 +5,8 @@ use crate::{
     models::messages::{DisconnectReason, HubEvent, HubMessage, TopicKey},
     repositories::hub_registry::{HubConnection, HubConnectionDb, HubRegistry},
     services::hub_test_utils::{
-        assert_consistent, barrier, chat, closed_with, connect, connect_on, connect_with_key, create_test_hub,
-        delete_key, dropped, drops, egress_state, find_registry_connection, key, lifecycle_by_user, lifecycle_of, open,
+        assert_consistent, barrier, closed_with, connect, connect_on, connect_with_key, create_test_hub, delete_key,
+        dropped, drops, egress_state, find_registry_connection, key, lifecycle_by_user, lifecycle_of, open, payload,
         registry_key, seed_session, wait_event, wait_stopped, EgressState, Lifecycle, TestHub, TestHubOptions,
         BARRIER_TIMEOUT,
     },
@@ -175,12 +175,12 @@ async fn dead_channel_is_pruned_once() {
     for idx in 0..3 {
         assert_eq!(
             test.hub
-                .send_to_connection(connection, chat(format!("d-{idx}")))
+                .send_to_connection(connection, payload(format!("d-{idx}")))
                 .await
                 .ok(),
             Some(false)
         );
-        test.hub.broadcast(chat(format!("b-{idx}"))).await.unwrap();
+        test.hub.broadcast(payload(format!("b-{idx}"))).await.unwrap();
     }
     let seen = barrier(&test.hub, &mut test.events).await;
 
@@ -202,7 +202,7 @@ async fn slow_consumer_is_dropped_and_its_channel_released() {
     // The first two fill the buffer, the rest find it full. Broadcasts are sent off the loop, so
     // more of them may still find the connection before the prune is processed.
     for idx in 0..5 {
-        test.hub.broadcast(chat(format!("b-{idx}"))).await.unwrap();
+        test.hub.broadcast(payload(format!("b-{idx}"))).await.unwrap();
     }
     let seen = barrier(&test.hub, &mut test.events).await;
 
@@ -212,7 +212,7 @@ async fn slow_consumer_is_dropped_and_its_channel_released() {
     assert_eq!(
         egress_state(&mut rx),
         EgressState {
-            chats: vec!["b-0".into(), "b-1".into()],
+            payloads: vec!["b-0".into(), "b-1".into()],
             notices: vec![],
             closed: true,
         }
@@ -229,28 +229,28 @@ async fn send_to_user_reaches_only_the_active_connection() {
     let (user, other) = (Uuid::new_v4(), Uuid::new_v4());
 
     // Unknown user: nothing to send to, not an error.
-    test.hub.send_to_user(user, chat("to-nobody")).await.unwrap();
+    test.hub.send_to_user(user, payload("to-nobody")).await.unwrap();
 
     let (_first, mut first_rx) = connect(&test.hub, user, 8);
     barrier(&test.hub, &mut test.events).await;
-    test.hub.send_to_user(user, chat("to-first")).await.unwrap();
+    test.hub.send_to_user(user, payload("to-first")).await.unwrap();
 
     // After a replacement the user's messages follow the new connection only.
     let (second, mut second_rx) = connect(&test.hub, user, 8);
     let (_other, mut other_rx) = connect(&test.hub, other, 8);
     barrier(&test.hub, &mut test.events).await;
-    test.hub.send_to_user(user, chat("to-second")).await.unwrap();
+    test.hub.send_to_user(user, payload("to-second")).await.unwrap();
 
     // Once disconnected, the user is unknown again.
     test.hub.request_disconnection(user, second).unwrap();
     barrier(&test.hub, &mut test.events).await;
-    test.hub.send_to_user(user, chat("too-late")).await.unwrap();
+    test.hub.send_to_user(user, payload("too-late")).await.unwrap();
     barrier(&test.hub, &mut test.events).await;
 
     assert_eq!(
         egress_state(&mut first_rx),
         EgressState {
-            chats: vec!["to-first".into()],
+            payloads: vec!["to-first".into()],
             notices: vec![DisconnectReason::Replaced],
             closed: true,
         }
@@ -258,7 +258,7 @@ async fn send_to_user_reaches_only_the_active_connection() {
     assert_eq!(
         egress_state(&mut second_rx),
         EgressState {
-            chats: vec!["to-second".into()],
+            payloads: vec!["to-second".into()],
             notices: vec![],
             closed: true,
         }
@@ -281,11 +281,11 @@ async fn send_to_user_prunes_a_dead_or_slow_connection_once() {
     // Every send finds the problem and queues a prune; only the first one removes the connection.
     for idx in 0..3 {
         test.hub
-            .send_to_user(gone_user, chat(format!("g-{idx}")))
+            .send_to_user(gone_user, payload(format!("g-{idx}")))
             .await
             .unwrap();
         test.hub
-            .send_to_user(slow_user, chat(format!("s-{idx}")))
+            .send_to_user(slow_user, payload(format!("s-{idx}")))
             .await
             .unwrap();
     }
@@ -297,7 +297,7 @@ async fn send_to_user_prunes_a_dead_or_slow_connection_once() {
     assert_eq!(
         egress_state(&mut slow_rx),
         EgressState {
-            chats: vec!["s-0".into()],
+            payloads: vec!["s-0".into()],
             notices: vec![],
             closed: true,
         }
@@ -324,15 +324,15 @@ async fn directed_and_broadcast_sends_reach_only_their_targets() {
 
     // A replaced connection is unknown: the send reaches nobody, the new connection included.
     assert_eq!(
-        test.hub.send_to_connection(first, chat("to-first")).await.ok(),
+        test.hub.send_to_connection(first, payload("to-first")).await.ok(),
         Some(false)
     );
     assert_eq!(
-        test.hub.send_to_connection(second, chat("to-second")).await.ok(),
+        test.hub.send_to_connection(second, payload("to-second")).await.ok(),
         Some(true)
     );
     // A broadcast reaches the Chat topic only.
-    test.hub.broadcast(chat("to-all")).await.unwrap();
+    test.hub.broadcast(payload("to-all")).await.unwrap();
     barrier(&test.hub, &mut test.events).await;
 
     assert_eq!(
@@ -342,18 +342,18 @@ async fn directed_and_broadcast_sends_reach_only_their_targets() {
     assert_eq!(
         egress_state(&mut second_rx),
         EgressState {
-            chats: vec!["to-second".into(), "to-all".into()],
+            payloads: vec!["to-second".into(), "to-all".into()],
             ..open()
         }
     );
     assert_eq!(
         egress_state(&mut other_rx),
         EgressState {
-            chats: vec!["to-all".into()],
+            payloads: vec!["to-all".into()],
             ..open()
         }
     );
-    assert_eq!(egress_state(&mut hub_only_rx).chats, Vec::<String>::new());
+    assert_eq!(egress_state(&mut hub_only_rx).payloads, Vec::<String>::new());
 }
 
 #[test(serial = "hub-service")]
