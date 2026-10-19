@@ -22,7 +22,8 @@
 | S6a pure StreamCore | done | `cargo test -p shine-builder` (100 tests; 19 in `stream_core`) |
 | S6b kinds, service, ingest | done | `cargo test -p shine-builder` (114 tests; 13 in `command_stream_service`) |
 | S6c worker, dispatcher, egress | done | `cargo test -p shine-builder` (124 tests; 5 in `stream_worker`, 5 in `hub::tests::stream_dispatcher`) |
-| S7 - S10 | open (S7 next) | |
+| S7 wire protocol, snapshot route, resume | done | `cargo test -p shine-builder` (144 tests: 6 `read_snapshot`, 4 snapshot route, 11 stream socket); `cargo test -p shine-game --test replay` (35, 7 protocol); wasm check |
+| S8 - S10 | open (S8 next) | |
 | S12 client engine in `shine-game` | open (after S9) | |
 | S11 let the worker prune | decision pending | |
 
@@ -173,7 +174,7 @@ S1, S2 and S5 are independent and can be done in any order.
 
 ## Task S6: Stream service, core, worker and dispatcher (three steps)
 
-The reference for the algorithms is the old plan's Tasks 6 and 7 (`docs/plans/command-streams-plan.md`); the decisions in this plan win. All three parts live in `services/builder/src/services/command_stream/` (`mod.rs` exports them) and keep a temporary `allow(dead_code, unused_imports)` on the module until S7 wires them to the socket.
+The reference for the algorithms is the old plan's Tasks 6 and 7 (`docs/plans/command-streams-plan.md`); the decisions in this plan win. All three parts live in `services/builder/src/services/command_stream/` (`mod.rs` exports them).
 
 ### S6a: the pure `StreamCore` (no I/O) - done (19 tests)
 
@@ -217,7 +218,7 @@ The reference for the algorithms is the old plan's Tasks 6 and 7 (`docs/plans/co
 
 - [ ] **Step 1: Failing tests.** `snapshot_route_returns_snapshot_plus_tail`; `snapshot_route_merges_the_redis_tail_above_the_postgres_head` (contiguous, no duplicates); `snapshot_route_without_a_session_is_401`; `snapshot_route_for_an_unknown_stream_is_404`; `snapshot_route_with_storage_down_is_503`; `ws_resume_frame_is_parsed`; `resume_inside_the_window_sends_only_the_tail`; `resume_with_a_changed_generation_sends_a_full_sync`; `resume_older_than_the_base_version_sends_a_full_sync`; `resume_above_the_head_sends_a_full_sync`; `resume_after_a_drop_is_contiguous_or_a_full_sync`; `a_command_for_an_unsubscribed_stream_gets_not_subscribed`; `an_unknown_kind_gets_subscribe_failed_unknown_kind`.
 - [ ] **Step 2:** Implement. Metrics: counter `command_stream_snapshot_reads{outcome}`.
-- [ ] **Step 3: Verify** unit and route tests, then the API tests of Task S9 later. **Step 4: Checkpoint.**
+- [x] **Step 3: Verify.** Done, with these differences from Step 1: `snapshot_route_without_a_session_is_401` is the extractor's job and moves to the API tests of S9; `resume_after_a_drop_is_contiguous_or_a_full_sync` is covered by the four resume tests; the snapshot route sends `Cache-Control: no-store`. The temporary `allow(dead_code)` markers of S5-S7 are removed. **Step 4: Checkpoint.**
 
 ## Task S8: Integration and fault tests (Redis + Postgres)
 
