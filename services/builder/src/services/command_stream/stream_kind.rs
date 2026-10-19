@@ -1,4 +1,6 @@
+use crate::services::command_stream::{CommandStreamService, StreamEgress, StreamWorker, WorkerFuture, WorkerHandle};
 use shine_game::replay::{decode_command, encode_command, ReplayState};
+use shine_infra::db::command_log::StreamId;
 use std::{collections::HashMap, marker::PhantomData, sync::Arc};
 
 /// Type-erased stream kind, so the hub and the routes stay non-generic.
@@ -8,6 +10,14 @@ pub trait StreamKind: Send + Sync + 'static {
     /// The canonical JSON of `command` when it is a well-formed, valid command of this kind. Storing the
     /// re-serialized typed command drops unknown fields and keeps replay byte for byte deterministic.
     fn canonicalize(&self, command: &str) -> Option<String>;
+
+    /// The worker replaying a stream of this kind on this instance.
+    fn create_worker(
+        &self,
+        egress: Arc<dyn StreamEgress>,
+        streams: CommandStreamService,
+        stream_id: StreamId,
+    ) -> (WorkerHandle, WorkerFuture);
 }
 
 pub struct ReplayKind<S>(PhantomData<fn() -> S>);
@@ -24,6 +34,15 @@ impl<S: ReplayState> StreamKind for ReplayKind<S> {
         }
         encode_command::<S>(&command).ok()
     }
+
+    fn create_worker(
+        &self,
+        egress: Arc<dyn StreamEgress>,
+        streams: CommandStreamService,
+        stream_id: StreamId,
+    ) -> (WorkerHandle, WorkerFuture) {
+        StreamWorker::<S>::create(egress, streams, stream_id)
+    }
 }
 
 #[derive(Clone, Default)]
@@ -36,6 +55,13 @@ impl StreamKindRegistry {
 
     pub fn with<S: ReplayState>(mut self) -> Self {
         self.0.insert(S::KIND, Arc::new(ReplayKind::<S>(PhantomData)));
+        self
+    }
+
+    /// Registers a kind that is not a plain `ReplayState`.
+    #[cfg(test)]
+    pub fn with_kind(mut self, kind: Arc<dyn StreamKind>) -> Self {
+        self.0.insert(kind.kind(), kind);
         self
     }
 

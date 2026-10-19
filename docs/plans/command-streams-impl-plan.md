@@ -21,8 +21,8 @@
 | S5 Hub subscriptions and stream messages | done | `cargo test -p shine-builder` (`hub::tests::stream`, 5 tests) |
 | S6a pure StreamCore | done | `cargo test -p shine-builder` (100 tests; 19 in `stream_core`) |
 | S6b kinds, service, ingest | done | `cargo test -p shine-builder` (114 tests; 13 in `command_stream_service`) |
-| S6c worker, dispatcher, egress | next | |
-| S7 - S10 | open | |
+| S6c worker, dispatcher, egress | done | `cargo test -p shine-builder` (124 tests; 5 in `stream_worker`, 5 in `hub::tests::stream_dispatcher`) |
+| S7 - S10 | open (S7 next) | |
 | S12 client engine in `shine-game` | open (after S9) | |
 | S11 let the worker prune | decision pending | |
 
@@ -203,7 +203,7 @@ The reference for the algorithms is the old plan's Tasks 6 and 7 (`docs/plans/co
 
 **Interfaces:** `trait StreamEgress { fn send(&self, connection_id, StreamMessage) -> BoxFuture<bool> }`; `StreamWorker<S>` (the I/O shell around `StreamCore`: delivery on every Redis wake, persistence on a jittered cadence, a periodic tick, reloads with backoff 200 ms to 10 s); `StreamDispatcher` (a hub consumer: routes `StreamEvent`s and `UserDisconnected` to the workers, spawns a worker when a stream is first subscribed and unloads it after `unload_grace` without subscribers, supervises workers in a `JoinSet`, restarts a crashed one at most once per `RESPAWN_DELAY`). A stored command that cannot be decoded stops that stream's worker, which logs it at `error`, counts `command_stream_decode_errors`, and the stream answers `unavailable`.
 
-**Tests** (Redis + Postgres): `a_failed_send_stops_all_later_frames`; `worker_persists_commands_and_stores_a_snapshot_every_k`; `worker_trims_redis_to_the_oldest_stored_snapshot`; `worker_survives_a_redis_outage_and_recovers` (backoff, no `fatal`); `a_stored_command_that_cannot_be_decoded_stops_the_worker_and_the_stream_is_unavailable`; `the_dispatcher_drops_the_streams_of_a_disconnected_connection`; `a_stream_without_subscribers_is_unloaded_after_the_grace_time`; `a_crashed_worker_is_restarted_once_per_respawn_delay`.
+**Tests** (Redis + Postgres): `a_failed_send_stops_all_later_frames`; `worker_persists_commands_and_stores_a_snapshot_every_k`; `worker_trims_redis_to_the_oldest_stored_snapshot`; `worker_survives_a_redis_outage_and_recovers` (backoff, no `fatal`); `a_stored_command_that_cannot_be_decoded_stops_the_worker_and_the_stream_is_unavailable`; `the_dispatcher_drops_the_streams_of_a_disconnected_connection`; `a_stream_without_subscribers_is_unloaded_after_the_grace_time`; `a_crashed_worker_is_restarted_once_per_respawn_delay` (the test worker ends unexpectedly: the shared test panic hook aborts the run on a real panic).
 
 - [ ] Each part ends with a checkpoint: S6a, then S6b, then S6c.
 

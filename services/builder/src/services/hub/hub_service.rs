@@ -10,9 +10,9 @@ use crate::{
             hub_command::ControlCommand,
             hub_connections::{Connections, DeadConnection, RemovedConnection},
             hub_subscribers::Subscribers,
-            tasks::{ChatDispatcher, Heartbeat, SessionChecker},
+            tasks::{ChatDispatcher, Heartbeat, SessionChecker, StreamDispatcher},
         },
-        ChatService,
+        ChatService, CommandStreamService,
     },
 };
 use opentelemetry::trace::SpanContext;
@@ -59,6 +59,7 @@ impl HubService {
         session_service: Arc<CurrentUserService>,
         chat_service: ChatService,
         intervals: HubIntervals,
+        command_streams: Option<CommandStreamService>,
     ) -> Self {
         let (control_tx, control_rx) = mpsc::unbounded_channel();
 
@@ -76,12 +77,15 @@ impl HubService {
         // lost to them forever. The start_* calls subscribe synchronously (awaited), and the
         // dispatcher is started last so nothing drains the channels until every subscription is in
         // place.
-        let background_tasks = vec![
+        let mut background_tasks = vec![
             Self::start_registry_listener(service.clone()),
             Heartbeat::start(service.clone(), intervals.heartbeat).await,
             SessionChecker::start(service.clone(), session_service, intervals.session_check).await,
             ChatDispatcher::start(service.clone(), chat_service, intervals.chat).await,
         ];
+        if let Some(command_streams) = command_streams {
+            background_tasks.push(StreamDispatcher::start(service.clone(), command_streams).await);
+        }
         Self::start_dispatcher(service.clone(), control_rx, background_tasks);
         service
     }
@@ -157,7 +161,7 @@ impl HubService {
     }
 
     /// Requests a stream subscription for a connection; ignored if the connection is gone by then.
-    #[allow(dead_code)] // built by the command stream service (S6)
+    #[allow(dead_code)] // called by the socket routes (S7)
     pub fn request_subscribe_stream(
         &self,
         user_id: Uuid,
@@ -176,7 +180,7 @@ impl HubService {
     }
 
     /// Ends a stream subscription of a connection; the connection itself stays.
-    #[allow(dead_code)] // built by the command stream service (S6)
+    #[allow(dead_code)] // called by the socket routes (S7)
     pub fn request_unsubscribe_stream(
         &self,
         user_id: Uuid,

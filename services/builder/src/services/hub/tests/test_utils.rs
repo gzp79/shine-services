@@ -1,4 +1,4 @@
-use crate::services::{HubIntervals, HubService};
+use crate::services::{CommandStreamService, HubIntervals, HubService};
 use crate::{
     models::messages::{ChatBatch, ChatComment, DisconnectReason, HubEvent, HubMessage, TopicKey},
     repositories::{
@@ -39,6 +39,8 @@ pub struct TestHubOptions {
     pub chat_room: String,
     /// Redis of the hub; the test Redis when not given.
     pub redis_cns: Option<String>,
+    /// The command streams of the hub; none when not given.
+    pub command_streams: Option<CommandStreamService>,
 }
 
 impl Default for TestHubOptions {
@@ -49,6 +51,7 @@ impl Default for TestHubOptions {
             chat: IDLE,
             chat_room: format!("test-{}", Uuid::new_v4()),
             redis_cns: None,
+            command_streams: None,
         }
     }
 }
@@ -83,7 +86,14 @@ pub async fn create_test_hub(options: TestHubOptions) -> Option<TestHub> {
         session_check: options.session_check,
         chat: options.chat,
     };
-    let hub = HubService::new(registry.clone(), session_service, chat_service, intervals).await;
+    let hub = HubService::new(
+        registry.clone(),
+        session_service,
+        chat_service,
+        intervals,
+        options.command_streams,
+    )
+    .await;
     let events = hub.subscribe(vec![TopicKey::Hub]).await;
     Some(TestHub {
         hub,

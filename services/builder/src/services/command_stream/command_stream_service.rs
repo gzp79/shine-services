@@ -25,6 +25,7 @@ const HYDRATION_WAIT: Duration = Duration::from_secs(10);
 const HYDRATION_POLL: Duration = Duration::from_millis(20);
 
 /// The stores behind the command streams.
+#[derive(Clone)]
 pub struct StreamStores {
     pub redis: RedisCommandStreamDb,
     pub log: PgCommandLogDb,
@@ -138,6 +139,17 @@ impl CommandStreamService {
 
     pub fn settings(&self) -> &CommandStreamSettings {
         &self.0.stores.settings
+    }
+
+    pub fn stores(&self) -> &StreamStores {
+        &self.0.stores
+    }
+
+    /// The version from which Redis must keep the persisted commands of a stream of `kind`: the oldest
+    /// snapshot that is kept, 1 while there are not enough snapshots.
+    pub async fn trim_floor(&self, stream_id: &StreamId, kind: &str) -> Result<i64, CommandStreamError> {
+        let keep = self.0.stores.settings.for_kind(kind).keep_snapshots;
+        Ok(self.0.stores.log.snapshot_horizon(stream_id, keep).await?.unwrap_or(1))
     }
 
     /// Creates the stream if it does not exist and makes sure Redis can serve it.
@@ -340,12 +352,7 @@ impl CommandStreamService {
         }
 
         if let Some((version, command_id)) = last {
-            let settings = stores.settings.for_kind(&head.kind);
-            let keep_from = stores
-                .log
-                .snapshot_horizon(stream_id, settings.keep_snapshots)
-                .await?
-                .unwrap_or(1);
+            let keep_from = self.trim_floor(stream_id, &head.kind).await?;
             let marked = stores
                 .redis
                 .mark_persisted(stream_id, meta.generation, version, command_id, keep_from)

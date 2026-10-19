@@ -7,6 +7,8 @@ pub struct CommandStreamMetrics {
     pub ingested: Counter<u64>,
     /// Snapshots that disagreed with the authoritative one: a determinism bug.
     pub drift: Counter<u64>,
+    /// Stored commands that could not be decoded: the stream is unavailable.
+    pub decode_errors: Counter<u64>,
 }
 
 static METRICS: LazyLock<CommandStreamMetrics> = LazyLock::new(CommandStreamMetrics::new);
@@ -27,6 +29,10 @@ impl CommandStreamMetrics {
             drift: meter
                 .u64_counter("command_stream_drift")
                 .with_description("Snapshots that disagreed with the authoritative one")
+                .build(),
+            decode_errors: meter
+                .u64_counter("command_stream_decode_errors")
+                .with_description("Stored commands that could not be decoded")
                 .build(),
         }
     }

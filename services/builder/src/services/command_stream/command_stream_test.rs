@@ -1,165 +1,16 @@
 //! The service on real Redis and Postgres: ingest, open, hydration and the orphan sweep.
 
 use crate::{
-    app_config::CommandStreamConfig,
     models::CommandStreamError,
-    repositories::{
-        command_stream::redis::{RedisCommandStreamDb, RedisStreamConfig},
-        create_postgres_pool, DBConfig,
-    },
     services::command_stream::{
-        AllowAll, CommandStreamService, IngestOutcome, OpenError, StreamAccess, StreamKindRegistry, StreamStores,
+        test_utils::{add, postgres_stream, redis_versions, setup, stored, unique_id, Nobody, ReadOnly},
+        AllowAll, IngestOutcome, OpenError,
     },
-    settings::CommandStreamSettings,
 };
-use serde::{Deserialize, Serialize};
-use shine_game::replay::{ChatState, CommandContext, ReplayState, StableHash, StableHasher};
-use shine_infra::db::{
-    self,
-    command_log::{AppendOutcome, PgCommandLogDb, StoredCommand, StreamId},
-};
-use shine_test::{
-    db::{get_pg_cns, get_redis_cns},
-    test,
-};
+use shine_infra::db::command_log::AppendOutcome;
+use shine_test::test;
 use std::{sync::Arc, time::Duration};
 use uuid::Uuid;
-
-/// A second kind, to tell kinds apart.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-struct Counter(i64);
-
-impl StableHash for Counter {
-    fn stable_hash(&self, hasher: &mut StableHasher) {
-        self.0.stable_hash(hasher);
-    }
-}
-
-impl ReplayState for Counter {
-    type Command = i64;
-
-    const KIND: &'static str = "counter";
-
-    fn apply(&mut self, _ctx: &CommandContext, command: &i64) {
-        self.0 += command;
-    }
-}
-
-/// May read, may not write.
-struct ReadOnly;
-
-impl StreamAccess for ReadOnly {
-    fn can_read(&self, _user_id: Uuid, _stream_id: &StreamId) -> bool {
-        true
-    }
-
-    fn can_write(&self, _user_id: Uuid, _stream_id: &StreamId) -> bool {
-        false
-    }
-}
-
-struct Nobody;
-
-impl StreamAccess for Nobody {
-    fn can_read(&self, _user_id: Uuid, _stream_id: &StreamId) -> bool {
-        false
-    }
-
-    fn can_write(&self, _user_id: Uuid, _stream_id: &StreamId) -> bool {
-        false
-    }
-}
-
-struct Test {
-    service: CommandStreamService,
-    redis: RedisCommandStreamDb,
-    log: PgCommandLogDb,
-}
-
-/// A service on its own Redis key prefix; snapshots every 5 versions, 2 kept, commands up to 200 bytes.
-async fn setup(access: Arc<dyn StreamAccess>) -> Option<Test> {
-    let redis_cns = get_redis_cns()?;
-    let sql_cns = get_pg_cns()?;
-    let _ = rustls::crypto::ring::default_provider().install_default();
-
-    let settings = CommandStreamSettings::from_config(&CommandStreamConfig {
-        snapshot_every: 5,
-        keep_snapshots: 2,
-        orphan_idle_seconds: 0,
-        max_command_bytes: 200,
-        ..Default::default()
-    })
-    .unwrap();
-
-    let pg_pool = create_postgres_pool(&DBConfig {
-        redis_cns: redis_cns.clone(),
-        sql_cns: Some(sql_cns),
-    })
-    .await
-    .unwrap();
-    let log = PgCommandLogDb::new(&pg_pool).await.unwrap();
-
-    let redis_pool = db::redis::create_redis_pool(&redis_cns).await.unwrap();
-    let redis = RedisCommandStreamDb::new(
-        &redis_pool,
-        RedisStreamConfig {
-            prefix: format!("cs-test-{}", Uuid::new_v4()),
-            max_unpersisted: settings.redis_max_unpersisted,
-            ttl_seconds: settings.redis_ttl_seconds,
-        },
-    );
-
-    let kinds = StreamKindRegistry::new().with::<ChatState>().with::<Counter>();
-    let service = CommandStreamService::new(
-        StreamStores {
-            redis: redis.clone(),
-            log: log.clone(),
-            settings,
-        },
-        kinds,
-        access,
-    );
-    Some(Test { service, redis, log })
-}
-
-fn unique_id() -> StreamId {
-    StreamId::parse(&format!("test-{}", Uuid::new_v4())).unwrap()
-}
-
-fn add(text: &str) -> String {
-    format!(r#"{{"type":"add","text":"{text}"}}"#)
-}
-
-fn stored(version: i64, generation: i64) -> StoredCommand {
-    StoredCommand {
-        version,
-        command_id: Uuid::new_v4(),
-        user_id: Uuid::nil(),
-        generation,
-        data: add(&format!("m{version}")),
-    }
-}
-
-/// A stream in Postgres only: `count` commands in generation 1, snapshots at the given versions.
-async fn postgres_stream(test: &Test, count: i64, snapshots: &[i64]) -> StreamId {
-    let stream_id = unique_id();
-    test.log.ensure_stream(&stream_id, "chat").await.unwrap();
-    test.log.begin_generation(&stream_id).await.unwrap();
-    let commands: Vec<_> = (1..=count).map(|v| stored(v, 1)).collect();
-    test.log.append(&stream_id, &commands).await.unwrap();
-    for version in snapshots {
-        test.log
-            .try_store_snapshot(&stream_id, *version, 0, b"s")
-            .await
-            .unwrap();
-    }
-    stream_id
-}
-
-async fn redis_versions(test: &Test, stream_id: &StreamId) -> Vec<i64> {
-    let (_, entries) = test.redis.read_after(stream_id, 0, 1000).await.unwrap();
-    entries.iter().map(|e| e.version).collect()
-}
 
 #[test]
 async fn open_creates_the_stream_with_the_kind_and_rejects_another_kind() {

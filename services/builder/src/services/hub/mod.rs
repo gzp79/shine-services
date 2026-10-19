@@ -4,6 +4,7 @@ mod hub_metrics;
 mod hub_service;
 mod hub_status;
 mod hub_subscribers;
+mod stream_egress;
 mod tasks;
 
 pub use self::{
