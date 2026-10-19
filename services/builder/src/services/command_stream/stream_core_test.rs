@@ -383,12 +383,14 @@ fn resume_inside_the_window_gets_only_the_tail() {
 }
 
 #[test]
-fn resume_at_the_head_gets_nothing_and_follows_live() {
+fn resume_at_the_head_gets_an_empty_answer_and_follows_live() {
     let b = Uuid::new_v4();
     let mut core = core_with_a_snapshot_at_4();
     core.take_frames();
     core.add_subscriber_resuming(b, StreamResume { generation: 1, version: 6 });
-    assert!(core.take_frames().is_empty());
+    let frames = core.take_frames();
+    assert_eq!(frames.len(), 1, "the position is accepted explicitly");
+    assert!(matches!(&frames[0].1, StreamMessage::Commands { commands, .. } if commands.is_empty()));
     apply_redis(&mut core, 7..=8);
     assert_eq!(delivered(&core.take_frames(), b), vec![7, 8]);
 }

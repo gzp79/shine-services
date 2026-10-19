@@ -454,7 +454,20 @@ impl<S: ReplayState> StreamCore<S> {
         for (connection_id, resume) in resuming {
             if self.can_resume(&resume) {
                 let start = self.since_snapshot.partition_point(|c| c.version <= resume.version);
-                for chunk in self.since_snapshot[start..].chunks(FRAME_COMMANDS) {
+                let tail = &self.since_snapshot[start..];
+                // A resume is always answered: a client at the head gets an empty list, which tells it the
+                // position was accepted.
+                if tail.is_empty() {
+                    frames.push((
+                        connection_id,
+                        StreamMessage::Commands {
+                            stream_id: stream_id.clone(),
+                            generation,
+                            commands: Arc::from(Vec::new()),
+                        },
+                    ));
+                }
+                for chunk in tail.chunks(FRAME_COMMANDS) {
                     frames.push((
                         connection_id,
                         StreamMessage::Commands {

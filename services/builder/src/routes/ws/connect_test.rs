@@ -524,8 +524,13 @@ async fn resume_inside_the_window_sends_only_the_tail() {
     assert_eq!(frame["type"], "streamCommands");
     assert_eq!(versions(&frame), [3]);
 
-    // Resuming at the head sends nothing: the next frame is the next command.
+    // Resuming at the head is answered with an empty list, then the live commands follow.
     second.subscribe(&stream_id, "chat", Some((generation, 3)));
+    let frame = second.next_frame_of_stream().await;
+    assert_eq!(
+        (frame["type"].as_str(), versions(&frame)),
+        (Some("streamCommands"), vec![])
+    );
     second.write(&stream_id, Uuid::new_v4(), "m4");
     let frame = second.next_frame_of_stream().await;
     assert_eq!(frame["type"], "streamCommands");
