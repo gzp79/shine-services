@@ -1,4 +1,6 @@
 mod chat_service;
+#[allow(dead_code, unused_imports)] // wired to the socket in S7
+pub mod command_stream;
 mod hub;
 
 pub use self::{

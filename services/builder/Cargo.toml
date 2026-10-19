@@ -49,6 +49,7 @@ validator = { workspace = true }
 
 shine-infra = { workspace = true }
 shine-core = { workspace = true }
+shine-game = { workspace = true }
 
 [dev-dependencies]
 shine-test = { workspace = true, features = ["toxiproxy"] }

@@ -1,7 +1,6 @@
 use shine_infra::db::{
     command_log::{
-        decode_snapshot, encode_snapshot, AppendOutcome, CommandLogError, PgCommandLogDb, PruneOutcome,
-        SnapshotOutcome, StoredCommand, StreamId,
+        AppendOutcome, CommandLogError, PgCommandLogDb, PruneOutcome, SnapshotOutcome, StoredCommand, StreamId,
     },
     postgres::{create_postgres_pool, PgConnectionPool},
 };
@@ -327,20 +326,4 @@ async fn a_repeated_pruned_row_is_reported_as_diverged() {
         db.append(&stream_id, &batch[..3]).await.unwrap(),
         AppendOutcome::Diverged { version: 1 }
     );
-}
-
-#[test]
-fn a_snapshot_round_trips_and_garbage_is_an_error() {
-    #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-    struct State {
-        messages: Vec<(u128, String)>,
-        edited: bool,
-    }
-    let state = State {
-        messages: vec![(1, "hi".into()), (2, "\u{2713}".into())],
-        edited: true,
-    };
-    let bytes = encode_snapshot(&state).unwrap();
-    assert_eq!(decode_snapshot::<State>(&bytes).unwrap(), state);
-    assert!(decode_snapshot::<State>(&[0xff, 0xff, 0xff]).is_err());
 }

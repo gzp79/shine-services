@@ -24,7 +24,6 @@ serde_json = { workspace = true }
 time = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
-postcard = { workspace = true }
 url = { workspace = true }
 base64 = { workspace = true }
 hex = { workspace = true }

@@ -38,6 +38,9 @@ pub enum StreamMessage {
     Sync {
         stream_id: StreamId,
         generation: i64,
+        /// The snapshot cadence of the stream: a client hashes its state at those versions to check
+        /// the checkpoints.
+        snapshot_every: i64,
         snapshot: Option<StreamSnapshot>,
         commands: Arc<[StreamCommand]>,
     },

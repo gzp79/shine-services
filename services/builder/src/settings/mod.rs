@@ -2,7 +2,7 @@ mod command_stream;
 
 use regex::bytes::Regex;
 
-pub use self::command_stream::CommandStreamSettings;
+pub use self::command_stream::{CommandStreamSettings, KindSettings};
 
 pub struct WsSettings {
     pub allowed_origins: Vec<Regex>,
