@@ -25,7 +25,7 @@
 | S7 wire protocol, snapshot route, resume | done | `cargo test -p shine-builder` (144 tests: 6 `read_snapshot`, 4 snapshot route, 11 stream socket); `cargo test -p shine-game --test replay` (35, 7 protocol); wasm check |
 | S8 integration and fault tests | done | `cargo test -p shine-builder` (152 tests, 3 runs; 6 in `stream_integration`, 2 new in `hub::tests::stream_dispatcher`) |
 | S9 chat kind, switch from the old chat | done | `cargo test -p shine-builder` (156 tests); `pnpm exec playwright test api-tests/builder api-tests/shared` against the local builder (35 builder tests passed; the identity cases of `shared` need the identity service); `pnpm run lint` |
-| S10 | open (S10 next) | |
+| S10 test hardening and doc sync | done | `CI=true cargo test --workspace` (builder 161 tests, no database skips); builder API tests 21 passed; `cargo fmt --check`, clippy (only the existing `BitSet::len`) |
 | S12 client engine in `shine-game` | open (after S9) | |
 | S11 let the worker prune | decision pending | |
 
@@ -249,9 +249,9 @@ The reference for the algorithms is the old plan's Tasks 6 and 7 (`docs/plans/co
 
 **Files:** `services/hub/tests/{contention,fault,lifecycle,test_utils}.rs`, `app_state.rs` tests, `docs/services/builder/hub.md`, `docs/plans/hub_issues.md`.
 
-- [ ] **Step 1:** Replace fixed sleeps with barriers or a paused clock in the tests of item 34. Add `heartbeat_enabled_stress_with_300_connections` (heartbeat, session check and stream workers on 200 ms ticks; replay invariant checker; clean shutdown) and `app_state_wires_the_intervals` (the real `AppState::new`).
-- [ ] **Step 2:** Run the `shine-skills:sdp` Sync for `hub.md` against the code; update `hub_issues.md` statuses for items 10, 16, 29, 31, 40, 45, 49 and the test items.
-- [ ] **Step 3: Final verification.** `cargo fmt --all --check`; `cargo clippy --workspace --all-targets`; `CI=true cargo test --workspace` with both connection strings set; `cd tests && pnpm test:local` with the service running. Expected: all green, no "skipping" lines. Checkpoint.
+- [x] **Step 1:** Replace fixed sleeps with barriers or a paused clock in the tests of item 34. Add `heartbeat_enabled_stress_with_300_connections` (heartbeat, session check and stream workers on 200 ms ticks; replay invariant checker; clean shutdown) and `app_state_wires_the_intervals` (the real `AppState::new`).
+- [x] **Step 2:** Run the `shine-skills:sdp` Sync for `hub.md` against the code; update `hub_issues.md` statuses for items 10, 16, 29, 31, 40, 45, 49 and the test items.
+- [x] **Step 3: Final verification.** `cargo fmt --all --check`; `cargo clippy --workspace --all-targets`; `CI=true cargo test --workspace` with both connection strings set; `cd tests && pnpm test:local` with the service running. Expected: all green, no "skipping" lines. Checkpoint.
 
 ## Task S11 (decision pending): let the worker prune
 
@@ -277,3 +277,5 @@ The web client lives in another repository and replays the same states. Its logi
 - The old `command-streams-plan.md` stays the reference for SQL, Lua and core algorithms; it keeps a separate chat and the `Uuid` stream id, which this plan replaces.
 
 **S9 notes.** Access is `chat_access()` (`AllowList` with `chat-global` only): users may read and write the global chat, and no other stream can be created. The API tests assert the protocol (ordering, delivery to every subscriber, nacks, resume, snapshot route statuses); what a remove or replace does to the state is asserted in Rust (`chat_test.rs`), because the TS side has no replay engine until S12. A resume is served as a tail only by a worker that already holds the history (another subscriber keeps it loaded); a cold worker answers every subscriber with a full sync. `commandStream.enabled` is true in the test and prod configs: production needs `builder.db.sqlCns` in the key vault before it is deployed. The generic hub tests now use a Stream-topic payload (`payload(id)`) where they used chat batches. `connection_tracker`'s wake support has no production user left (only its tests).
+
+**S10 notes.** The fixed sleeps wait for the consumers' tick counters (`HubService::ticks`, `wait_ticks`; the counters are also in the hub status) or for an ordered marker. `heartbeat_enabled_stress_with_300_connections` is `hub/tests/stress.rs`. `app_state_wires_the_intervals` became tests of `HubTiming::from_config` (`app_state_test.rs`): building the real `AppState::new` needs the whole web-app configuration, and it runs in the API tests. `hub.md` was synced with the code (access, statuses of the snapshot route, retention as built, configuration, metrics, tests) and `hub_issues.md` statuses updated (10, 16, 29, 31, 49, 14, 34 fixed; 40 by design). `*.sql` files are checked out with CRLF (`.gitattributes`), which is part of the refinery checksum: a database migrated from a file with LF line endings reports "applied migration is different"; drop the `cl_*` tables and `__migration__command_log` of the dev database to migrate again.
