@@ -1,11 +1,10 @@
 use crate::{
     app_config::AppConfig,
-    repositories::chat_comments::redis::RedisChatCommentsDb,
     repositories::command_stream::redis::{RedisCommandStreamDb, RedisStreamConfig},
     repositories::hub_registry::redis::RedisHubConnectionDb,
     services::{
-        command_stream::{AllowAll, StreamKindRegistry, StreamStores},
-        ChatService, CommandStreamService, HubIntervals, HubService,
+        command_stream::{chat_access, StreamKindRegistry, StreamStores},
+        CommandStreamService, HubIntervals, HubService,
     },
     settings::{BuilderSettings, CommandStreamSettings, WsSettings},
 };
@@ -19,7 +18,6 @@ use std::{sync::Arc, time::Duration};
 
 struct Inner {
     hub_service: HubService,
-    chat_service: ChatService,
     command_stream_service: Option<CommandStreamService>,
     settings: BuilderSettings,
 }
@@ -60,14 +58,6 @@ impl AppState {
         // live connection's registry entry expires and it is wrongly reaped as stale.
         let hub_connection_ttl_seconds = hub_heartbeat_seconds.saturating_mul(3);
         let hub_registry = RedisHubConnectionDb::new(redis_pool, hub_connection_ttl_seconds).await?;
-        let chat_comment_db = RedisChatCommentsDb::new(
-            redis_pool,
-            config.feature.chat.stream_max_messages,
-            config.feature.chat.stream_ttl_seconds,
-        )
-        .await?;
-        let chat_service = ChatService::new(chat_comment_db);
-
         let command_stream_service = match pg_pool {
             Some(pg_pool) => {
                 let stores = StreamStores {
@@ -83,7 +73,7 @@ impl AppState {
                     settings: settings.command_stream.clone(),
                 };
                 let kinds = StreamKindRegistry::new().with::<ChatState>();
-                Some(CommandStreamService::new(stores, kinds, Arc::new(AllowAll)))
+                Some(CommandStreamService::new(stores, kinds, Arc::new(chat_access())))
             }
             None => None,
         };
@@ -93,12 +83,10 @@ impl AppState {
         let intervals = HubIntervals {
             heartbeat: Duration::from_secs(hub_heartbeat_seconds),
             session_check: Duration::from_secs(config.feature.auth_check_interval.max(1)),
-            chat: Duration::from_secs(config.feature.chat.sync_interval_seconds.max(1)),
         };
         let hub_service = HubService::new(
             hub_registry,
             core_services.current_user_service.clone(),
-            chat_service.clone(),
             intervals,
             command_stream_service.clone(),
         )
@@ -106,7 +94,6 @@ impl AppState {
 
         Ok(Self(Arc::new(Inner {
             hub_service,
-            chat_service,
             command_stream_service,
             settings,
         })))
@@ -114,10 +101,6 @@ impl AppState {
 
     pub fn hub_service(&self) -> &HubService {
         &self.0.hub_service
-    }
-
-    pub fn chat_service(&self) -> &ChatService {
-        &self.0.chat_service
     }
 
     pub fn command_stream_service(&self) -> Option<&CommandStreamService> {

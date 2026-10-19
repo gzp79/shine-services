@@ -10,9 +10,9 @@ use crate::{
             hub_command::ControlCommand,
             hub_connections::{Connections, DeadConnection, RemovedConnection},
             hub_subscribers::Subscribers,
-            tasks::{ChatDispatcher, Heartbeat, SessionChecker, StreamDispatcher},
+            tasks::{Heartbeat, SessionChecker, StreamDispatcher},
         },
-        ChatService, CommandStreamService,
+        CommandStreamService,
     },
 };
 use opentelemetry::trace::SpanContext;
@@ -30,7 +30,6 @@ use uuid::Uuid;
 pub struct HubIntervals {
     pub heartbeat: Duration,
     pub session_check: Duration,
-    pub chat: Duration,
 }
 
 /// Point-in-time counts of hub state, for status reporting.
@@ -57,7 +56,6 @@ impl HubService {
     pub async fn new(
         hub_registry: RedisHubConnectionDb,
         session_service: Arc<CurrentUserService>,
-        chat_service: ChatService,
         intervals: HubIntervals,
         command_streams: Option<CommandStreamService>,
     ) -> Self {
@@ -81,7 +79,6 @@ impl HubService {
             Self::start_registry_listener(service.clone()),
             Heartbeat::start(service.clone(), intervals.heartbeat).await,
             SessionChecker::start(service.clone(), session_service, intervals.session_check).await,
-            ChatDispatcher::start(service.clone(), chat_service, intervals.chat).await,
         ];
         if let Some(command_streams) = command_streams {
             background_tasks.push(StreamDispatcher::start(service.clone(), command_streams).await);

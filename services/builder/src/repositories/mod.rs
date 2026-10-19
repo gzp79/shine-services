@@ -1,6 +1,5 @@
 mod db;
 
-pub mod chat_comments;
 pub mod command_stream;
 pub mod hub_registry;
 

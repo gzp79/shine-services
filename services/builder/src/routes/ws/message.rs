@@ -1,59 +1,5 @@
 use crate::models::messages::{StreamCommand, StreamMessage};
-use serde::{Deserialize, Serialize};
-use shine_game::replay::protocol::{
-    encode_snapshot_data, hash_to_hex, ClientFrame, ServerFrame, WireCommand, WireSnapshot,
-};
-use uuid::Uuid;
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[serde(tag = "type")]
-pub enum WSMessageRequest {
-    Chat { text: String },
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ChatWireComment {
-    pub id: String,
-    pub from: Uuid,
-    pub text: String,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-#[serde(tag = "type")]
-pub enum WSMessageResponse {
-    Chat { messages: Vec<ChatWireComment> },
-}
-
-/// A frame received from the client: the chat of the old protocol, or a stream frame.
-#[derive(Debug)]
-pub enum Incoming {
-    Chat(String),
-    Stream(ClientFrame),
-}
-
-impl Incoming {
-    /// `None` for anything that is not a frame of either protocol.
-    pub fn parse(text: &str) -> Option<Self> {
-        if let Ok(frame) = serde_json::from_str::<ClientFrame>(text) {
-            return Some(Self::Stream(frame));
-        }
-        match serde_json::from_str::<WSMessageRequest>(text) {
-            Ok(WSMessageRequest::Chat { text }) => Some(Self::Chat(text)),
-            Err(_) => None,
-        }
-    }
-}
-
-/// A frame sent to the client.
-#[derive(Debug, Serialize)]
-#[serde(untagged)]
-pub enum WSMessageOut {
-    Chat(WSMessageResponse),
-    Stream(ServerFrame),
-}
+use shine_game::replay::protocol::{encode_snapshot_data, hash_to_hex, ServerFrame, WireCommand, WireSnapshot};
 
 fn wire_commands(commands: &[StreamCommand]) -> Vec<WireCommand> {
     commands
@@ -104,7 +50,11 @@ pub fn stream_frame(message: StreamMessage) -> ServerFrame {
         StreamMessage::Reset { stream_id } => ServerFrame::StreamReset {
             stream_id: stream_id.to_string(),
         },
-        StreamMessage::Nack { stream_id, command_id, reason } => ServerFrame::StreamNack {
+        StreamMessage::Nack {
+            stream_id,
+            command_id,
+            reason,
+        } => ServerFrame::StreamNack {
             stream_id: stream_id.to_string(),
             command_id,
             reason: reason.to_string(),

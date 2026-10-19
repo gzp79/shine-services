@@ -72,18 +72,6 @@ pub async fn spawn_connection_loop<C: ConnectionConsumer>(
     tokio::spawn(run_connection_loop(subscription, interval, None, consumer))
 }
 
-/// Like [`spawn_connection_loop`], but the loop also runs an extra `on_tick` whenever `wake` is
-/// notified.
-pub async fn spawn_connection_loop_with_wake<C: ConnectionConsumer>(
-    service: &HubService,
-    interval: Duration,
-    wake: Arc<Notify>,
-    consumer: C,
-) -> JoinHandle<()> {
-    let subscription = service.subscribe(vec![TopicKey::Hub]).await;
-    tokio::spawn(run_connection_loop(subscription, interval, Some(wake), consumer))
-}
-
 /// Short type name of a consumer, for metric labels and logs.
 fn consumer_name<C: ConnectionConsumer>() -> &'static str {
     std::any::type_name::<C>().rsplit("::").next().unwrap_or_default()

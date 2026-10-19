@@ -9,10 +9,8 @@
   "builder": {
     "hubHeartbeatSeconds": 300,
     "authCheckInterval": 2,
-    "chat": {
-      "syncIntervalSeconds": 1
-    },
     "commandStream": {
+      "enabled": true,
       "snapshotEvery": 5,
       "keepSnapshots": 2,
       "syncIntervalMs": 200,
