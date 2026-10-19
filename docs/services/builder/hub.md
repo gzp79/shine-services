@@ -327,14 +327,14 @@ Only the end of the connection (close, drop, replacement) removes every subscrip
 | client → server | `streamSubscribe` | `streamId, kind, resume?: {generation, version}` |
 | client → server | `streamUnsubscribe` | `streamId` |
 | client → server | `streamCommand` | `streamId, commandId, command` (a JSON **string**) |
-| server → client | `streamSync` | `streamId, generation, snapshot: {version, hash, data} \| null, commands` |
+| server → client | `streamSync` | `streamId, generation, snapshotEvery, snapshot: {version, hash, data} \| null, commands` |
 | server → client | `streamCommands` | `streamId, generation, commands: [{version, commandId, userId, command}]` |
 | server → client | `streamCheckpoint` | `streamId, version, hash` |
 | server → client | `streamReset` | `streamId` (a fresh `streamSync` follows) |
 | server → client | `streamNack` | `streamId, commandId, reason` |
 | server → client | `streamSubscribeFailed` | `streamId, reason` |
 
-`streamId` is a short string (letters, digits, `_ . : -`, at most 64 characters) fixed by the kind or the application; the chat room is `chat-global`. Frames are JSON text with `type` as the tag (camelCase). `command` is JSON text inside a JSON string, so a browser must not `JSON.parse` it (integers above 2^53 would round); `hash` is 16 lower-case hex digits; `snapshot.data` is base64 postcard.
+`streamId` is a short string (letters, digits, `_ . : -`, at most 64 characters) fixed by the kind or the application; the chat room is `chat-global`. Frames are JSON text with `type` as the tag (camelCase). `command` is JSON text inside a JSON string, so a browser must not `JSON.parse` it (integers above 2^53 would round); `hash` is 16 lower-case hex digits; `snapshot.data` is base64 of the postcard encoding of the state's serde form (`encode_snapshot` / `decode_snapshot` in `shine-game`, which also builds for wasm).
 
 | Concern | Rule |
 |---|---|
@@ -345,7 +345,7 @@ Only the end of the connection (close, drop, replacement) removes every subscrip
 | Sync | Every `streamSync` replaces the client's state for that stream, with or without a preceding `streamReset`. A large backlog is one `streamSync` followed by `streamCommands` frames of at most 256 commands. |
 | Writes | A command is accepted once per `commandId`; there is no success ack, the writer sees its `commandId` in `streamCommands`. `streamNack` reports a failure, including `duplicate` (already in the log: drop it from pending). |
 | Order and truth | Redis orders the commands (version assignment is atomic in Redis); Postgres is the truth and wins every conflict, after which the Redis copy is rebuilt from it. |
-| Checkpoints | Every `snapshotEvery` versions a snapshot is stored once (the first writer is authoritative) and its hash is pushed as `streamCheckpoint`, never ahead of the commands already delivered; a client whose state hashes differently resubscribes. |
+| Checkpoints | Every `snapshotEvery` versions a snapshot is stored once (the first writer is authoritative) and its hash is pushed as `streamCheckpoint`, never ahead of the commands already delivered. The `streamSync` announces `snapshotEvery`, so a client hashes its own state at those versions and compares; a client whose hash differs resubscribes. |
 | Retention | A snapshot is stored every `snapshotEvery` commands and Postgres keeps the latest `keepSnapshots` snapshots and the commands from the oldest of them on (a long-lived stream's older commands are pruned). Redis keeps the commands from the oldest stored snapshot on, so at most `snapshotEvery` × `keepSnapshots` persisted commands, plus the commands not persisted yet (never trimmed). State older than the oldest stored snapshot is never served from history: the request (a resume, a snapshot read) is answered from the newest snapshot, as a full sync. Both settings are per kind, with global defaults. |
 | Slow client | A full egress channel drops the connection; the client reconnects and subscribes again. Delivery never queues for a single client. |
 | Guarantee | Per stream and connection: ordered, no duplicates inside a sync epoch. End to end: a command accepted by the server may be lost before it is persisted if Redis loses data; its writer then gets `streamReset`, a new sync, and resends its pending commands. |

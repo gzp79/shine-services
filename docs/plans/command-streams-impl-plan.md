@@ -6,7 +6,7 @@
 
 **Architecture:** A pure replay core (`shine-game`), a Postgres command log (`shine-infra`), a Redis stream repository (builder), a `CommandStreamService` (ingest) and one `StreamWorker` per resident stream under a `StreamDispatcher` hub task. The hub gets subscribe/unsubscribe commands and stream messages. Redis orders the commands, Postgres is the truth.
 
-**Tech Stack:** Rust 2021, tokio, axum ws, redis-rs 1.x (`redis::Script`), tokio-postgres + bb8 + refinery, serde/serde_json, postcard, TypeScript API tests.
+**Tech Stack:** Rust 2021, tokio, axum ws, redis-rs 1.x (`redis::Script`), tokio-postgres + bb8 + refinery, serde/serde_json, postcard (in `shine-game`), TypeScript API tests.
 
 **Spec:** `docs/services/builder/hub.md` (design). Reference for algorithms and invariants: `docs/plans/command-streams-plan.md` ("Protocol rules", "Soundness" I1-I16, Tasks 1-9 for SQL, Lua and core algorithms). Where this plan differs from that one, **this plan wins**; the old plan's chat parts and docs task are not used.
 
@@ -19,7 +19,7 @@
 | S3 Builder Postgres and settings | done | `cargo test -p shine-builder` (56 tests; 7 new: settings, schema on startup) |
 | S4 Redis stream repository | done, scripts reviewed | `cargo test -p shine-builder` (76 tests; 20 in `redis_command_stream`) |
 | S5 Hub subscriptions and stream messages | done | `cargo test -p shine-builder` (`hub::tests::stream`, 5 tests) |
-| S6a pure StreamCore | done | `cargo test -p shine-builder` (99 tests; 18 in `stream_core`) |
+| S6a pure StreamCore | done | `cargo test -p shine-builder` (100 tests; 19 in `stream_core`) |
 | S6b kinds, service, ingest | next | |
 | S6c worker, dispatcher, egress | open | |
 | S7 - S10 | open | |
@@ -29,7 +29,7 @@
 **Decisions taken while implementing** (they supersede the older wording where they differ):
 - `ReplayState::apply` is infallible; a command the state does not accept changes nothing. `CommandEnvelope.command` is a plain `C`: an undecodable command is an error of the caller (ingest answers `streamNack invalid`; a stored one stops that stream's worker and the stream answers `unavailable`), never an ignored command.
 - There is no ownership check at ingest and no `refers_to`: whether a command takes effect is the state's private decision in `apply`.
-- `shine-game` holds no storage code. The postcard snapshot codec (`encode_snapshot`, `decode_snapshot`, generic over serde) lives in `shine-infra`, the snapshot cadence in the builder settings (`KindSettings::is_snapshot_version`).
+- `shine-game` holds no storage code. The snapshot cadence is a builder setting (`KindSettings::is_snapshot_version`). The postcard snapshot codec (`encode_snapshot`, `decode_snapshot`) lives in `shine-game`, because it is the wire encoding of a state that the web client decodes too (postcard builds for wasm); `shine-infra` stores the bytes opaquely.
 - The chat state has `Add`, `Remove`, `Replace`; a message carries `edited`. There is no demo kind: the replay and platform tests use `ChatState`.
 - `PgCommandLogDb::prune(stream, keep)` deletes old snapshots and the commands below the oldest kept snapshot in one statement; it has no caller yet (S11).
 - `generation` is the history epoch (a fencing token owned by the log); the comments say so, the name stays. Renaming it to `epoch` is open.
@@ -48,7 +48,7 @@ export SHINE_TEST_TOXIPROXY_URL="http://localhost:8474"
 ```
 Run the shell commands one at a time (parallel Git Bash starts can crash).
 
-**Open questions**: the snapshot codec location for the client (the client repo decodes with `postcard` directly, or the two functions move back into `shine-game` as the wire encoding of a state); the hash at a checkpoint version (S12); Task S11 (whether the worker prunes commands as well as snapshots); the decode-error policy above; the `generation` -> `epoch` rename; the hardening plan's close codes and limits (H-D3, H-D4).
+**Open questions**: Task S11 (whether the worker prunes commands as well as snapshots); the decode-error policy above; the `generation` -> `epoch` rename; the hardening plan's close codes and limits (H-D3, H-D4).
 
 ## Global Constraints
 
@@ -129,12 +129,12 @@ S1, S2 and S5 are independent and can be done in any order.
 
 ## Task S2: Postgres command log (`shine-infra`) - done (15 tests, `database-test`)
 
-**Files:** Create `crates/shine-infra/src/db/command_log/{mod.rs, types.rs, stream_id.rs, pg_command_log.rs, snapshot_codec.rs, sql/V1__command_log.sql}`; test `crates/shine-infra/tests/pg_command_log.rs`. Tests use `database-test` (`SHINE_TEST_PG_CNS`). The old `db/event_source` is removed as in plan Task 2.
+**Files:** Create `crates/shine-infra/src/db/command_log/{mod.rs, types.rs, stream_id.rs, pg_command_log.rs, sql/V1__command_log.sql}`; test `crates/shine-infra/tests/pg_command_log.rs`. Tests use `database-test` (`SHINE_TEST_PG_CNS`). The old `db/event_source` is removed as in plan Task 2.
 
 **Interfaces:**
-- Produces: `struct StreamId(String)` with `StreamId::parse(&str) -> Result<StreamId, StreamIdError>` (S-D7); `PgCommandLogDb` as in plan Task 2 with `stream_id: &StreamId` instead of `Uuid` (`open_stream`, `append`, `read_after`, `latest_snapshot`, `try_store_snapshot`, `prune(stream, keep) -> PruneOutcome { snapshots, commands }` (one statement: the oldest kept snapshot defines the command cutoff), `oldest_snapshot_version(stream) -> Option<i64>`, generation begin); `snapshot_codec::{encode_snapshot<S: Serialize>(&S) -> Result<Vec<u8>, SnapshotCodecError>, decode_snapshot<S: DeserializeOwned>(&[u8]) -> Result<S, SnapshotCodecError>}` (postcard; generic over serde, so `shine-infra` does not depend on `shine-game`; `postcard` moves to `shine-infra`'s dependencies).
+- Produces: `struct StreamId(String)` with `StreamId::parse(&str) -> Result<StreamId, StreamIdError>` (S-D7); `PgCommandLogDb` as in plan Task 2 with `stream_id: &StreamId` instead of `Uuid` (`open_stream`, `append`, `read_after`, `latest_snapshot`, `try_store_snapshot`, `prune(stream, keep) -> PruneOutcome { snapshots, commands }` (one statement: the oldest kept snapshot defines the command cutoff), `oldest_snapshot_version(stream) -> Option<i64>`, generation begin); the log stores snapshot bytes opaquely (the codec is in `shine-game`).
 
-- [ ] **Step 1: Failing tests.** All of plan Task 2's tests with string ids, plus `stream_id_accepts_chat_global_and_rejects_bad_ids` (empty, 65 chars, spaces, `/`), `prune_keeps_the_latest_snapshots` (M = 2 of 5), `oldest_snapshot_version_follows_pruning`; codec tests `snapshot_round_trip_keeps_the_value`, `decoding_garbage_is_an_error`, `a_chat_state_round_trips` (dev-dependency on `shine-game` for this one test, or a local serde struct).
+- [ ] **Step 1: Failing tests.** All of plan Task 2's tests with string ids, plus `stream_id_accepts_chat_global_and_rejects_bad_ids` (empty, 65 chars, spaces, `/`), `prune_keeps_the_latest_snapshots` (M = 2 of 5), `oldest_snapshot_version_follows_pruning`.
 - [ ] **Step 2:** Implement per the old plan Task 2 (row lock on the head, id-checked appends, immutable rows, generation fencing, first-writer-wins snapshots with a foreign key to the command row); `stream_id` columns are `TEXT`.
 - [ ] **Step 3: Verify** `cargo test -p shine-infra command_log` with `SHINE_TEST_PG_CNS` set. **Step 4: Checkpoint.**
 
@@ -175,13 +175,13 @@ S1, S2 and S5 are independent and can be done in any order.
 
 The reference for the algorithms is the old plan's Tasks 6 and 7 (`docs/plans/command-streams-plan.md`); the decisions in this plan win. All three parts live in `services/builder/src/services/command_stream/` (`mod.rs` exports them) and keep a temporary `allow(dead_code, unused_imports)` on the module until S7 wires them to the socket.
 
-### S6a: the pure `StreamCore` (no I/O) - done (18 tests)
+### S6a: the pure `StreamCore` (no I/O) - done (19 tests)
 
 **Files:** Create `stream_core.rs` and `stream_core_test.rs` (declared at the bottom of `stream_core.rs`).
 
 **Interfaces:** `StreamCore<S: ReplayState>`: the worker's state machine over one stream. It owns the `Replica<S>`, the shared delivery cursor `fanned_out`, the commands `since_snapshot` (above the latest snapshot, never trimmed above `fanned_out`), the subscribers (each synced or `pending_sync`), the unpersisted commands, and the checkpoint cadence taken from `KindSettings`. Inputs are plain values (Redis meta and entries, Postgres snapshots and heads); outputs are plain values (frames per subscriber, what to append and persist, faults), so every rule is testable without Redis or Postgres. `Fault::{Reload(&'static str), Reset { generation, reason }}`, `Observed::{Current, NeedsProof(i64)}`, `base_version()`, `fanned_out()`.
 
-**Built as planned, with these additions.** `Fault::Undecodable { version }` (a stored command that cannot be decoded; never ignored); `add_subscriber_resuming(connection, StreamResume)` with the eligibility re-checked at delivery time (a snapshot taken in between can trim the commands a resume needs; an ineligible or reset resume becomes a full `Sync`); `base_version()`. The snapshot cadence comes from `KindSettings`, the codec from `shine-infra`. `shine-game` is now a dependency of the builder.
+**Built as planned, with these additions.** `Fault::Undecodable { version }` (a stored command that cannot be decoded; never ignored); `add_subscriber_resuming(connection, StreamResume)` with the eligibility re-checked at delivery time (a snapshot taken in between can trim the commands a resume needs; an ineligible or reset resume becomes a full `Sync`); `base_version()`; `Sync` announces `snapshot_every`. The snapshot cadence comes from `KindSettings`, the codec from `shine-game`. `shine-game` is now a dependency of the builder.
 
 **Tests** (pure, no database): one subscriber gets `Sync` then `Commands` in order with contiguous versions; two subscribers share one cursor and a new one gets the snapshot plus `since_snapshot`; a checkpoint is only sent at `snapshot_every` multiples, never ahead of the delivered commands, and at most one per step; a failed send removes the subscriber and it sees no later frame (no version gap); `Reset` is followed by exactly one `Sync` and nothing in between; a newer generation is adopted only when everything applied is persisted; an older generation or a lower version is a `Reset` fault; another command id at the replica's version is a `Reset` fault; holes filled from Postgres cause no false divergence; a resume inside the window gets only the tail and one outside gets a `Sync`; `apply` is never called with a gap or a repeat.
 
@@ -212,7 +212,7 @@ The reference for the algorithms is the old plan's Tasks 6 and 7 (`docs/plans/co
 **Files:** Create `services/builder/src/routes/command_stream.rs`; modify `routes/mod.rs`, `routes/ws/message.rs`, `routes/ws/connect.rs`, `services/command_stream/{command_stream_service.rs, stream_worker.rs}`, router wiring next to `ws_routes()`. Tests: `routes/command_stream_test.rs`, `routes/ws/connect_test.rs`, worker tests.
 
 **Interfaces:**
-- The wire frames are defined once, in `shine-game::replay::protocol` (serde types with plain `String` stream ids, `snapshot.data` as base64, `hash` as 16 hex digits, `command` as a JSON string), so the server and the web client compile against the same definitions; the builder converts its internal `StreamMessage` into them. Open: whether `Sync` carries `snapshotEvery`, so a client can hash its state at the checkpoint versions (see S12).
+- The wire frames are defined once, in `shine-game::replay::protocol` (serde types with plain `String` stream ids, `snapshot.data` as base64, `hash` as 16 hex digits, `command` as a JSON string), so the server and the web client compile against the same definitions; the builder converts its internal `StreamMessage` into them. `Sync` carries `snapshotEvery` (built in S6a, `StreamMessage::Sync::snapshot_every`), so a client hashes its state at the checkpoint versions only.
 - Produces: `CommandStreamService::read_snapshot(stream) -> Result<Option<StreamSyncPayload>, CommandStreamError>` (S-D5); `GET streams/{streamId}/snapshot`; the socket parses the client frames of the spec (`resume` included) and sends the server frames; the socket's own replies (nacks, subscribe failures) are written by the socket itself into its egress channel through a `WeakSender` (S5), never through the command loop; resume handling in the worker per S-D6.
 
 - [ ] **Step 1: Failing tests.** `snapshot_route_returns_snapshot_plus_tail`; `snapshot_route_merges_the_redis_tail_above_the_postgres_head` (contiguous, no duplicates); `snapshot_route_without_a_session_is_401`; `snapshot_route_for_an_unknown_stream_is_404`; `snapshot_route_with_storage_down_is_503`; `ws_resume_frame_is_parsed`; `resume_inside_the_window_sends_only_the_tail`; `resume_with_a_changed_generation_sends_a_full_sync`; `resume_older_than_the_base_version_sends_a_full_sync`; `resume_above_the_head_sends_a_full_sync`; `resume_after_a_drop_is_contiguous_or_a_full_sync`; `a_command_for_an_unsubscribed_stream_gets_not_subscribed`; `an_unknown_kind_gets_subscribe_failed_unknown_kind`.
@@ -261,9 +261,9 @@ The web client lives in another repository and replays the same states. Its logi
 **Files:** Create `crates/shine-game/src/replay/{client_stream.rs, protocol.rs}` (the protocol types come with S7), tests `crates/shine-game/tests/replay/client.rs`.
 
 **Interfaces:** `ClientStream<S: ReplayState> { authoritative: Replica<S>, pending: Vec<(Uuid, S::Command)>, local: S }` with `submit(command) -> (Uuid, outgoing frame)`, `on_frame(ServerFrame) -> ClientEvent`, and a sync status (`Connecting`, `Syncing`, `Live`, `Resyncing`, `Offline`, `Failed`).
-- `Sync` replaces the state (snapshot bytes decoded by the client repo's postcard dependency, then the commands); `Commands` must be contiguous, a gap means resubscribe; `Reset` means rebuild from the next `Sync`.
+- `Sync` replaces the state (snapshot bytes decoded with `decode_snapshot`, then the commands); `Commands` must be contiguous, a gap means resubscribe; `Reset` means rebuild from the next `Sync`.
 - After a `Sync`, pending commands whose id is not in it are resubmitted with the same `commandId`; `Nack duplicate` drops the pending entry, `failed`, `busy` and `notReady` keep it.
-- A `Checkpoint` is compared with the client's own hash at that version; a mismatch is a resync. The client needs its hash at the checkpoint version: it hashes at the cadence the `Sync` announces, or the server holds checkpoints back until clients are exactly there (decide in S7).
+- A `Checkpoint` is compared with the client's own hash at that version; a mismatch is a resync. The client hashes its state at the multiples of the `snapshotEvery` the `Sync` announced and keeps the last few hashes, so it can compare a checkpoint that arrives after later commands.
 
 **Tests** (pure, on `ChatState`): a sync then commands reach the server's state; a gap asks for a resync; a reset then a sync rebuilds; pending commands survive a resync and are resubmitted; a duplicate nack drops a pending command; a checkpoint mismatch asks for a resync; the optimistic local view equals authoritative plus pending.
 
