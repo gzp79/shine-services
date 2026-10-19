@@ -10,6 +10,39 @@
 
 **Spec:** `docs/services/builder/hub.md` (design). Reference for algorithms and invariants: `docs/plans/command-streams-plan.md` ("Protocol rules", "Soundness" I1-I16, Tasks 1-9 for SQL, Lua and core algorithms). Where this plan differs from that one, **this plan wins**; the old plan's chat parts and docs task are not used.
 
+## Progress
+
+| Task | State | Evidence |
+|---|---|---|
+| S1 Replay core and chat state | done | `cargo test -p shine-game --test replay` (25 tests), wasm build |
+| S2 Postgres command log | done | `cargo test -p shine-infra --test pg_command_log` (15 tests, `database-test`) |
+| S3 Builder Postgres and settings | done | `cargo test -p shine-builder` (56 tests; 7 new: settings, schema on startup) |
+| S4 Redis stream repository | next | |
+| S5 - S10 | open | |
+| S11 let the worker prune | decision pending | |
+
+**Decisions taken while implementing** (they supersede the older wording where they differ):
+- `ReplayState::apply` is infallible; a command the state does not accept changes nothing. `CommandEnvelope.command` is a plain `C`: an undecodable command is an error of the caller (ingest answers `streamNack invalid`; a stored one stops that stream's worker and the stream answers `unavailable`), never an ignored command.
+- There is no ownership check at ingest and no `refers_to`: whether a command takes effect is the state's private decision in `apply`.
+- `shine-game` holds no storage code. The postcard snapshot codec (`encode_snapshot`, `decode_snapshot`, generic over serde) lives in `shine-infra`, the snapshot cadence in the builder settings (`KindSettings::is_snapshot_version`).
+- The chat state has `Add`, `Remove`, `Replace`; a message carries `edited`. There is no demo kind: the replay and platform tests use `ChatState`.
+- `PgCommandLogDb::prune(stream, keep)` deletes old snapshots and the commands below the oldest kept snapshot in one statement; it has no caller yet (S11).
+- `generation` is the history epoch (a fencing token owned by the log); the comments say so, the name stays. Renaming it to `epoch` is open.
+- `db.sqlCns` is optional; the Postgres pool is created only when `commandStream.enabled`. Production needs `builder.db.sqlCns` in the key vault before enabling.
+- Connection strings for tests come from `shine_test::db::{get_redis_cns, get_pg_cns}`; with `CI` set a missing string fails the test. Test files of the builder are declared at the bottom of the owning file with `#[path]`.
+
+**Running the database tests locally** (Docker dev environment, see the `local-development` skill; the compose file needs the external network once: `docker network create shine`):
+```
+docker compose -f services/docker-compose.yml -p shine up -d
+export CI=true
+export SHINE_TEST_REDIS_CNS="redis://localhost:6379"
+export SHINE_TEST_PG_CNS="postgres://username:password@localhost:5432/database-test?sslmode=disable"   # builder tests may use database-builder
+export SHINE_TEST_TOXIPROXY_URL="http://localhost:8474"
+```
+Run the shell commands one at a time (parallel Git Bash starts can crash).
+
+**Open questions**: Task S11 (whether the worker prunes commands as well as snapshots); the decode-error policy above; the `generation` -> `epoch` rename; the hardening plan's close codes and limits (H-D3, H-D4).
+
 ## Global Constraints
 
 **Process**

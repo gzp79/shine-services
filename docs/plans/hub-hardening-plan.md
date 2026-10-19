@@ -10,6 +10,18 @@
 
 **Spec:** `docs/services/builder/hub.md` (design), `docs/plans/hub_issues.md` (findings).
 
+## Progress
+
+| Task | State |
+|---|---|
+| H0 contract in `hub.md` | waits for H-D3 / H-D4 |
+| H1 registry as Lua | open |
+| H2 command loop, consumers | open |
+| H3 socket hardening | open |
+| H4 shutdown and startup guards | open |
+
+Fixed outside this plan: item 7 (read-only batched session check) and item 24 (hub tests fail without a database on `CI`; the connection strings now come from `shine_test::db`). The findings and their statuses are in `docs/plans/hub_issues.md`. The stream platform has its own plan, `docs/plans/command-streams-impl-plan.md`.
+
 ## Global Constraints
 
 **Process**
