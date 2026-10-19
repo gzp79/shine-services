@@ -27,6 +27,14 @@ pub struct HubMetrics {
     pub tick_duration: Histogram<f64>,
     /// Messages received from the clients, by kind and outcome.
     pub ws_messages_received: Counter<u64>,
+    /// Commands waiting for the command loop.
+    pub command_queue_depth: UpDownCounter<i64>,
+    /// Connect attempts refused before reaching the command loop, by reason.
+    pub connects_rejected: Counter<u64>,
+    /// Panics caught in the command loop or a background consumer, by task.
+    pub task_panics: Counter<u64>,
+    /// Registry operations that failed, by operation and kind (error or timeout).
+    pub registry_failures: Counter<u64>,
 }
 
 static METRICS: LazyLock<HubMetrics> = LazyLock::new(HubMetrics::new);
@@ -81,6 +89,22 @@ impl HubMetrics {
             ws_messages_received: meter
                 .u64_counter("ws_messages_received")
                 .with_description("Messages received from the websocket clients")
+                .build(),
+            command_queue_depth: meter
+                .i64_up_down_counter("hub_command_queue_depth")
+                .with_description("Hub control commands waiting to be processed")
+                .build(),
+            connects_rejected: meter
+                .u64_counter("hub_connects_rejected")
+                .with_description("Connect attempts refused before reaching the hub")
+                .build(),
+            task_panics: meter
+                .u64_counter("hub_task_panics")
+                .with_description("Panics caught in the hub command loop and background consumers")
+                .build(),
+            registry_failures: meter
+                .u64_counter("hub_registry_failures")
+                .with_description("Failed hub registry operations")
                 .build(),
         }
     }

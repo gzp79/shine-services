@@ -493,7 +493,7 @@ test.describe('Builder websocket', { tag: ['@regression'] }, () => {
 
         // The first socket must be force-closed by the hub, telling the client why; the second stays open.
         const firstResult = await first.settled;
-        expect(firstResult).toEqual({ kind: 'closed', code: HUB_DROPPED_CLOSE_CODE, reason: 'replaced' });
+        expect(firstResult).toEqual({ kind: 'closed', code: HUB_REPLACED_CLOSE_CODE, reason: 'replaced' });
     });
 
     test('WS connection shall be dropped when session is deleted', async ({ homeUrl, builderWSUrl }) => {
@@ -512,6 +512,6 @@ test.describe('Builder websocket', { tag: ['@regression'] }, () => {
         await mint.deleteUser(user);
 
         const result = await closeCtx.settled;
-        expect(result).toEqual({ kind: 'closed', code: HUB_DROPPED_CLOSE_CODE, reason: 'session_invalid' });
+        expect(result).toEqual({ kind: 'closed', code: HUB_SESSION_INVALID_CLOSE_CODE, reason: 'session_invalid' });
     });
 });

@@ -1,4 +1,5 @@
 use crate::models::messages::{ToTopic, TopicKey};
+use std::sync::Arc;
 use uuid::Uuid;
 
 /// One rendered chat comment in an egress batch. `id` is the ordered stream id, so the client can
@@ -10,11 +11,18 @@ pub struct ChatComment {
     pub text: String,
 }
 
-/// A batch of chat comments delivered to a single connection. Egress-only: built by the chat
-/// dispatcher and sent via targeted `send_to_connection`, never broadcast.
+/// A batch of chat comments delivered to connections. Egress-only: built by the chat dispatcher and
+/// sent via targeted `send_to_connection`, never broadcast. The comments are shared, so one batch
+/// serves every connection that is at the same point of the stream.
 #[derive(Clone, Debug)]
 pub struct ChatBatch {
-    pub comments: Vec<ChatComment>,
+    pub comments: Arc<[ChatComment]>,
+}
+
+impl ChatBatch {
+    pub fn new(comments: Vec<ChatComment>) -> Self {
+        Self { comments: comments.into() }
+    }
 }
 
 impl ToTopic for ChatBatch {

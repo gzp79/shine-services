@@ -1,6 +1,6 @@
 use crate::{
     models::ChatError,
-    repositories::chat_comments::{redis::RedisChatCommentsDb, ChatCommentDb, ChatCommentStore, StoredChatComment},
+    repositories::chat_comments::{redis::RedisChatCommentsDb, ChatCommentDb, ChatCommentStore, ChatPage},
 };
 use uuid::Uuid;
 
@@ -31,9 +31,15 @@ impl ChatService {
         context.append_comment(&self.room_id, user_id, text).await
     }
 
-    pub async fn list_after(&self, last_stream_id: &str, limit: usize) -> Result<Vec<StoredChatComment>, ChatError> {
+    pub async fn list_after(&self, last_stream_id: &str, limit: usize) -> Result<ChatPage, ChatError> {
         let mut context = self.chat_db.create_context().await?;
         context.list_after(&self.room_id, last_stream_id, limit).await
+    }
+
+    /// Id of the newest comment of the room, `None` when the room is empty.
+    pub async fn last_id(&self) -> Result<Option<String>, ChatError> {
+        let mut context = self.chat_db.create_context().await?;
+        context.last_id(&self.room_id).await
     }
 
     /// Registers `handler` to run on every append to this service's room, so a consumer can push
@@ -43,5 +49,10 @@ impl ChatService {
         F: Fn() + Send + Sync + 'static,
     {
         self.chat_db.listen_to_room_changes(&self.room_id, handler).await
+    }
+
+    /// Stops the listener registered by [`Self::listen_to_comments`].
+    pub async fn unlisten_comments(&self) -> Result<(), ChatError> {
+        self.chat_db.unlisten_room_changes(&self.room_id).await
     }
 }

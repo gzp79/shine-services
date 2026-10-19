@@ -25,6 +25,8 @@ pub enum ControlCommand {
     HubRegistryChanged {
         user_id: Uuid,
     },
+    /// Recheck every local connection against the registry, after missed change notices.
+    ResyncRegistry,
     Shutdown,
 }
 
@@ -36,6 +38,7 @@ impl ControlCommand {
             ControlCommand::DisconnectUser { .. } => "disconnect_user",
             ControlCommand::DropConnection { .. } => "drop_connection",
             ControlCommand::HubRegistryChanged { .. } => "hub_registry_changed",
+            ControlCommand::ResyncRegistry => "resync_registry",
             ControlCommand::Shutdown => "shutdown",
         }
     }
@@ -46,7 +49,7 @@ impl ControlCommand {
             ControlCommand::ConnectUser { user_id, .. }
             | ControlCommand::DisconnectUser { user_id, .. }
             | ControlCommand::HubRegistryChanged { user_id } => Some(*user_id),
-            ControlCommand::DropConnection { .. } | ControlCommand::Shutdown => None,
+            ControlCommand::DropConnection { .. } | ControlCommand::ResyncRegistry | ControlCommand::Shutdown => None,
         }
     }
 
@@ -56,7 +59,7 @@ impl ControlCommand {
             ControlCommand::ConnectUser { connection_id, .. }
             | ControlCommand::DisconnectUser { connection_id, .. }
             | ControlCommand::DropConnection { connection_id, .. } => Some(*connection_id),
-            ControlCommand::HubRegistryChanged { .. } | ControlCommand::Shutdown => None,
+            ControlCommand::HubRegistryChanged { .. } | ControlCommand::ResyncRegistry | ControlCommand::Shutdown => None,
         }
     }
 }

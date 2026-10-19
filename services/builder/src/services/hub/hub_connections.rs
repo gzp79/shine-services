@@ -11,6 +11,7 @@ use tokio::sync::{
 use uuid::Uuid;
 
 struct Connection {
+    user_id: Uuid,
     session_key: SessionKey,
     tx: mpsc::Sender<HubMessage>,
     topics: Vec<TopicKey>,
@@ -42,7 +43,7 @@ impl RemovedConnection {
     /// Best-effort delivery of the event that ends the connection, as it is no longer registered to
     /// receive broadcasts; a full or closed channel is ignored.
     pub fn notify(self, event: HubEvent) {
-        let _ = self.tx.try_send(HubMessage::Hub(event));
+        let _ = try_send_as(&self.tx, HubMessage::Hub(event), "close");
     }
 }
 
@@ -52,6 +53,10 @@ fn try_send(tx: &mpsc::Sender<HubMessage>, message: HubMessage) -> Result<(), Di
         HubMessage::Hub(_) => "hub",
         HubMessage::Chat(_) => "chat",
     };
+    try_send_as(tx, message, kind)
+}
+
+fn try_send_as(tx: &mpsc::Sender<HubMessage>, message: HubMessage, kind: &'static str) -> Result<(), DisconnectReason> {
     let (outcome, result) = match tx.try_send(message) {
         Ok(()) => ("ok", Ok(())),
         Err(TrySendError::Full(_)) => ("full", Err(DisconnectReason::SlowConsumer)),
@@ -87,7 +92,7 @@ impl Connections {
         registry.users.insert(user_id, connection_id);
         let replaced = registry
             .connections
-            .insert(connection_id, Connection { session_key, tx, topics });
+            .insert(connection_id, Connection { user_id, session_key, tx, topics });
         if replaced.is_none() {
             hub_metrics().connections.add(1, &[]);
         }
@@ -108,12 +113,11 @@ impl Connections {
     /// Removes a connection by its id.
     pub async fn remove_connection_by_id(&self, connection_id: Uuid) -> Option<RemovedConnection> {
         let mut registry = self.registry.write().await;
-        let user_id = registry
-            .users
-            .iter()
-            .find(|(_, cid)| **cid == connection_id)
-            .map(|(u, _)| *u)?;
-        registry.users.remove(&user_id);
+        let user_id = registry.connections.get(&connection_id)?.user_id;
+        // A superseded connection may still be registered by id while the user points at its successor.
+        if registry.users.get(&user_id) == Some(&connection_id) {
+            registry.users.remove(&user_id);
+        }
         Self::take(&mut registry, user_id, connection_id)
     }
 
@@ -152,6 +156,9 @@ impl Connections {
         let Some(data) = registry.connections.get(&connection_id) else {
             return Ok(false);
         };
+        if !data.topics.contains(&message.topic()) {
+            return Ok(false);
+        }
         try_send(&data.tx, message)
             .map(|()| true)
             .map_err(|reason| DeadConnection { connection_id, reason })
@@ -167,6 +174,9 @@ impl Connections {
         let Some(data) = registry.connections.get(&connection_id) else {
             return Ok(());
         };
+        if !data.topics.contains(&message.topic()) {
+            return Ok(());
+        }
         try_send(&data.tx, message).map_err(|reason| DeadConnection { connection_id, reason })
     }
 
@@ -192,6 +202,21 @@ impl Connections {
             Ok(())
         } else {
             Err(dead)
+        }
+    }
+
+    /// Every active `(user_id, connection_id)`.
+    pub async fn snapshot(&self) -> Vec<(Uuid, Uuid)> {
+        let registry = self.registry.read().await;
+        registry.users.iter().map(|(user_id, connection_id)| (*user_id, *connection_id)).collect()
+    }
+
+    /// Whether the user may have a connection here, without waiting: when the registry is being
+    /// written the answer is a conservative `true`.
+    pub fn may_hold_user(&self, user_id: Uuid) -> bool {
+        match self.registry.try_read() {
+            Ok(registry) => registry.users.contains_key(&user_id),
+            Err(_) => true,
         }
     }
 

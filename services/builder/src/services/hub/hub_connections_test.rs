@@ -16,7 +16,7 @@ fn chat(text: &str) -> HubMessage {
             id: "0-0".to_string(),
             user_id: Uuid::new_v4(),
             text: text.to_string(),
-        }],
+        }].into(),
     })
 }
 
@@ -58,8 +58,12 @@ async fn send_to_user_follows_the_active_connection_and_reports_dead_ones() {
     let (old_tx, mut old_rx) = mpsc::channel(4);
     let (new_tx, mut new_rx) = mpsc::channel(1);
     let (old_id, new_id) = (Uuid::new_v4(), Uuid::new_v4());
-    users.register_connection(user_id, old_id, key(), old_tx, vec![]).await;
-    users.register_connection(user_id, new_id, key(), new_tx, vec![]).await;
+    users
+        .register_connection(user_id, old_id, key(), old_tx, vec![TopicKey::Chat])
+        .await;
+    users
+        .register_connection(user_id, new_id, key(), new_tx, vec![TopicKey::Chat])
+        .await;
 
     // The user's latest registration is its active connection.
     assert!(users.send_to_user(user_id, chat("1")).await.is_ok());
@@ -181,7 +185,9 @@ async fn close_notice_on_a_full_channel_is_dropped() {
     let users = Connections::new();
     let (tx, mut rx) = mpsc::channel(1);
     let (user_id, conn_id) = (Uuid::new_v4(), Uuid::new_v4());
-    users.register_connection(user_id, conn_id, key(), tx, vec![]).await;
+    users
+        .register_connection(user_id, conn_id, key(), tx, vec![TopicKey::Chat])
+        .await;
     assert_eq!(users.send_to_connection(conn_id, chat("1")).await, Ok(true));
 
     users
@@ -210,4 +216,52 @@ async fn remove_connection_cas_ignores_stale_id() {
         Some(conn_id)
     );
     assert_eq!(users.len().await, 0);
+}
+
+#[test]
+async fn directed_sends_respect_the_topics_of_the_connection() {
+    let users = Connections::new();
+    let (tx, mut rx) = mpsc::channel(4);
+    let (user_id, conn_id) = (Uuid::new_v4(), Uuid::new_v4());
+    users
+        .register_connection(user_id, conn_id, key(), tx, vec![TopicKey::Hub])
+        .await;
+
+    assert_eq!(users.send_to_connection(conn_id, chat("x")).await, Ok(false));
+    assert!(users.send_to_user(user_id, chat("x")).await.is_ok());
+    assert!(rx.try_recv().is_err(), "a connection without the Chat topic gets no chat");
+}
+
+#[test]
+async fn remove_by_id_finds_the_connection_without_scanning_and_keeps_a_successor() {
+    let users = Connections::new();
+    let user_id = Uuid::new_v4();
+    let (old_tx, _old_rx) = mpsc::channel(1);
+    let (new_tx, _new_rx) = mpsc::channel(1);
+    let (old_id, new_id) = (Uuid::new_v4(), Uuid::new_v4());
+    users.register_connection(user_id, old_id, key(), old_tx, vec![]).await;
+    users.register_connection(user_id, new_id, key(), new_tx, vec![]).await;
+
+    // Removing the superseded connection must not unregister the user's current one.
+    assert!(users.remove_connection_by_id(old_id).await.is_some());
+    assert_eq!(users.find_active(user_id).await.map(|(id, _)| id), Some(new_id));
+
+    assert!(users.remove_connection_by_id(Uuid::new_v4()).await.is_none());
+    assert_eq!(
+        users.remove_connection_by_id(new_id).await.map(|removed| removed.user_id),
+        Some(user_id)
+    );
+    assert_eq!(users.len().await, 0);
+}
+
+#[test]
+async fn snapshot_lists_active_connections_and_may_hold_user_answers_without_waiting() {
+    let users = Connections::new();
+    let (tx, _rx) = mpsc::channel(1);
+    let (user_id, conn_id) = (Uuid::new_v4(), Uuid::new_v4());
+    users.register_connection(user_id, conn_id, key(), tx, vec![]).await;
+
+    assert_eq!(users.snapshot().await, vec![(user_id, conn_id)]);
+    assert!(users.may_hold_user(user_id));
+    assert!(!users.may_hold_user(Uuid::new_v4()));
 }

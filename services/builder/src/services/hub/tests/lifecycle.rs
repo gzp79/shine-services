@@ -456,7 +456,7 @@ async fn registry_change_drops_only_a_connection_the_registry_no_longer_holds() 
 }
 
 #[test(serial = "hub-service")]
-async fn heartbeat_refreshes_live_rows_and_drops_expired_ones() {
+async fn heartbeat_refreshes_live_rows_restores_missing_ones_and_drops_foreign_ones() {
     let tick = Duration::from_millis(100);
     let Some(mut test) = create_test_hub(TestHubOptions {
         heartbeat: tick,
@@ -466,12 +466,14 @@ async fn heartbeat_refreshes_live_rows_and_drops_expired_ones() {
     else {
         return;
     };
-    let (live_user, expired_user) = (Uuid::new_v4(), Uuid::new_v4());
+    let (live_user, lost_user, taken_user) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
     let (live, mut live_rx) = connect(&test.hub, live_user, 8);
-    let (expired, mut expired_rx) = connect(&test.hub, expired_user, 8);
+    let (lost, mut lost_rx) = connect(&test.hub, lost_user, 8);
+    let (taken, mut taken_rx) = connect(&test.hub, taken_user, 8);
     barrier(&test.hub, &mut test.events).await;
 
-    // One row about to expire, the other already gone, as after a TTL expiry.
+    // One row about to expire, one already gone (a flush, a failover or an outage longer than the
+    // TTL: nobody else owns the user), one taken over by another instance.
     {
         let mut conn = test.redis.get().await.unwrap();
         let _: () = redis::cmd("EXPIRE")
@@ -481,24 +483,31 @@ async fn heartbeat_refreshes_live_rows_and_drops_expired_ones() {
             .await
             .unwrap();
     }
-    delete_key(&test.redis, &registry_key(expired_user)).await;
+    delete_key(&test.redis, &registry_key(lost_user)).await;
+    let winner = Uuid::new_v4();
+    {
+        let mut context = test.registry.create_context().await.unwrap();
+        context.create_connection(taken_user, winner).await.unwrap();
+    }
 
     let seen = wait_event(
         &mut test.events,
         BARRIER_TIMEOUT,
-        |event| matches!(event, HubEvent::UserDisconnected { connection_id, .. } if *connection_id == expired),
+        |event| matches!(event, HubEvent::UserDisconnected { connection_id, .. } if *connection_id == taken),
     )
     .await
-    .expect("the heartbeat must drop the connection whose row expired");
+    .expect("the heartbeat must drop the connection whose row another connection owns");
     assert_eq!(lifecycle_of(&seen, live_user), []);
+    assert_eq!(lifecycle_of(&seen, lost_user), []);
     tokio::time::sleep(tick * 3).await;
     barrier(&test.hub, &mut test.events).await;
 
     assert_eq!(
-        egress_state(&mut expired_rx),
+        egress_state(&mut taken_rx),
         closed_with(Some(DisconnectReason::HeartbeatInactive))
     );
     assert_eq!(egress_state(&mut live_rx), open());
+    assert_eq!(egress_state(&mut lost_rx), open());
     let ttl: i64 = {
         let mut conn = test.redis.get().await.unwrap();
         redis::cmd("TTL")
@@ -508,16 +517,20 @@ async fn heartbeat_refreshes_live_rows_and_drops_expired_ones() {
             .unwrap()
     };
     assert!(ttl > 5, "the heartbeat must refresh the TTL of a live row, got {ttl}");
+    assert_eq!(find_registry_connection(&test.registry, lost_user).await, Some(lost));
+    assert_eq!(find_registry_connection(&test.registry, taken_user).await, Some(winner));
     assert_consistent(
         &test.hub,
         &test.registry,
-        [live_user, expired_user],
-        &HashMap::from([(live_user, live)]),
+        [live_user, lost_user],
+        &HashMap::from([(live_user, live), (lost_user, lost)]),
     )
     .await;
 
     test.hub.request_disconnection(live_user, live).unwrap();
+    test.hub.request_disconnection(lost_user, lost).unwrap();
     barrier(&test.hub, &mut test.events).await;
+    delete_key(&test.redis, &registry_key(taken_user)).await;
 }
 
 #[test(serial = "hub-service")]
@@ -585,14 +598,14 @@ async fn batched_heartbeat_refreshes_active_and_reports_stale() {
             connection_id: Uuid::new_v4(),
         },
     ];
-    let mut stale = test.hub.heartbeat_registry_connections(&requested).await.unwrap();
-    stale.sort_by_key(|c| c.user_id);
-    let mut expected = vec![requested[1], requested[2]];
-    expected.sort_by_key(|c| c.user_id);
+    let stale = test.hub.heartbeat_registry_connections(&requested).await.unwrap();
+    assert_eq!(stale, vec![requested[1]], "only entries owned by another connection are stale");
     assert_eq!(
-        stale, expected,
-        "only the mismatching / missing entries are reported stale"
+        find_registry_connection(&test.registry, never_registered).await,
+        Some(requested[2].connection_id),
+        "a missing entry is restored for the asking connection"
     );
+    delete_key(&test.redis, &registry_key(never_registered)).await;
 
     assert!(test.hub.heartbeat_registry_connection(active_a, conn_a).await.unwrap());
     assert!(!test

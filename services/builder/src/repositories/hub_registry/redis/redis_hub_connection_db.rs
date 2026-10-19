@@ -6,6 +6,16 @@ use crate::repositories::hub_registry::{
 use shine_infra::db::redis::{RedisConnectionPool, RedisError, RedisPooledConnection};
 use uuid::Uuid;
 
+/// A change observed on the registry channel.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RegistryChange {
+    /// Another instance changed the user's entry.
+    User(Uuid),
+    /// The listener reconnected: notices published during the outage are lost, so every local
+    /// connection must be rechecked against the registry.
+    Resync,
+}
+
 pub struct RedisHubConnectionDbContext<'c> {
     pub(in crate::repositories::hub_registry::redis) client: RedisPooledConnection<'c>,
     pub(in crate::repositories::hub_registry::redis) ttl_seconds: u64,
@@ -38,16 +48,14 @@ impl RedisHubConnectionDb {
     /// Listens for registry changes.
     pub async fn listen_to_registry_changes<F>(&self, handler: F) -> Result<(), HubError>
     where
-        F: Fn(Uuid) + Send + Sync + 'static,
+        F: Fn(RegistryChange) + Send + Sync + 'static,
     {
         let self_id = self.instance_id.to_string();
         let client = self.client.get().await.map_err(RedisError::PoolError)?;
         client
             .listen(HUB_REGISTRY_CHANGED_CHANNEL, move |payload| {
                 let Some(payload) = payload else {
-                    // None signals a reconnect: pub/sub messages published during the outage were
-                    // lost. The periodic registry heartbeat reconciles stale connections, so no
-                    // resync is needed here.
+                    handler(RegistryChange::Resync);
                     return;
                 };
 
@@ -64,7 +72,7 @@ impl RedisHubConnectionDb {
                 }
 
                 match Uuid::parse_str(raw_user_id) {
-                    Ok(user_id) => handler(user_id),
+                    Ok(user_id) => handler(RegistryChange::User(user_id)),
                     Err(err) => tracing::error!("Failed to parse hub registry user id {raw_user_id:?}: {err:#?}"),
                 }
             })

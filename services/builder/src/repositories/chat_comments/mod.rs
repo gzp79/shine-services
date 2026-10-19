@@ -7,5 +7,5 @@ pub mod redis;
 
 pub use self::{
     chat_comment_db::{ChatCommentDb, ChatCommentDbContext},
-    chat_comment_store::{ChatCommentStore, StoredChatComment},
+    chat_comment_store::{ChatCommentStore, ChatPage, StoredChatComment},
 };

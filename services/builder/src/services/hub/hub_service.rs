@@ -4,7 +4,10 @@ use crate::{
         messages::{DisconnectReason, HubEvent, HubMessage, TopicKey},
         HubError,
     },
-    repositories::hub_registry::{redis::RedisHubConnectionDb, HubConnection, HubConnectionDb, HubRegistry},
+    repositories::hub_registry::{
+        redis::{RedisHubConnectionDb, RegistryChange},
+        HubConnection, HubConnectionDb, HubRegistry,
+    },
     services::{
         hub::{
             hub_command::ControlCommand,
@@ -15,15 +18,48 @@ use crate::{
         ChatService,
     },
 };
+use futures::{FutureExt, StreamExt};
 use opentelemetry::trace::SpanContext;
 use shine_infra::session::{CurrentUserService, SessionKey};
 use shine_infra::telemetry::{current_span_context, label, link_span};
-use std::collections::VecDeque;
-use std::time::Instant;
-use std::{sync::Arc, time::Duration};
+use std::{
+    any::Any,
+    collections::{HashMap, HashSet, VecDeque},
+    future::Future,
+    panic::AssertUnwindSafe,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex,
+    },
+    time::{Duration, Instant},
+};
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::{info_span, Instrument};
 use uuid::Uuid;
+
+/// Max time of one registry operation, including the wait for a pooled Redis connection. Every
+/// registry operation is a single atomic step, so abandoning one midway is safe.
+const REGISTRY_OP_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// Commands waiting for the command loop above which new connections are refused: a stalled loop
+/// must not accumulate an unbounded backlog of connects.
+const MAX_PENDING_COMMANDS: usize = 10_000;
+
+/// Min time between two connection attempts of a user.
+const CONNECT_MIN_INTERVAL: Duration = Duration::from_millis(500);
+
+/// Connect-attempt records kept before expired ones are pruned.
+const CONNECT_RECORDS_PRUNE_AT: usize = 10_000;
+
+/// Total time the shutdown spends on registry cleanup. Entries not removed in time expire by TTL.
+const SHUTDOWN_REGISTRY_BUDGET: Duration = Duration::from_secs(10);
+
+/// Registry removals in flight during shutdown.
+const SHUTDOWN_REGISTRY_CONCURRENCY: usize = 8;
+
+/// Delays between attempts to (re)subscribe to the registry channel.
+const LISTEN_RETRY_MIN: Duration = Duration::from_secs(1);
+const LISTEN_RETRY_MAX: Duration = Duration::from_secs(30);
 
 /// Cadence configuration for the hub's periodic connection consumers.
 pub struct HubIntervals {
@@ -32,24 +68,49 @@ pub struct HubIntervals {
     pub chat: Duration,
 }
 
-/// Point-in-time counts of hub state, for status reporting.
+/// Point-in-time state of the hub, for status reporting.
 #[derive(Clone, Debug)]
 pub struct HubStats {
     pub connections: usize,
     pub subscribers: usize,
+    /// Commands waiting for the command loop.
+    pub pending_commands: usize,
+    /// The command loop is running.
+    pub running: bool,
+    /// Background tasks that ended while the hub is running.
+    pub stopped_tasks: Vec<&'static str>,
 }
 
+type ControlMessage = (ControlCommand, SpanContext, Instant);
+
 struct Inner {
-    control_tx: mpsc::UnboundedSender<(ControlCommand, SpanContext, Instant)>,
+    control_tx: mpsc::UnboundedSender<ControlMessage>,
+    pending_commands: AtomicUsize,
     connections: Connections,
     subscribers: Subscribers,
     hub_registry: RedisHubConnectionDb,
+    chat_service: ChatService,
+    /// Connections with a queued `DropConnection`, so a stalled loop is not fed duplicates.
+    pending_drops: Mutex<HashSet<Uuid>>,
+    /// Last connection attempt of recently seen users.
+    connect_attempts: Mutex<HashMap<Uuid, Instant>>,
+    /// Background tasks, to report the ones that died.
+    tasks: Mutex<Vec<(&'static str, JoinHandle<()>)>>,
 }
 
 /// Messaging service for connected users.
 #[derive(Clone)]
 pub struct HubService {
     inner: Arc<Inner>,
+}
+
+/// Best-effort text of a panic payload.
+pub(in crate::services::hub) fn panic_message(payload: &(dyn Any + Send)) -> &str {
+    payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("non-string panic payload")
 }
 
 impl HubService {
@@ -64,9 +125,14 @@ impl HubService {
         let service = Self {
             inner: Arc::new(Inner {
                 control_tx,
+                pending_commands: AtomicUsize::new(0),
                 connections: Connections::new(),
                 subscribers: Subscribers::new(),
                 hub_registry,
+                chat_service: chat_service.clone(),
+                pending_drops: Mutex::new(HashSet::new()),
+                connect_attempts: Mutex::new(HashMap::new()),
+                tasks: Mutex::new(Vec::new()),
             }),
         };
 
@@ -75,21 +141,58 @@ impl HubService {
         // lost to them forever. The start_* calls subscribe synchronously (awaited), and the
         // dispatcher is started last so nothing drains the channels until every subscription is in
         // place.
-        let background_tasks = vec![
-            Self::start_registry_listener(service.clone()),
-            Heartbeat::start(service.clone(), intervals.heartbeat).await,
+        let mut tasks = Vec::new();
+        tasks.extend(
+            Self::start_registry_listener(service.clone())
+                .await
+                .map(|task| ("registry listener", task)),
+        );
+        tasks.push(("heartbeat", Heartbeat::start(service.clone(), intervals.heartbeat).await));
+        tasks.push((
+            "session checker",
             SessionChecker::start(service.clone(), session_service, intervals.session_check).await,
+        ));
+        tasks.push((
+            "chat dispatcher",
             ChatDispatcher::start(service.clone(), chat_service, intervals.chat).await,
-        ];
-        Self::start_dispatcher(service.clone(), control_rx, background_tasks);
+        ));
+        service.inner.tasks.lock().unwrap().extend(tasks);
+
+        Self::start_dispatcher(service.clone(), control_rx);
         service
     }
 
     fn send_control(&self, command: ControlCommand) -> Result<(), HubError> {
+        self.inner.pending_commands.fetch_add(1, Ordering::Relaxed);
+        hub_metrics().command_queue_depth.add(1, &[]);
         self.inner
             .control_tx
             .send((command, current_span_context(), Instant::now()))
-            .map_err(|_| HubError::SendCommandFailed)
+            .map_err(|_| {
+                self.command_done();
+                HubError::SendCommandFailed
+            })
+    }
+
+    /// A command left the queue.
+    fn command_done(&self) {
+        self.inner.pending_commands.fetch_sub(1, Ordering::Relaxed);
+        hub_metrics().command_queue_depth.add(-1, &[]);
+    }
+
+    /// Runs a registry operation within [`REGISTRY_OP_TIMEOUT`], counting failures.
+    async fn registry<T>(&self, op: &'static str, work: impl Future<Output = Result<T, HubError>>) -> Result<T, HubError> {
+        let result = match tokio::time::timeout(REGISTRY_OP_TIMEOUT, work).await {
+            Ok(result) => result,
+            Err(_) => Err(HubError::RegistryTimeout),
+        };
+        if let Err(err) = &result {
+            let kind = if matches!(err, HubError::RegistryTimeout) { "timeout" } else { "error" };
+            hub_metrics()
+                .registry_failures
+                .add(1, &[label("op", op), label("kind", kind)]);
+        }
+        result
     }
 
     /// Logs and counts a connection removed by the hub, and tells its socket why.
@@ -106,9 +209,38 @@ impl HubService {
     /// Prunes any connection found dead during an egress send.
     fn drop_dead(&self, dead: impl IntoIterator<Item = DeadConnection>) -> Result<(), HubError> {
         for DeadConnection { connection_id, reason } in dead {
-            self.send_control(ControlCommand::DropConnection { connection_id, reason })?;
+            if !self.inner.pending_drops.lock().unwrap().insert(connection_id) {
+                continue;
+            }
+            if let Err(err) = self.send_control(ControlCommand::DropConnection { connection_id, reason }) {
+                self.inner.pending_drops.lock().unwrap().remove(&connection_id);
+                return Err(err);
+            }
         }
         Ok(())
+    }
+
+    /// Admission check of a connection attempt, before the socket is upgraded: refuses a user
+    /// reconnecting faster than [`CONNECT_MIN_INTERVAL`] and any attempt while the command loop is
+    /// far behind.
+    pub fn check_connect_allowed(&self, user_id: Uuid) -> Result<(), HubError> {
+        if self.inner.pending_commands.load(Ordering::Relaxed) >= MAX_PENDING_COMMANDS {
+            hub_metrics().connects_rejected.add(1, &[label("reason", "overloaded")]);
+            return Err(HubError::Overloaded);
+        }
+
+        let now = Instant::now();
+        let mut attempts = self.inner.connect_attempts.lock().unwrap();
+        if attempts.len() >= CONNECT_RECORDS_PRUNE_AT {
+            attempts.retain(|_, last| now.duration_since(*last) < CONNECT_MIN_INTERVAL);
+        }
+        match attempts.insert(user_id, now) {
+            Some(last) if now.duration_since(last) < CONNECT_MIN_INTERVAL => {
+                hub_metrics().connects_rejected.add(1, &[label("reason", "throttled")]);
+                Err(HubError::TooManyConnects)
+            }
+            _ => Ok(()),
+        }
     }
 
     /// Requests a new connection for a user, superseding any prior one, and returns its id.
@@ -119,6 +251,11 @@ impl HubService {
         tx: mpsc::Sender<HubMessage>,
         topics: Vec<TopicKey>,
     ) -> Result<Uuid, HubError> {
+        if self.inner.pending_commands.load(Ordering::Relaxed) >= MAX_PENDING_COMMANDS {
+            hub_metrics().connects_rejected.add(1, &[label("reason", "overloaded")]);
+            return Err(HubError::Overloaded);
+        }
+
         let connection_id = Uuid::new_v4();
         self.send_control(ControlCommand::ConnectUser {
             user_id,
@@ -142,12 +279,25 @@ impl HubService {
     /// Like [`Self::request_disconnection`], for a disconnect forced by the hub; counted as a dropped
     /// connection with the given reason once the connection is actually removed.
     pub fn request_drop(&self, user_id: Uuid, connection_id: Uuid, reason: DisconnectReason) -> Result<(), HubError> {
+        debug_assert!(reason.is_drop(), "a client disconnect is not a drop");
         self.send_control(ControlCommand::DisconnectUser { user_id, connection_id, reason })
     }
 
     /// Requests hub shutdown.
     pub fn request_shutdown(&self) -> Result<(), HubError> {
         self.send_control(ControlCommand::Shutdown)
+    }
+
+    /// Completes once the command loop has ended, i.e. after a shutdown has dropped every connection.
+    #[cfg(test)]
+    pub async fn wait_stopped(&self) {
+        self.inner.control_tx.closed().await;
+    }
+
+    /// Requests a recheck of every local connection against the registry, for when change notices
+    /// may have been missed.
+    pub fn request_registry_resync(&self) -> Result<(), HubError> {
+        self.send_control(ControlCommand::ResyncRegistry)
     }
 
     /// Notifies the hub that a user's registry entry changed, prompting an active-connection recheck.
@@ -192,21 +342,37 @@ impl HubService {
         rx
     }
 
-    /// Live connection and subscriber counts for status reporting.
+    /// Live state of the hub for status reporting.
     pub async fn stats(&self) -> HubStats {
         let connections = self.inner.connections.len().await;
         let subscribers = self.inner.subscribers.len().await;
-        HubStats { connections, subscribers }
+        let running = !self.inner.control_tx.is_closed();
+        let stopped_tasks = if running {
+            self.inner
+                .tasks
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(_, task)| task.is_finished())
+                .map(|(name, _)| *name)
+                .collect()
+        } else {
+            Vec::new()
+        };
+        HubStats {
+            connections,
+            subscribers,
+            pending_commands: self.inner.pending_commands.load(Ordering::Relaxed),
+            running,
+            stopped_tasks,
+        }
     }
 
     /// Starts the command loop, the sole writer of connection state.
-    fn start_dispatcher(
-        service: HubService,
-        mut control_rx: mpsc::UnboundedReceiver<(ControlCommand, SpanContext, Instant)>,
-        background_tasks: Vec<JoinHandle<()>>,
-    ) {
+    fn start_dispatcher(service: HubService, mut control_rx: mpsc::UnboundedReceiver<ControlMessage>) {
         tokio::spawn(async move {
             while let Some((command, origin, queued_at)) = control_rx.recv().await {
+                service.command_done();
                 let name = command.name();
                 let metrics = hub_metrics();
                 metrics
@@ -223,7 +389,18 @@ impl HubService {
                 );
                 link_span(&span, origin);
                 let start = Instant::now();
-                let keep_running = service.process(command).instrument(span).await;
+                // A panic in one command must not take the whole hub down with it.
+                let outcome = AssertUnwindSafe(service.process(command).instrument(span))
+                    .catch_unwind()
+                    .await;
+                let keep_running = match outcome {
+                    Ok(keep_running) => keep_running,
+                    Err(payload) => {
+                        tracing::error!("Hub command {name} panicked: {}", panic_message(payload.as_ref()));
+                        metrics.task_panics.add(1, &[label("task", "command loop")]);
+                        true
+                    }
+                };
                 metrics.commands.add(1, &[label("command", name)]);
                 metrics
                     .command_duration
@@ -233,28 +410,64 @@ impl HubService {
                 }
             }
             tracing::info!("Hub command loop stopped");
-            for task in background_tasks {
+            let tasks = std::mem::take(&mut *service.inner.tasks.lock().unwrap());
+            for (_, task) in tasks {
                 task.abort();
             }
         });
     }
 
-    fn start_registry_listener(service: HubService) -> JoinHandle<()> {
-        tokio::spawn(async move {
-            let notifier = service.clone();
-            if let Err(err) = service
-                .inner
-                .hub_registry
-                .listen_to_registry_changes(move |user_id| {
+    /// Subscribes to the registry channel. Returns the task retrying the subscription when the first
+    /// attempt failed, so a takeover is never left to the periodic heartbeat alone.
+    async fn start_registry_listener(service: HubService) -> Option<JoinHandle<()>> {
+        match service.listen_to_registry().await {
+            Ok(()) => None,
+            Err(err) => {
+                tracing::error!("Failed to listen to hub registry changes, retrying: {err:#?}");
+                Some(tokio::spawn(async move {
+                    let mut delay = LISTEN_RETRY_MIN;
+                    loop {
+                        tokio::time::sleep(delay).await;
+                        match service.listen_to_registry().await {
+                            Ok(()) => {
+                                tracing::info!("Listening to hub registry changes");
+                                // Notices published before the subscription are lost.
+                                let _ = service.request_registry_resync();
+                                return;
+                            }
+                            Err(err) => {
+                                tracing::warn!("Failed to listen to hub registry changes: {err:#?}");
+                                delay = (delay * 2).min(LISTEN_RETRY_MAX);
+                            }
+                        }
+                    }
+                }))
+            }
+        }
+    }
+
+    async fn listen_to_registry(&self) -> Result<(), HubError> {
+        let notifier = self.clone();
+        self.inner
+            .hub_registry
+            .listen_to_registry_changes(move |change| match change {
+                RegistryChange::User(user_id) => {
+                    // Notices about users this instance does not hold are the common case; they
+                    // need no command, no span and no registry read.
+                    if !notifier.inner.connections.may_hold_user(user_id) {
+                        return;
+                    }
                     if let Err(err) = notifier.notify_registry_changed(user_id) {
                         tracing::warn!("[{user_id}] Failed to enqueue hub registry change command: {err:#?}");
                     }
-                })
-                .await
-            {
-                tracing::error!("Failed to listen to hub registry changes: {err:#?}");
-            }
-        })
+                }
+                RegistryChange::Resync => {
+                    if let Err(err) = notifier.request_registry_resync() {
+                        tracing::warn!("Failed to enqueue hub registry resync command: {err:#?}");
+                    }
+                }
+            })
+            .await
     }
 
     /// Processes one control command. Returns if the dispatcher should continue (true) or exit (false).
@@ -350,6 +563,7 @@ impl HubService {
                 true
             }
             ControlCommand::DropConnection { connection_id, reason } => {
+                self.inner.pending_drops.lock().unwrap().remove(&connection_id);
                 // A producer found this connection's channel dead during an off-loop send. Prune it
                 // here so all mutation stays on the loop. Force-remove by id (a fresh reconnect that
                 // replaced it has a different id and its channel would not be dead).
@@ -367,6 +581,10 @@ impl HubService {
                 self.process_registry_change(user_id).await;
                 true
             }
+            ControlCommand::ResyncRegistry => {
+                self.resync_registry().await;
+                true
+            }
             ControlCommand::Shutdown => {
                 self.shutdown().await;
                 false
@@ -375,16 +593,21 @@ impl HubService {
     }
 
     async fn create_registry_connection(&self, user_id: Uuid, connection_id: Uuid) -> Result<(), HubError> {
-        let mut context = self.inner.hub_registry.create_context().await?;
-        context.create_connection(user_id, connection_id).await
+        self.registry("create", async {
+            let mut context = self.inner.hub_registry.create_context().await?;
+            context.create_connection(user_id, connection_id).await
+        })
+        .await
     }
 
     /// Whether the registry holds `connection_id` as the user's active connection; `false` on a read error.
     async fn is_registry_connection(&self, user_id: Uuid, connection_id: Uuid) -> bool {
-        let found = match self.inner.hub_registry.create_context().await {
-            Ok(mut context) => context.find_connection_by_user(user_id).await,
-            Err(err) => Err(err),
-        };
+        let found = self
+            .registry("find", async {
+                let mut context = self.inner.hub_registry.create_context().await?;
+                context.find_connection_by_user(user_id).await
+            })
+            .await;
         match found {
             Ok(found) => found.is_some_and(|found| found.connection_id == connection_id),
             Err(err) => {
@@ -395,9 +618,12 @@ impl HubService {
     }
 
     async fn remove_registry_connection(&self, user_id: Uuid, connection_id: Uuid) -> Result<(), HubError> {
-        let mut context = self.inner.hub_registry.create_context().await?;
-        context.remove_connection_if_active(user_id, connection_id).await?;
-        Ok(())
+        self.registry("remove", async {
+            let mut context = self.inner.hub_registry.create_context().await?;
+            context.remove_connection_if_active(user_id, connection_id).await?;
+            Ok(())
+        })
+        .await
     }
 
     pub(crate) async fn heartbeat_registry_connection(
@@ -405,8 +631,11 @@ impl HubService {
         user_id: Uuid,
         connection_id: Uuid,
     ) -> Result<bool, HubError> {
-        let mut context = self.inner.hub_registry.create_context().await?;
-        context.heartbeat_connection(user_id, connection_id).await
+        self.registry("heartbeat", async {
+            let mut context = self.inner.hub_registry.create_context().await?;
+            context.heartbeat_connection(user_id, connection_id).await
+        })
+        .await
     }
 
     /// Batched heartbeat over the given connections, returning the ones the registry no longer holds
@@ -415,8 +644,23 @@ impl HubService {
         &self,
         connections: &[HubConnection],
     ) -> Result<Vec<HubConnection>, HubError> {
-        let mut context = self.inner.hub_registry.create_context().await?;
-        context.heartbeat_connections(connections).await
+        // The whole batch gets a budget that grows with its size: one timeout per chunk would not
+        // bound it, and a fixed one would fail large batches.
+        let chunks = connections.len().div_ceil(256).max(1) as u32;
+        match tokio::time::timeout(REGISTRY_OP_TIMEOUT * chunks, async {
+            let mut context = self.inner.hub_registry.create_context().await?;
+            context.heartbeat_connections(connections).await
+        })
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(HubError::RegistryTimeout),
+        }
+        .inspect_err(|_| {
+            hub_metrics()
+                .registry_failures
+                .add(1, &[label("op", "heartbeat_batch"), label("kind", "error")]);
+        })
     }
 
     async fn process_registry_change(&self, user_id: Uuid) {
@@ -432,13 +676,41 @@ impl HubService {
             }
         };
 
-        if is_active {
+        if !is_active {
+            self.drop_registry_inactive(user_id, connection_id).await;
+        }
+    }
+
+    /// Rechecks every local connection against the registry, after change notices may have been missed.
+    async fn resync_registry(&self) {
+        let connections: Vec<HubConnection> = self
+            .inner
+            .connections
+            .snapshot()
+            .await
+            .into_iter()
+            .map(|(user_id, connection_id)| HubConnection { user_id, connection_id })
+            .collect();
+        if connections.is_empty() {
             return;
         }
 
-        // Force removal of the connection we just found to be inactive in the registry. If a
-        // fresh reconnect replaced it in the meantime, the connection ids differ and we leave
-        // the new connection untouched.
+        let stale = match self.heartbeat_registry_connections(&connections).await {
+            Ok(stale) => stale,
+            Err(err) => {
+                tracing::error!("Failed to resync hub connections with the registry: {err:#?}");
+                return;
+            }
+        };
+        tracing::info!("Hub registry resync: {} of {} connections are stale", stale.len(), connections.len());
+        for HubConnection { user_id, connection_id } in stale {
+            self.drop_registry_inactive(user_id, connection_id).await;
+        }
+    }
+
+    /// Removes a connection another instance took over. If a fresh reconnect replaced it in the
+    /// meantime, the connection ids differ and the new connection is left untouched.
+    async fn drop_registry_inactive(&self, user_id: Uuid, connection_id: Uuid) {
         let Some(removed) = self
             .inner
             .connections
@@ -457,8 +729,9 @@ impl HubService {
         .await;
     }
 
-    /// Stops the internal consumers, then drops every connection. Nothing is published after the
-    /// Shutdown event: the consumers are gone, and the sockets are told directly.
+    /// Stops the internal consumers, tells every socket the hub is going away, then cleans the
+    /// registry within a time budget. Nothing is published after the Shutdown event: the consumers
+    /// are gone, and the sockets are told directly.
     async fn shutdown(&self) {
         self.inner
             .subscribers
@@ -466,15 +739,35 @@ impl HubService {
             .await;
         self.inner.subscribers.clear().await;
 
-        if let Err(err) = self.inner.hub_registry.unlisten_registry_changes().await {
-            tracing::warn!("Failed to stop listening to hub registry changes: {err:#?}");
+        let unlisten = async {
+            if let Err(err) = self.inner.hub_registry.unlisten_registry_changes().await {
+                tracing::warn!("Failed to stop listening to hub registry changes: {err:#?}");
+            }
+            if let Err(err) = self.inner.chat_service.unlisten_comments().await {
+                tracing::warn!("Failed to stop listening to chat appends: {err:#?}");
+            }
+        };
+        if tokio::time::timeout(REGISTRY_OP_TIMEOUT, unlisten).await.is_err() {
+            tracing::warn!("Timed out stopping the hub listeners");
         }
 
-        for removed in self.inner.connections.remove_all().await {
-            let (user_id, connection_id) = self.record_drop(removed, DisconnectReason::Shutdown);
+        // Sockets first: they close as soon as they are told, whatever Redis is doing.
+        let dropped: Vec<(Uuid, Uuid)> = self
+            .inner
+            .connections
+            .remove_all()
+            .await
+            .into_iter()
+            .map(|removed| self.record_drop(removed, DisconnectReason::Shutdown))
+            .collect();
+
+        let cleanup = futures::stream::iter(dropped).for_each_concurrent(SHUTDOWN_REGISTRY_CONCURRENCY, |(user_id, connection_id)| async move {
             if let Err(err) = self.remove_registry_connection(user_id, connection_id).await {
                 tracing::warn!("[{user_id}] Failed to remove hub connection on shutdown (TTL will clean up): {err:#?}");
             }
+        });
+        if tokio::time::timeout(SHUTDOWN_REGISTRY_BUDGET, cleanup).await.is_err() {
+            tracing::warn!("Registry cleanup on shutdown timed out; the remaining entries expire by TTL");
         }
     }
 

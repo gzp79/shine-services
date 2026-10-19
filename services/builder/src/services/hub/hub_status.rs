@@ -25,6 +25,9 @@ impl StatusProvider for HubStatus {
         serde_json::json!({
             "connections": stats.connections,
             "subscribers": stats.subscribers,
+            "pendingCommands": stats.pending_commands,
+            "running": stats.running,
+            "stoppedTasks": stats.stopped_tasks,
         })
     }
 }

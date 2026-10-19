@@ -218,3 +218,154 @@ async fn concurrent_writers_reach_every_connection_once_and_in_order() {
     test.hub.request_disconnection(late_user, late).unwrap();
     barrier(&test.hub, &mut test.events).await;
 }
+
+async fn xadd(test: &TestHub, id: &str, fields: &[(&str, &str)]) {
+    let mut conn = test.redis.get().await.unwrap();
+    let mut cmd = redis::cmd("XADD");
+    cmd.arg(format!("chat:{}", test.chat_room)).arg(id);
+    for (name, value) in fields {
+        cmd.arg(*name).arg(*value);
+    }
+    let _: String = cmd.query_async(&mut *conn).await.unwrap();
+}
+
+async fn wait_for_chats(state: &Arc<Mutex<EgressState>>, count: usize) {
+    timeout(BARRIER_TIMEOUT, async {
+        while chats_of(state).len() < count {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("expected {count} comments, got {}", chats_of(state).len()));
+}
+
+#[test(serial = "hub-service")]
+async fn a_backlog_beyond_one_page_is_delivered_in_a_single_tick() {
+    // Only the append wakes the dispatcher: the tick is an hour away.
+    let Some(mut test) = create_test_hub(TestHubOptions::default()).await else {
+        return;
+    };
+    let writer = chat_writer(&test).await;
+    for i in 0..150 {
+        writer.append_comment(Uuid::new_v4(), &format!("old-{i}")).await.unwrap();
+    }
+    let user = Uuid::new_v4();
+    let (connection, rx) = connect(&test.hub, user, 1024);
+    let (state, _) = spawn_shared_reader(rx);
+    barrier(&test.hub, &mut test.events).await;
+
+    // One wake, more than the 128 entries of a page waiting.
+    writer.append_comment(Uuid::new_v4(), "wake").await.unwrap();
+    wait_for_chats(&state, 151).await;
+
+    test.hub.request_disconnection(user, connection).unwrap();
+    barrier(&test.hub, &mut test.events).await;
+}
+
+#[test(serial = "hub-service")]
+async fn a_joining_connection_replaying_history_does_not_hold_the_others_back() {
+    let Some(mut test) = create_test_hub(TestHubOptions::default()).await else {
+        return;
+    };
+    let writer = chat_writer(&test).await;
+    for i in 0..190 {
+        writer.append_comment(Uuid::new_v4(), &format!("old-{i}")).await.unwrap();
+    }
+    let (steady_user, joiner_user) = (Uuid::new_v4(), Uuid::new_v4());
+    let (steady, steady_rx) = connect(&test.hub, steady_user, 1024);
+    let (steady_state, _) = spawn_shared_reader(steady_rx);
+    barrier(&test.hub, &mut test.events).await;
+    writer.append_comment(Uuid::new_v4(), "wake-1").await.unwrap();
+    wait_for_chats(&steady_state, 191).await;
+
+    // A newcomer starts from the beginning of the retained history; the live comment must still
+    // reach the connection that is current right away.
+    let (joiner, joiner_rx) = connect(&test.hub, joiner_user, 1024);
+    let (joiner_state, _) = spawn_shared_reader(joiner_rx);
+    barrier(&test.hub, &mut test.events).await;
+    let live = writer.append_comment(Uuid::new_v4(), "live").await.unwrap();
+    wait_for_chats(&steady_state, 192).await;
+    assert_eq!(chats_of(&steady_state).last(), Some(&live));
+
+    wait_for_chats(&joiner_state, 192).await;
+    assert_eq!(chats_of(&joiner_state), chats_of(&steady_state), "the newcomer catches up in order");
+
+    test.hub.request_disconnection(steady_user, steady).unwrap();
+    test.hub.request_disconnection(joiner_user, joiner).unwrap();
+    barrier(&test.hub, &mut test.events).await;
+}
+
+#[test(serial = "hub-service")]
+async fn unreadable_entries_are_skipped_instead_of_blocking_the_stream() {
+    let Some(mut test) = create_test_hub(TestHubOptions::default()).await else {
+        return;
+    };
+    let writer = chat_writer(&test).await;
+    // A whole page of entries without the fields of a comment.
+    for i in 1..=130 {
+        xadd(&test, &format!("{i}-0"), &[("junk", "x")]).await;
+    }
+    let user = Uuid::new_v4();
+    let (connection, rx) = connect(&test.hub, user, 1024);
+    let (state, _) = spawn_shared_reader(rx);
+    barrier(&test.hub, &mut test.events).await;
+
+    let id = writer.append_comment(Uuid::new_v4(), "after the junk").await.unwrap();
+    wait_for_chats(&state, 1).await;
+    assert_eq!(chats_of(&state), [id]);
+
+    test.hub.request_disconnection(user, connection).unwrap();
+    barrier(&test.hub, &mut test.events).await;
+}
+
+#[test(serial = "hub-service")]
+async fn a_stream_restarting_behind_the_cursors_is_replayed() {
+    let tick = Duration::from_millis(20);
+    let Some(mut test) = create_test_hub(TestHubOptions { chat: tick, ..Default::default() }).await else {
+        return;
+    };
+    let writer = chat_writer(&test).await;
+    // The stream is at a far-future id, as a stream that outlived a clock far ahead of the new one.
+    xadd(&test, "99999999999999-0", &[("user", &Uuid::new_v4().to_string()), ("text", "future")]).await;
+    let user = Uuid::new_v4();
+    let (connection, rx) = connect(&test.hub, user, 1024);
+    let (state, _) = spawn_shared_reader(rx);
+    barrier(&test.hub, &mut test.events).await;
+    wait_for_chats(&state, 1).await;
+
+    // The stream is lost and restarts with ordinary ids, all below the connection's cursor.
+    {
+        let mut conn = test.redis.get().await.unwrap();
+        let _: () = redis::cmd("DEL")
+            .arg(format!("chat:{}", test.chat_room))
+            .query_async(&mut *conn)
+            .await
+            .unwrap();
+    }
+    let id = writer.append_comment(Uuid::new_v4(), "restarted").await.unwrap();
+    wait_for_chats(&state, 2).await;
+    assert_eq!(chats_of(&state).last(), Some(&id));
+
+    test.hub.request_disconnection(user, connection).unwrap();
+    barrier(&test.hub, &mut test.events).await;
+}
+
+#[test(serial = "hub-service")]
+async fn an_append_stores_trims_and_expires_the_stream_in_one_step() {
+    let Some(test) = create_test_hub(TestHubOptions::default()).await else {
+        return;
+    };
+    let writer = chat_writer(&test).await;
+    for i in 0..450 {
+        writer.append_comment(Uuid::new_v4(), &format!("m{i}")).await.unwrap();
+    }
+
+    let mut conn = test.redis.get().await.unwrap();
+    let key = format!("chat:{}", test.chat_room);
+    let len: usize = redis::cmd("XLEN").arg(&key).query_async(&mut *conn).await.unwrap();
+    let ttl: i64 = redis::cmd("TTL").arg(&key).query_async(&mut *conn).await.unwrap();
+    // The limit is approximate (whole macro nodes are trimmed), but the stream cannot keep growing.
+    assert!((200..450).contains(&len), "the stream must be trimmed near its limit of 200, got {len}");
+    assert!(ttl > 0 && ttl <= 3600, "the stream must expire, got ttl {ttl}");
+    assert!(writer.last_id().await.unwrap().is_some());
+}

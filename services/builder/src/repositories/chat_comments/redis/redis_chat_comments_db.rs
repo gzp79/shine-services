@@ -74,6 +74,23 @@ impl RedisChatCommentsDb {
     }
 }
 
+impl RedisChatCommentsDb {
+    /// Stops listening for appends to a room's stream.
+    pub async fn unlisten_room_changes(&self, room_id: &str) -> Result<(), ChatError> {
+        let client = self
+            .client
+            .get()
+            .await
+            .map_err(RedisError::PoolError)
+            .map_err(ChatError::internal)?;
+        client
+            .unlisten(&Self::to_stream_key(room_id))
+            .await
+            .map_err(ChatError::internal)?;
+        Ok(())
+    }
+}
+
 impl ChatCommentDb for RedisChatCommentsDb {
     async fn create_context(&self) -> Result<impl ChatCommentDbContext<'_>, ChatError> {
         let client = self

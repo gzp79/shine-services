@@ -12,7 +12,7 @@ fn chat(text: &str) -> HubMessage {
             id: "0-0".to_string(),
             user_id: Uuid::new_v4(),
             text: text.to_string(),
-        }],
+        }].into(),
     })
 }
 

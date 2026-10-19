@@ -9,6 +9,12 @@ pub enum HubError {
     UserAlreadyConnected,
     #[error("Failed to send command to hub")]
     SendCommandFailed,
+    #[error("Hub is overloaded")]
+    Overloaded,
+    #[error("Too many connection attempts")]
+    TooManyConnects,
+    #[error("Registry operation timed out")]
+    RegistryTimeout,
     #[error("Registry DB error")]
     RegistryDbError {
         #[source]
@@ -54,6 +60,9 @@ impl From<HubError> for Problem {
             HubError::SendCommandFailed => {
                 Problem::new(StatusCode::INTERNAL_SERVER_ERROR, "Failed to send command to hub")
             }
+            HubError::Overloaded => Problem::new(StatusCode::SERVICE_UNAVAILABLE, "hub-overloaded"),
+            HubError::TooManyConnects => Problem::new(StatusCode::TOO_MANY_REQUESTS, "hub-too-many-connects"),
+            HubError::RegistryTimeout => Problem::new(StatusCode::SERVICE_UNAVAILABLE, "hub-unavailable"),
             err @ HubError::RegistryDbError { .. } => Problem::new(StatusCode::SERVICE_UNAVAILABLE, "hub-unavailable")
                 .with_detail(err.to_string())
                 .with_sensitive_dbg(err),

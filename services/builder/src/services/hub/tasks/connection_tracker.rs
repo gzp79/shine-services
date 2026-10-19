@@ -1,15 +1,26 @@
 use crate::{
     models::messages::{HubEvent, HubMessage, TopicKey},
-    services::{hub::hub_metrics::hub_metrics, HubService},
+    services::{
+        hub::{hub_metrics::hub_metrics, hub_service::panic_message},
+        HubService,
+    },
 };
+use futures::FutureExt;
 use shine_infra::{session::SessionKey, telemetry::label};
-use std::{collections::HashMap, future::Future, sync::Arc, time::Duration};
+use std::{collections::HashMap, future::Future, panic::AssertUnwindSafe, sync::Arc, time::Duration};
 use tokio::{
-    sync::{mpsc, Notify},
+    sync::{mpsc, mpsc::error::TryRecvError, Notify},
     task::JoinHandle,
-    time,
+    time::{self, Instant},
 };
 use uuid::Uuid;
+
+/// Min time between the starts of two wake-driven ticks. Wakes coalesce, so a fast writer cannot
+/// keep a consumer permanently busy, while a lone wake still runs right away.
+const WAKE_MIN_SPACING: Duration = Duration::from_millis(50);
+
+/// Lifecycle events applied in one go before the loop waits again.
+const EVENT_DRAIN_BUDGET: usize = 4096;
 
 pub type TrackedConnection = (Uuid, SessionKey);
 
@@ -89,11 +100,15 @@ fn consumer_name<C: ConnectionConsumer>() -> &'static str {
     std::any::type_name::<C>().rsplit("::").next().unwrap_or_default()
 }
 
-/// Runs a single tick and measures its duration, labelled by the consumer's type name.
+/// Runs a single tick and measures its duration, labelled by the consumer's type name. A panicking
+/// tick is logged and counted, and the next one runs as usual instead of the loop dying silently.
 async fn run_tick<C: ConnectionConsumer>(consumer: &mut C, tracker: &ConnectionTracker) {
     let start = std::time::Instant::now();
-    consumer.on_tick(tracker).await;
     let name = consumer_name::<C>();
+    if let Err(payload) = AssertUnwindSafe(consumer.on_tick(tracker)).catch_unwind().await {
+        tracing::error!("{name} tick panicked: {}", panic_message(payload.as_ref()));
+        hub_metrics().task_panics.add(1, &[label("task", name)]);
+    }
     hub_metrics()
         .tick_duration
         .record(start.elapsed().as_secs_f64(), &[label("consumer", name)]);
@@ -114,7 +129,28 @@ pub async fn run_connection_loop<C: ConnectionConsumer>(
     // ticks back-to-back, keeping the cadence honest against the TTL margin.
     ticker.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
     ticker.tick().await; // skip the immediate first tick
+    let mut last_tick = Instant::now() - WAKE_MIN_SPACING;
     loop {
+        // Apply what is already queued before anything else: a tick that takes about an interval is
+        // due again as soon as it ends, and would otherwise keep the view from ever being updated.
+        // Bounded so a steady event stream cannot delay the tick either.
+        for _ in 0..EVENT_DRAIN_BUDGET {
+            match subscription.try_recv() {
+                Ok(message) => {
+                    if tracker.apply(message) {
+                        tracing::info!("{} loop stopped on hub shutdown", consumer_name::<C>());
+                        return;
+                    }
+                }
+                Err(TryRecvError::Empty) => break,
+                // Channel closed without a Shutdown event: stop instead of busy-looping.
+                Err(TryRecvError::Disconnected) => {
+                    tracing::warn!("{} loop stopped: hub subscription closed", consumer_name::<C>());
+                    return;
+                }
+            }
+        }
+
         // A future that resolves on a wake notification, or never if this loop has no wake source.
         // `Notify` stores a single permit, so notifications arriving during an `on_tick` collapse
         // into one follow-up pass — the coalescing that keeps a burst of appends to one delivery.
@@ -132,6 +168,7 @@ pub async fn run_connection_loop<C: ConnectionConsumer>(
             biased;
             _ = ticker.tick() => {
                 run_tick(&mut consumer, &tracker).await;
+                last_tick = Instant::now();
             }
             message = subscription.recv() => match message {
                 Some(message) => {
@@ -140,14 +177,15 @@ pub async fn run_connection_loop<C: ConnectionConsumer>(
                         break;
                     }
                 }
-                // Channel closed without a Shutdown event: stop instead of busy-looping.
                 None => {
                     tracing::warn!("{} loop stopped: hub subscription closed", consumer_name::<C>());
                     break;
                 }
             },
             _ = woken => {
+                time::sleep_until(last_tick + WAKE_MIN_SPACING).await;
                 run_tick(&mut consumer, &tracker).await;
+                last_tick = Instant::now();
             }
         }
     }

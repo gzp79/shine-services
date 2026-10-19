@@ -35,6 +35,11 @@ pub fn test_redis_cns() -> Option<String> {
         .or_else(|_| env::var("SHINE_REDIS_CNS"))
         .ok();
     if cns.is_none() {
+        // A green run without Redis proves nothing: where tests are meant to run for real, fail.
+        assert!(
+            env::var_os("CI").is_none(),
+            "SHINE_TEST_REDIS_CNS is required when CI is set, the hub tests would otherwise assert nothing"
+        );
         tracing::warn!("Missing SHINE_TEST_REDIS_CNS/SHINE_REDIS_CNS, skipping test");
     }
     cns
@@ -114,7 +119,7 @@ pub fn chat(id: impl Into<String>) -> HubMessage {
             id: id.into(),
             user_id: Uuid::nil(),
             text: String::new(),
-        }],
+        }].into(),
     })
 }
 
@@ -268,7 +273,7 @@ impl EgressState {
     /// Records a message; a connection on the Hub topic passes its id to skip the drops of others.
     pub fn record_for(&mut self, own: Option<Uuid>, message: HubMessage) {
         match message {
-            HubMessage::Chat(batch) => self.chats.extend(batch.comments.into_iter().map(|c| c.id)),
+            HubMessage::Chat(batch) => self.chats.extend(batch.comments.iter().map(|c| c.id.clone())),
             HubMessage::Hub(HubEvent::UserDisconnected { connection_id, reason, .. })
                 if reason.is_drop() && own.is_none_or(|own| own == connection_id) =>
             {
