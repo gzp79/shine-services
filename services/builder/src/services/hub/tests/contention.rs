@@ -488,10 +488,21 @@ async fn a_connect_on_another_instance_takes_the_user_over() {
     assert_consistent(&a.hub, &a.registry, [], &HashMap::new()).await;
     assert_consistent(&b.hub, &b.registry, [user], &HashMap::from([(user, on_b)])).await;
 
-    // B's disconnect removes the row; A has nothing left to drop.
+    // B's disconnect removes the row; A has nothing left to drop. Registry notices arrive in order, so once
+    // A reacts to a later notice (another user taken over by B) it has seen the one of the disconnect.
     b.hub.request_disconnection(user, on_b).unwrap();
     barrier(&b.hub, &mut b.events).await;
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    let marker = Uuid::new_v4();
+    let (on_a_marker, _marker_rx) = connect(&a.hub, marker, 8);
+    barrier(&a.hub, &mut a.events).await;
+    let (_on_b_marker, _marker_b_rx) = connect(&b.hub, marker, 8);
+    wait_event(
+        &mut a.events,
+        BARRIER_TIMEOUT,
+        |event| matches!(event, HubEvent::UserDisconnected { connection_id, .. } if *connection_id == on_a_marker),
+    )
+    .await
+    .expect("A must react to the later notice");
     assert_eq!(lifecycle_of(&barrier(&a.hub, &mut a.events).await, user), []);
     assert_eq!(find_registry_connection(&a.registry, user).await, None);
 }

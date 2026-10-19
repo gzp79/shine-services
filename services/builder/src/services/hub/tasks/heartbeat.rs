@@ -1,5 +1,9 @@
 use super::connection_tracker::{spawn_connection_loop, ConnectionConsumer, ConnectionTracker};
-use crate::{models::messages::DisconnectReason, repositories::hub_registry::HubConnection, services::HubService};
+use crate::{
+    models::messages::DisconnectReason,
+    repositories::hub_registry::HubConnection,
+    services::{hub::Consumer, HubService},
+};
 use std::time::Duration;
 use tokio::task::JoinHandle;
 
@@ -20,6 +24,7 @@ impl Heartbeat {
 impl ConnectionConsumer for Heartbeat {
     #[tracing::instrument(level = "debug", name = "hub heartbeat", skip_all)]
     async fn on_tick(&mut self, tracker: &ConnectionTracker) {
+        let _tick = self.hub_service.tick_guard(Consumer::Heartbeat);
         let connections: Vec<HubConnection> = tracker
             .connections()
             .iter()

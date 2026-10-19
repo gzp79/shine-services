@@ -1,6 +1,7 @@
 //! Deterministic edge cases of the connection lifecycle on one hub: every scenario ends in a [`barrier`],
 //! then checks the exact events, egress channels, drop totals and registry.
 
+use crate::services::{hub::Consumer, hub_test_utils::wait_ticks};
 use crate::{
     models::messages::{DisconnectReason, HubEvent, HubMessage, TopicKey},
     repositories::hub_registry::{HubConnection, HubConnectionDb, HubRegistry},
@@ -491,7 +492,7 @@ async fn heartbeat_refreshes_live_rows_and_drops_expired_ones() {
     .await
     .expect("the heartbeat must drop the connection whose row expired");
     assert_eq!(lifecycle_of(&seen, live_user), []);
-    tokio::time::sleep(tick * 3).await;
+    wait_ticks(&test.hub, Consumer::Heartbeat, 3).await;
     barrier(&test.hub, &mut test.events).await;
 
     assert_eq!(
@@ -557,7 +558,7 @@ async fn session_check_drops_only_connections_with_an_invalid_session() {
     )
     .await
     .expect("the session check must drop the connection without a session");
-    tokio::time::sleep(tick * 3).await;
+    wait_ticks(&test.hub, Consumer::SessionCheck, 3).await;
     let seen = [seen, barrier(&test.hub, &mut test.events).await].concat();
 
     assert_eq!(lifecycle_of(&seen, valid_user), [Lifecycle::Connected(valid)]);

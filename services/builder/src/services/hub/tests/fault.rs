@@ -4,6 +4,7 @@
 //! (`services/docker-compose.yml`); skipped otherwise. The assertions read the test Redis (which may be
 //! behind the same proxy) only while no fault is active.
 
+use crate::services::{hub::Consumer, hub_test_utils::wait_ticks};
 use crate::{
     models::messages::{DisconnectReason, HubEvent, HubMessage},
     services::hub_test_utils::{
@@ -222,7 +223,8 @@ async fn an_outage_keeps_live_connections_and_rejects_new_ones() {
     proxy.set_enabled(true).await;
 
     // After the outage the ticks succeed again and the live connection is still there.
-    tokio::time::sleep(tick * 5).await;
+    wait_ticks(&test.hub, Consumer::Heartbeat, 3).await;
+    wait_ticks(&test.hub, Consumer::SessionCheck, 3).await;
     let seen = barrier(&test.hub, &mut test.events).await;
     assert_eq!(lifecycle_of(&seen, user), []);
     assert_eq!(egress_state(&mut rx), open());

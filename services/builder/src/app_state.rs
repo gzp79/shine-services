@@ -16,6 +16,30 @@ use shine_infra::{
 };
 use std::{sync::Arc, time::Duration};
 
+/// The hub's periodic cadences and the registry TTL derived from them.
+#[derive(Debug, PartialEq, Eq)]
+struct HubTiming {
+    intervals: HubIntervals,
+    connection_ttl_seconds: u64,
+}
+
+impl HubTiming {
+    fn from_config(config: &AppConfig) -> Self {
+        let heartbeat_seconds = config.hub_heartbeat_seconds.max(1);
+        Self {
+            // The hub owns its periodic connection consumers (heartbeat + session checker), each on
+            // its own loop event-sourced from a Hub subscription.
+            intervals: HubIntervals {
+                heartbeat: Duration::from_secs(heartbeat_seconds),
+                session_check: Duration::from_secs(config.auth_check_interval.max(1)),
+            },
+            // 3× heartbeat leaves room for a missed refresh (slow registry / deferred tick) before a
+            // live connection's registry entry expires and it is wrongly reaped as stale.
+            connection_ttl_seconds: heartbeat_seconds.saturating_mul(3),
+        }
+    }
+}
+
 struct Inner {
     hub_service: HubService,
     command_stream_service: Option<CommandStreamService>,
@@ -53,11 +77,8 @@ impl AppState {
             }
         };
 
-        let hub_heartbeat_seconds = config.feature.hub_heartbeat_seconds.max(1);
-        // 3× heartbeat leaves room for a missed refresh (slow registry / deferred tick) before a
-        // live connection's registry entry expires and it is wrongly reaped as stale.
-        let hub_connection_ttl_seconds = hub_heartbeat_seconds.saturating_mul(3);
-        let hub_registry = RedisHubConnectionDb::new(redis_pool, hub_connection_ttl_seconds).await?;
+        let timing = HubTiming::from_config(&config.feature);
+        let hub_registry = RedisHubConnectionDb::new(redis_pool, timing.connection_ttl_seconds).await?;
         let command_stream_service = match pg_pool {
             Some(pg_pool) => {
                 let stores = StreamStores {
@@ -78,16 +99,10 @@ impl AppState {
             None => None,
         };
 
-        // The hub owns its periodic connection consumers (heartbeat + session checker), each on
-        // its own loop event-sourced from a Hub subscription.
-        let intervals = HubIntervals {
-            heartbeat: Duration::from_secs(hub_heartbeat_seconds),
-            session_check: Duration::from_secs(config.feature.auth_check_interval.max(1)),
-        };
         let hub_service = HubService::new(
             hub_registry,
             core_services.current_user_service.clone(),
-            intervals,
+            timing.intervals,
             command_stream_service.clone(),
         )
         .await;
@@ -111,3 +126,7 @@ impl AppState {
         &self.0.settings
     }
 }
+
+#[cfg(test)]
+#[path = "app_state_test.rs"]
+mod app_state_test;

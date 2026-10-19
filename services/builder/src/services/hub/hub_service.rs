@@ -20,6 +20,7 @@ use shine_infra::db::command_log::StreamId;
 use shine_infra::session::{CurrentUserService, SessionKey};
 use shine_infra::telemetry::{current_span_context, label, link_span};
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 use std::{sync::Arc, time::Duration};
 use tokio::{sync::mpsc, task::JoinHandle};
@@ -27,9 +28,34 @@ use tracing::{info_span, Instrument};
 use uuid::Uuid;
 
 /// Cadence configuration for the hub's periodic connection consumers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HubIntervals {
     pub heartbeat: Duration,
     pub session_check: Duration,
+}
+
+/// The periodic consumers of the connection view.
+#[derive(Clone, Copy, Debug)]
+pub enum Consumer {
+    Heartbeat,
+    SessionCheck,
+}
+
+/// Completed ticks of the periodic consumers: a stuck loop shows as a counter that stops, and a test can
+/// wait for ticks instead of sleeping.
+#[derive(Default)]
+struct Ticks {
+    heartbeat: AtomicU64,
+    session_check: AtomicU64,
+}
+
+/// Counts a tick of a consumer when dropped, so every way out of the tick is counted.
+pub struct TickGuard<'a>(&'a AtomicU64);
+
+impl Drop for TickGuard<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_add(1, Ordering::Relaxed);
+    }
 }
 
 /// Point-in-time counts of hub state, for status reporting.
@@ -37,6 +63,8 @@ pub struct HubIntervals {
 pub struct HubStats {
     pub connections: usize,
     pub subscribers: usize,
+    pub heartbeat_ticks: u64,
+    pub session_check_ticks: u64,
 }
 
 struct Inner {
@@ -44,6 +72,7 @@ struct Inner {
     connections: Connections,
     subscribers: Subscribers,
     hub_registry: RedisHubConnectionDb,
+    ticks: Ticks,
 }
 
 /// Messaging service for connected users.
@@ -67,6 +96,7 @@ impl HubService {
                 connections: Connections::new(),
                 subscribers: Subscribers::new(),
                 hub_registry,
+                ticks: Ticks::default(),
             }),
         };
 
@@ -230,7 +260,29 @@ impl HubService {
     pub async fn stats(&self) -> HubStats {
         let connections = self.inner.connections.len().await;
         let subscribers = self.inner.subscribers.len().await;
-        HubStats { connections, subscribers }
+        HubStats {
+            connections,
+            subscribers,
+            heartbeat_ticks: self.ticks(Consumer::Heartbeat),
+            session_check_ticks: self.ticks(Consumer::SessionCheck),
+        }
+    }
+
+    fn tick_counter(&self, consumer: Consumer) -> &AtomicU64 {
+        match consumer {
+            Consumer::Heartbeat => &self.inner.ticks.heartbeat,
+            Consumer::SessionCheck => &self.inner.ticks.session_check,
+        }
+    }
+
+    /// Ticks of the consumer completed so far.
+    pub fn ticks(&self, consumer: Consumer) -> u64 {
+        self.tick_counter(consumer).load(Ordering::Relaxed)
+    }
+
+    /// Held for the length of a tick of the consumer.
+    pub(crate) fn tick_guard(&self, consumer: Consumer) -> TickGuard<'_> {
+        TickGuard(self.tick_counter(consumer))
     }
 
     /// Starts the command loop, the sole writer of connection state.

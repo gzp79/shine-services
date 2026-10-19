@@ -63,8 +63,8 @@ flowchart LR
 | `ConnectionTracker` | Shared loop of the background consumers: applies events to a private view, runs `on_tick` periodically and on wake. |
 | `Heartbeat` | Refreshes the registry TTL of every local connection; drops those the registry no longer holds. |
 | `SessionChecker` | Re-validates each connection's session in batches; drops expired or compromised ones. |
-| `StreamDispatcher` | Routes subscriptions to the `StreamWorker` of each resident stream and keeps those workers alive. |
-| `CommandStreamService` | Opens streams and ingests commands (validation, dedupe, version assignment). |
+| `StreamDispatcher` | Routes subscriptions to the `StreamWorker` of each resident stream, unloads a stream `unloadGraceSeconds` after its last subscriber, restarts a worker that ended unexpectedly (at most once a second per stream) and runs the orphan sweep. |
+| `CommandStreamService` | Opens streams (kind, access, creation, Redis hydration), ingests commands (validation, dedupe, version assignment), builds snapshot reads, persists orphaned streams. |
 | `RedisHubConnectionDb` | Registry rows `hub-connection:<user>` → active connection id, with TTL; publishes `hub-registry-changed`. |
 | ws socket | Registers the socket, forwards egress to the client, passes client frames on, ends the connection when either side closes. |
 
@@ -303,6 +303,7 @@ sequenceDiagram
 
     Note over C,WS: connected, following no stream
     C->>WS: streamSubscribe(streamId, kind)
+    Note over WS: open the stream: kind, access, create it, hydrate Redis
     WS->>H: SubscribeStream, behind the connection's registration
     H-)SD: StreamEvent: subscribed
     SD->>W: route (spawn the worker if the stream is not resident)
@@ -334,7 +335,7 @@ Only the end of the connection (close, drop, replacement) removes every subscrip
 | server → client | `streamNack` | `streamId, commandId, reason` |
 | server → client | `streamSubscribeFailed` | `streamId, reason` |
 
-`streamId` is a short string (letters, digits, `_ . : -`, at most 64 characters) fixed by the kind or the application; the chat room is `chat-global`. Frames are JSON text with `type` as the tag (camelCase). `command` is JSON text inside a JSON string, so a browser must not `JSON.parse` it (integers above 2^53 would round); `hash` is 16 lower-case hex digits; `snapshot.data` is base64 of the postcard encoding of the state's serde form (`encode_snapshot` / `decode_snapshot` in `shine-game`, which also builds for wasm).
+`streamId` is a short string (letters, digits, `_ . : -`, at most 64 characters) fixed by the kind or the application; the chat room is `chat-global`. A frame that does not parse, or names an invalid stream id, is ignored and counted in `ws_messages_received`. Frames are JSON text with `type` as the tag (camelCase). `command` is JSON text inside a JSON string, so a browser must not `JSON.parse` it (integers above 2^53 would round); `hash` is 16 lower-case hex digits; `snapshot.data` is base64 of the postcard encoding of the state's serde form (`encode_snapshot` / `decode_snapshot` in `shine-game`, which also builds for wasm).
 
 | Concern | Rule |
 |---|---|
@@ -343,12 +344,14 @@ Only the end of the connection (close, drop, replacement) removes every subscrip
 | Position | A stream's worker keeps one shared delivery cursor for all its subscribers; a client's position is the last version it applied. The server stores no per-client position. |
 | Ordering | Within one sync epoch a client receives every version exactly once, in order, and versions are contiguous; a gap means a frame was lost and the client subscribes again. |
 | Sync | Every `streamSync` replaces the client's state for that stream, with or without a preceding `streamReset`. A large backlog is one `streamSync` followed by `streamCommands` frames of at most 256 commands. |
-| Writes | A command is accepted once per `commandId`; there is no success ack, the writer sees its `commandId` in `streamCommands`. `streamNack` reports a failure, including `duplicate` (already in the log: drop it from pending). |
+| Writes | A command is accepted once per `commandId`; there is no success ack, the writer sees its `commandId` in `streamCommands`. `streamNack` reports a failure: `duplicate` (already in the log: drop it from pending), `invalid` (not a valid command of the kind, or over `maxCommandBytes`), `notSubscribed`, `forbidden` (read-only), `notReady` (the Redis copy is being rebuilt: retry), `busy` (too many unpersisted commands: retry), `failed`. |
+| Subscribe failures | `streamSubscribeFailed` carries `unknownKind`, `kindMismatch` (the stream has another kind), `forbidden`, `failed`, or `unavailable` (streams are disabled, or a stored command of the stream cannot be decoded and the stream cannot be replayed). |
 | Order and truth | Redis orders the commands (version assignment is atomic in Redis); Postgres is the truth and wins every conflict, after which the Redis copy is rebuilt from it. |
-| Checkpoints | Every `snapshotEvery` versions a snapshot is stored once (the first writer is authoritative) and its hash is pushed as `streamCheckpoint`, never ahead of the commands already delivered. The `streamSync` announces `snapshotEvery`, so a client hashes its own state at those versions and compares; a client whose hash differs resubscribes. |
-| Retention | A snapshot is stored every `snapshotEvery` commands and Postgres keeps the latest `keepSnapshots` snapshots and the commands from the oldest of them on (a long-lived stream's older commands are pruned). Redis keeps the commands from the oldest stored snapshot on, so at most `snapshotEvery` × `keepSnapshots` persisted commands, plus the commands not persisted yet (never trimmed). State older than the oldest stored snapshot is never served from history: the request (a resume, a snapshot read) is answered from the newest snapshot, as a full sync. Both settings are per kind, with global defaults. |
+| Checkpoints | Every `snapshotEvery` versions a snapshot is stored once (the first writer is authoritative) and its hash is pushed as `streamCheckpoint`, never ahead of the commands already delivered. The `streamSync` announces `snapshotEvery`, so a client hashes its own state at those versions and compares; a client whose hash differs resubscribes. A worker whose own state differs from the stored snapshot counts it as drift (`command_stream_drift`), takes the stored state and pushes its hash. |
+| Retention | A snapshot is stored every `snapshotEvery` commands and Redis keeps the commands from the `keepSnapshots`-th newest stored snapshot on (at most about `snapshotEvery` × `keepSnapshots` persisted commands), plus the commands not persisted yet (never trimmed). Postgres keeps every command and snapshot: `PgCommandLogDb::prune` can drop all but the latest `keepSnapshots` snapshots and the commands below the oldest of them, and the worker does not call it. State older than the Redis window is not served from the Redis copy: a resume below the worker's snapshot, and a snapshot read, are answered from the newest snapshot, as a full sync. Both settings are per kind, with global defaults. |
 | Slow client | A full egress channel drops the connection; the client reconnects and subscribes again. Delivery never queues for a single client. |
-| Guarantee | Per stream and connection: ordered, no duplicates inside a sync epoch. End to end: a command accepted by the server may be lost before it is persisted if Redis loses data; its writer then gets `streamReset`, a new sync, and resends its pending commands. |
+| Guarantee | Per stream and connection: ordered, no duplicates inside a sync epoch. End to end: a worker persists the commands it has applied before the stream is rebuilt, so only a command that Redis accepted but no worker has read yet is lost when Redis loses data; the clients then get `streamReset`, a new sync, and the writer resends what it has not seen. |
+| Residency | A stream is loaded on an instance while it has local subscribers and for `unloadGraceSeconds` after the last one; unloading persists what the worker holds. An orphan sweep on every instance persists and unlists the streams nobody has written to for `orphanIdleSeconds`, whichever instance wrote them. |
 
 A stream **kind** (registered in `StreamKindRegistry`) supplies the command validator, the replayed state type and its snapshot encoding; the stream's kind is fixed at creation and never taken from a later client frame. Replaying a command gives the kind its **context** (version, `commandId` and the author's `userId`), so a state can record who wrote what and decide for itself whether a command takes effect (for example that only the author may remove a message). A command the state refuses is stored in the log and ignored on replay; ingest checks only the command's shape, its size and its `commandId`.
 
@@ -386,8 +389,8 @@ sequenceDiagram
 
 | Concern | Rule |
 |---|---|
-| Snapshot read | `GET streams/{streamId}/snapshot`: authenticated by the session, same payload as `streamSync`. It is built from storage, not from a worker, so any instance answers it and a short-lived cache is safe: the newest stored snapshot, the stored commands after it, and the Redis commands above the stored head, contiguous by version. An unknown stream is `404`, unavailable storage `503`, no session `401`. |
-| Resume | `streamSubscribe` with `resume {generation, version}` continues from that version when the stream's generation is the same and the version is not older than the version of the worker's latest snapshot (the commands after it are what the worker holds); the first `streamCommands` then starts at `version + 1`. Otherwise the worker answers with a normal `streamSync` and the client replaces its state. |
+| Snapshot read | `GET /api/streams/{streamId}/snapshot` (next to `/api/connect`): authenticated by the session, same payload as `streamSync`. It is built from storage, not from a worker, so any instance answers it: the newest stored snapshot, the stored commands after it, and the Redis commands above the stored head, contiguous by version. The response is `no-store`. Statuses: `401` no session, `403` the user may not read the stream, `404` unknown stream, `400` invalid id, `503` streams disabled or storage unavailable. A Redis that is down, or holds another generation, only leaves the Redis part out. |
+| Resume | `streamSubscribe` with `resume {generation, version}` continues from that version when the stream's generation is the same and the version is not older than the version of the worker's latest snapshot (the commands after it are what the worker holds); the first `streamCommands` then starts at `version + 1`. Otherwise the worker answers with a normal `streamSync` and the client replaces its state. A worker that has just loaded (nothing was resident on this instance) answers every subscriber, resuming ones included, with a full `streamSync`; a resume is a tail only while another subscriber keeps the history loaded. |
 | Same guarantees | Snapshot and listening still start together on the worker's cursor, so nothing between the HTTP read and the subscribe is missed; a gap after a resume means the client subscribes again without `resume`. |
 
 ### Example: chat
@@ -397,7 +400,7 @@ Chat is one kind of stream: a single global room whose state is the most recent 
 | Concern | Chat kind |
 |---|---|
 | Stream | The stream id `chat-global`, created by the first subscribe. |
-| Access | Any authenticated user may subscribe and write; every message carries its sender's `userId`. |
+| Access | Every authenticated user may read and write `chat-global` and nothing else: any other stream id is refused with `forbidden` and creates nothing (`chat_access`). Every message carries its sender's `userId`. |
 | State | The last 200 messages (a constant of the kind, so every replica and client agrees): id, author, text and an `edited` flag (set once the author has replaced the text). |
 | Add | `{"type":"add","text":"..."}`; the text is trimmed, not empty, at most 2000 bytes. The message id is the `commandId` of the add; the author is the session's user from the command context, never from the payload. |
 | Remove | `{"type":"remove","id":"<message id>"}`. Removes the message with that id when the sender wrote it. Any other remove (an unknown id, another user's message) is stored and ignored on replay. |
@@ -409,12 +412,13 @@ Anything else that needs shared, replayed state (a game session, a shared docume
 
 ### Delivery
 
-A worker reads a stream from its own version. Two triggers run the same idempotent pass, and a pass with nothing new sends nothing:
+A worker reads a stream from its own version. The triggers run idempotent passes, and a pass with nothing new sends nothing:
 
 | Trigger | Role |
 |---|---|
 | Redis wake (pub/sub on the stream's key) | Primary: prompt delivery after an append. Wakes coalesce; a burst is one pass. |
-| Periodic tick | Safety net: pub/sub is best effort, so the tick delivers anything missed while a listener was disconnected. |
+| Persist timer (`persistDelayMs`, plus the same again as jitter, armed when commands are unpersisted) | Appends the applied commands to Postgres, records the persisted version in Redis, stores the checkpoint snapshot and pushes `streamCheckpoint`. |
+| Periodic tick (`syncIntervalMs`) | Safety net: runs delivery and persistence, so it covers wakes missed while a listener was disconnected and retries after errors. |
 
 A wake only says "something changed"; its payload is ignored, which is what makes coalescing and the reconnect wake safe.
 
@@ -449,6 +453,7 @@ A wake only says "something changed"; its payload is ignored, which is what make
 | A hub task or the command loop dies unexpectedly (a bug) | the process stops after logging, and the orchestrator restarts it |
 | Redis, Postgres or network error | never stops the process: operations are retried with backoff and the hub recovers when the dependency returns |
 | Redis down entirely | live sockets stay; new connects are rejected; streams stop advancing until Redis returns |
+| Postgres down | live sockets stay and the streams go on from Redis (ingest, delivery); persistence retries, and ingest answers `busy` once `redisMaxUnpersisted` commands wait; the snapshot route answers `503` |
 | Redis loses data or goes back in time | every registry row is gone, so every connection is dropped at the next heartbeat; a stream's Redis copy is detected as stale, dropped and rebuilt from Postgres, and its subscribers get `streamReset` then a new `streamSync` |
 
 Redis must run with `maxmemory-policy noeviction`: eviction would silently drop registry rows and stream state.
@@ -463,8 +468,16 @@ Redis must run with `maxmemory-policy noeviction`: eviction would silently drop 
 | `authCheckInterval` | 60 | session check interval (s); also the longest a revoked session keeps its socket |
 | `ws.allowedHosts` | none | regular expressions for the accepted target host of a WebSocket upgrade (`X-Forwarded-Host`, `Forwarded`, then `Host`) |
 | `service.allowedOrigins` (service section) | none | regular expressions for the accepted `Origin` of a WebSocket upgrade; the cross-site WebSocket hijacking defence |
+| `commandStream.enabled` | false (true in the shipped configs) | switches the command streams on; needs `db.sqlCns` |
 | `commandStream.snapshotEvery`, `keepSnapshots` | 100, 3 | defaults for every stream kind |
 | `commandStream.kinds.<kind>.snapshotEvery`, `keepSnapshots` | chat: 50, 5 | per-kind override; Redis retention follows from the two |
+| `commandStream.syncIntervalMs` | 1000 | periodic tick of the stream workers and the dispatcher |
+| `commandStream.persistDelayMs` | 20 | delay before new commands are persisted (plus the same again as jitter) |
+| `commandStream.unloadGraceSeconds` | 60 | how long a stream stays loaded without local subscribers |
+| `commandStream.orphanSweepSeconds`, `orphanIdleSeconds` | 30, 10 | interval of the orphan sweep, idle time before a stream is swept |
+| `commandStream.redisMaxUnpersisted` | 5000 | unpersisted commands per stream before writes get `busy` |
+| `commandStream.redisTtlSeconds` | 86400 | inactivity TTL of a stream's Redis keys |
+| `commandStream.maxCommandBytes` | 16384 | longest command JSON accepted |
 | `db.sqlCns` | none | the builder's own Postgres database (command log, snapshots); the command-log schema is applied at startup |
 | Redis connection string `timeout` | redis-rs: 1 s connect, 500 ms response | milliseconds, connect and per-command response timeout |
 | Redis connection string `pool_timeout` | 30000 | milliseconds to get a pooled connection |
@@ -474,16 +487,19 @@ Constants: ws egress capacity 1000, client-close drain 5 s (`connect.rs`), sessi
 
 ## Observability
 
-Status (`/info/status`, provider `hub`): `connections`, `subscribers`. Drops by reason are the `hub_connections_dropped` metric and the `reason` of `UserDisconnected`.
+Status (`/info/status`, provider `hub`): `connections`, `subscribers`, and the completed ticks `heartbeatTicks`, `sessionCheckTicks` (a counter that stops is a stuck loop). Drops by reason are the `hub_connections_dropped` metric and the `reason` of `UserDisconnected`.
 
 | Metric | Labels |
 |---|---|
 | `hub_connections` (up/down) | – |
 | `hub_connections_dropped` | `reason` |
 | `hub_commands`, `hub_command_duration`, `hub_command_queue_delay` | `command` |
-| `hub_messages_sent` | `kind` (hub/stream), `outcome` (ok/full/closed) |
+| `hub_messages_sent` | `kind` (hub/stream/stream_event), `outcome` (ok/full/closed) |
 | `hub_tick_duration` | `consumer` |
 | `ws_messages_received` | `kind`, `outcome` |
+| `command_stream_ingested` | `outcome` (accepted/duplicate/invalid/notReady/busy/error) |
+| `command_stream_snapshot_reads` | `outcome` (ok/not_found/forbidden/error) |
+| `command_stream_drift`, `command_stream_decode_errors` | – |
 
 Labels are fixed small sets, never user or connection ids. Each command runs in a root `hub command` span linked to the request that queued it; ws open / close / message spans are linked the same way, so a socket does not keep its upgrade request open. Drops log at info: `[user] [connection] Connection dropped: <reason>`.
 
@@ -492,21 +508,26 @@ Labels are fixed small sets, never user or connection ids. Each command runs in 
 | File | Needs | Covers |
 |---|---|---|
 | `hub_connections.rs`, `hub_subscribers.rs`, `tasks/*` unit tests | – | send outcomes, topic filter, CAS removal, drop event, tracker starvation |
-| `hub/tests/test_utils.rs` | – | harness: FIFO `barrier`, `drops` (drops by reason from the events), `replay` invariant checker, egress inspection, seeded `Rng` |
+| `hub/tests/test_utils.rs` | – | harness: FIFO `barrier`, `wait_ticks`, `drops` (drops by reason from the events), `replay` invariant checker, egress inspection, seeded `Rng` |
 | `hub/tests/lifecycle.rs` | Redis | every lifecycle edge case with exact events / egress / drops / registry |
 | `hub/tests/contention.rs` | Redis | parallel users, same-user races, churn under traffic, two instances |
 | `hub/tests/fault.rs` | Redis + toxiproxy | lost registry reply, failed write, outages |
-| `command_stream` tests | Redis + Postgres | ordering, dedupe, resync, Redis loss, snapshot race |
-| `routes/ws/connect_test.rs` | – / Redis | close frames; socket lifecycle against a real hub |
-| `tests/api-tests/builder/` | running service | gating, chat round trips, command streams, close codes over a real socket |
+| `hub/tests/stress.rs` | Redis + Postgres | 300 connections with every consumer ticking, writers and reconnects, then shutdown |
+| `hub/tests/stream.rs`, `stream_dispatcher.rs` | Redis (+ Postgres) | subscription events, worker residency, restarts, slow subscriber, subscribe churn |
+| `command_stream` tests (`stream_core`, service, worker, integration, chat) | Redis + Postgres | core state machine, ordering, dedupe, resume, Redis loss and rollback, snapshot disagreement, two instances, Postgres outage, chat semantics |
+| `routes/ws/connect_test.rs`, `routes/command_stream_test.rs` | Redis + Postgres | close frames, the stream frames over a real hub, resume, snapshot route statuses |
+| `app_state_test.rs` | – | configuration to heartbeat, session check and registry TTL |
+| `tests/api-tests/builder/` | running service | gating, close codes, the chat stream over a real socket and the snapshot route |
 
 ```bash
-export SHINE_TEST_REDIS_CNS="redis://localhost:26379"
+export CI=true
+export SHINE_TEST_REDIS_CNS="redis://localhost:6379"
+export SHINE_TEST_PG_CNS="postgres://username:password@localhost:5432/database-test?sslmode=disable"
 export SHINE_TEST_TOXIPROXY_URL="http://localhost:8474"   # fault tests skip without it
 cargo test -p shine-builder
 ```
 
-With `CI` set, a missing database connection string fails the test instead of skipping it.
+With `CI` set, a missing database connection string fails the test instead of skipping it. Tests that cut a database off through toxiproxy wait for the other tests that use a service, so an outage cannot hit them.
 
 ## File map
 
@@ -523,13 +544,16 @@ With `CI` set, a missing database connection string fails the test instead of sk
 | `services/hub/tasks/stream_dispatcher.rs` | Routes subscriptions to stream workers and supervises them. |
 | `services/command_stream/` | `CommandStreamService`, stream kinds, `StreamWorker`, the pure replay core and the egress port. |
 | `services/hub/stream_egress.rs` | The hub's implementation of the stream egress port. |
-| `routes/ws/connect.rs`, `routes/ws/message.rs` | Socket lifecycle, close codes, wire frame shapes. |
+| `routes/ws/connect.rs`, `routes/ws/message.rs` | Socket lifecycle, close codes, conversion of stream messages to wire frames. |
+| `routes/ws/stream_socket.rs` | The stream side of a socket: opens streams, checks and ingests commands, answers its own failures through a weak sender. |
 | `routes/command_stream.rs` | HTTP snapshot read of a stream. |
 | `models/messages/hub.rs`, `models/messages/stream.rs` | `HubEvent`, `HubMessage`, `TopicKey`, stream frames and events. |
 | `repositories/hub_registry/` | `HubRegistry` trait and Redis implementation: SET / EXPIRE / DEL, CAS, pub/sub, registry-change listener. |
 | `repositories/command_stream/redis/` | Redis stream log, meta, dedupe ids and the atomic ingest script. |
 | `crates/shine-infra/src/db/command_log/` | Postgres command log and snapshots. |
-| `crates/shine-game/src/replay/` | Pure replay core shared by server and client. |
+| `crates/shine-game/src/replay/` | Pure replay core, chat state and the wire frames (`protocol.rs`), shared by server and client. |
+| `services/command_stream/chat.rs` | The chat stream id and its access rule. |
+| `app_state.rs`, `settings/command_stream.rs` | Wiring of the services and the hub cadences; validated stream settings. |
 
 <details data-agent="implementation">
 <summary>The registry write precedes the local teardown in ConnectUser</summary>
@@ -546,9 +570,9 @@ The registry-change listener treats a `None` payload (Redis reconnect) as "notic
 </details>
 
 <details data-agent="implementation">
-<summary>The test barrier replaces sleeps</summary>
+<summary>The test barrier and tick counters replace sleeps</summary>
 
-Commands are FIFO, so a sentinel connect + disconnect whose events arrived proves every earlier command was processed; assertions after it are exact. Hub tests share the `serial = "hub-service"` group.
+Commands are FIFO, so a sentinel connect + disconnect whose events arrived proves every earlier command was processed; assertions after it are exact. To assert that a periodic consumer did not act, wait for its tick counter (`wait_ticks`, backed by `HubService::ticks`). Hub tests share the `serial = "hub-service"` group.
 
 </details>
 
@@ -557,7 +581,7 @@ Commands are FIFO, so a sentinel connect + disconnect whose events arrived prove
 
 - **Changing connection state:** add or extend a `ControlCommand` and handle it in `HubService::process`. Never mutate `Connections` from a consumer, route or test helper.
 - **Removing a connection:** use the `remove_*` methods (CAS), then `record_drop(removed, reason)` for a hub-initiated removal (counts, logs, notifies the socket), then remove the registry row and publish `UserDisconnected`. Drop reasons are the `DisconnectReason` variants (metric labels via `as_str()`); adding a variant makes the compiler point at the close-code mapping in `connect.rs`.
-- **New background consumer:** implement `ConnectionConsumer` and start it in `HubService::new` before the dispatchers, via `spawn_connection_loop*`, which subscribes before the loop runs.
+- **New background consumer:** implement `ConnectionConsumer` and start it in `HubService::new` before the dispatchers, via `spawn_connection_loop`, which subscribes before the loop runs.
 - **New egress message:** add a `HubMessage` variant; the socket forwards only what `event_to_wire_message` maps, and `try_send` labels its `kind`.
 - **New stream kind:** register it in `StreamKindRegistry` (validator, state type, snapshot encoding); the hub and the protocol stay unchanged.
 - **Sending to clients** happens off the loop (`send_to_connection`, `send_to_user`, `broadcast`); a dead target is reported, not removed, by the sender.

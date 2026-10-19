@@ -25,6 +25,8 @@ impl StatusProvider for HubStatus {
         serde_json::json!({
             "connections": stats.connections,
             "subscribers": stats.subscribers,
+            "heartbeatTicks": stats.heartbeat_ticks,
+            "sessionCheckTicks": stats.session_check_ticks,
         })
     }
 }

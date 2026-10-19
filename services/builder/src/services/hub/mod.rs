@@ -9,7 +9,7 @@ mod tasks;
 
 pub use self::{
     hub_metrics::hub_metrics,
-    hub_service::{HubIntervals, HubService},
+    hub_service::{Consumer, HubIntervals, HubService},
     hub_status::HubStatus,
 };
 

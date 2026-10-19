@@ -1,4 +1,4 @@
-use crate::services::{CommandStreamService, HubIntervals, HubService};
+use crate::services::{hub::Consumer, CommandStreamService, HubIntervals, HubService};
 use crate::{
     models::messages::{DisconnectReason, HubEvent, HubMessage, StreamMessage, TopicKey},
     repositories::hub_registry::{redis::RedisHubConnectionDb, HubConnectionDb, HubRegistry},
@@ -146,6 +146,20 @@ pub async fn wait_event(
     .await
     .unwrap_or(false)
     .then_some(collected)
+}
+
+/// Waits until the consumer completed `count` ticks that started after the call, so a test can assert that
+/// something did not happen over a number of ticks without guessing how long they take.
+pub async fn wait_ticks(hub: &HubService, consumer: Consumer, count: u64) {
+    // The tick in flight may have started before the call.
+    let target = hub.ticks(consumer) + count + 1;
+    timeout(BARRIER_TIMEOUT, async {
+        while hub.ticks(consumer) < target {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("the consumer did not tick");
 }
 
 /// Waits until the command loop has exited, which drops the control channel.

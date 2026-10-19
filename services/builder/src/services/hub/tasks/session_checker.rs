@@ -1,5 +1,8 @@
 use super::connection_tracker::{spawn_connection_loop, ConnectionConsumer, ConnectionTracker};
-use crate::{models::messages::DisconnectReason, services::HubService};
+use crate::{
+    models::messages::DisconnectReason,
+    services::{hub::Consumer, HubService},
+};
 use shine_infra::session::CurrentUserService;
 use std::{sync::Arc, time::Duration};
 use tokio::task::JoinHandle;
@@ -32,6 +35,7 @@ impl SessionChecker {
 impl ConnectionConsumer for SessionChecker {
     #[tracing::instrument(level = "debug", name = "hub session check", skip_all)]
     async fn on_tick(&mut self, tracker: &ConnectionTracker) {
+        let _tick = self.hub_service.tick_guard(Consumer::SessionCheck);
         let connections: Vec<_> = tracker.connections().iter().map(|(u, c)| (*u, *c)).collect();
 
         let mut skipped = 0usize;
