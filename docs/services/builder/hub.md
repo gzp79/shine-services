@@ -346,12 +346,11 @@ Only the end of the connection (close, drop, replacement) removes every subscrip
 | Writes | A command is accepted once per `commandId`; there is no success ack, the writer sees its `commandId` in `streamCommands`. `streamNack` reports a failure, including `duplicate` (already in the log: drop it from pending). |
 | Order and truth | Redis orders the commands (version assignment is atomic in Redis); Postgres is the truth and wins every conflict, after which the Redis copy is rebuilt from it. |
 | Checkpoints | Every `snapshotEvery` versions a snapshot is stored once (the first writer is authoritative) and its hash is pushed as `streamCheckpoint`, never ahead of the commands already delivered; a client whose state hashes differently resubscribes. |
-| Authorship | A command that acts on an earlier command is rejected at ingest with `streamNack forbidden`, and nothing is stored, when that command's author is another user. The author is read from Redis (the dedupe window and the log entry's user), so an author outside the window is unknown and the command is accepted. Replay applies the same rule from the stored author and ignores the command when it does not match, so the rule also holds beyond the window. A command whose target does not exist is stored and ignored on replay. |
 | Retention | A snapshot is stored every `snapshotEvery` commands and Postgres keeps the latest `keepSnapshots` snapshots and the commands from the oldest of them on (a long-lived stream's older commands are pruned). Redis keeps the commands from the oldest stored snapshot on, so at most `snapshotEvery` × `keepSnapshots` persisted commands, plus the commands not persisted yet (never trimmed). State older than the oldest stored snapshot is never served from history: the request (a resume, a snapshot read) is answered from the newest snapshot, as a full sync. Both settings are per kind, with global defaults. |
 | Slow client | A full egress channel drops the connection; the client reconnects and subscribes again. Delivery never queues for a single client. |
 | Guarantee | Per stream and connection: ordered, no duplicates inside a sync epoch. End to end: a command accepted by the server may be lost before it is persisted if Redis loses data; its writer then gets `streamReset`, a new sync, and resends its pending commands. |
 
-A stream **kind** (registered in `StreamKindRegistry`) supplies the command validator, the replayed state type and its snapshot encoding; the stream's kind is fixed at creation and never taken from a later client frame. Replaying a command gives the kind its **context** (version, `commandId` and the author's `userId`), so a state can record who wrote what. A kind may also declare which earlier command a command acts on (`refers_to`); ingest uses it for the ownership rule below.
+A stream **kind** (registered in `StreamKindRegistry`) supplies the command validator, the replayed state type and its snapshot encoding; the stream's kind is fixed at creation and never taken from a later client frame. Replaying a command gives the kind its **context** (version, `commandId` and the author's `userId`), so a state can record who wrote what and decide for itself whether a command takes effect (for example that only the author may remove a message). A command the state refuses is stored in the log and ignored on replay; ingest checks only the command's shape, its size and its `commandId`.
 
 ### Starting from an HTTP snapshot
 
@@ -393,15 +392,16 @@ sequenceDiagram
 
 ### Example: chat
 
-Chat is one kind of stream: a single global room whose state is the most recent messages. Users add messages and remove their own.
+Chat is one kind of stream: a single global room whose state is the most recent messages. Users add messages, and replace or remove their own.
 
 | Concern | Chat kind |
 |---|---|
 | Stream | The stream id `chat-global`, created by the first subscribe. |
 | Access | Any authenticated user may subscribe and write; every message carries its sender's `userId`. |
-| State | The last 200 messages (a constant of the kind, so every replica and client agrees): id, author, text. |
+| State | The last 200 messages (a constant of the kind, so every replica and client agrees): id, author, text and an `edited` flag (set once the author has replaced the text). |
 | Add | `{"type":"add","text":"..."}`; the text is trimmed, not empty, at most 2000 bytes. The message id is the `commandId` of the add; the author is the session's user from the command context, never from the payload. |
-| Remove | `{"type":"remove","id":"<message id>"}`. An id that is not in the state is ignored on replay. A message of another user is rejected at ingest (`streamNack forbidden`, not stored) when its author is known, and ignored on replay otherwise. |
+| Remove | `{"type":"remove","id":"<message id>"}`. Removes the message with that id when the sender wrote it. Any other remove (an unknown id, another user's message) is stored and ignored on replay. |
+| Replace | `{"type":"replace","id":"<message id>","text":"..."}`. Replaces the text of the message with that id, keeping its place and id, and marks it edited, when the sender wrote it; the text follows the rules of an add. Any other replace (an unknown or removed id, another user's message) is stored and ignored on replay. |
 | Snapshot | The state at a version divisible by `snapshotEvery` (50); Postgres keeps the latest `keepSnapshots` (5) and Redis at most 50 × 5 = 250 persisted commands; a removal is a command like an add. |
 | Client | Renders the replayed state, from the HTTP snapshot first when the socket is not up yet; ordering and deduplication are by `version` and `commandId`. |
 

@@ -1,7 +1,7 @@
-//! Integration tests of the replay core through its public API.
+//! Integration tests of the replay core through its public API, with the chat state as the replayed state.
 
-mod commands;
-mod demo_state;
+mod chat;
+mod common;
 mod hash;
 mod replica;
 mod snapshot;

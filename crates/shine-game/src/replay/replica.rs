@@ -2,9 +2,8 @@ use crate::replay::{stable_hash_of, Checkpoint, CommandContext, CommandEnvelope,
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ApplyOutcome {
+    /// Integrated: the state received the command (what it did with it is its own business).
     Applied,
-    /// Rejected or undecodable; the version is still consumed.
-    Ignored,
     /// The version was already applied; nothing changed.
     AlreadyApplied,
 }
@@ -77,9 +76,7 @@ impl<S: ReplayState> Replica<S> {
             command_id: envelope.command_id,
             user_id: envelope.user_id,
         };
-        match &envelope.command {
-            Some(command) if self.state.apply(&ctx, command).is_ok() => Ok(ApplyOutcome::Applied),
-            _ => Ok(ApplyOutcome::Ignored),
-        }
+        self.state.apply(&ctx, &envelope.command);
+        Ok(ApplyOutcome::Applied)
     }
 }

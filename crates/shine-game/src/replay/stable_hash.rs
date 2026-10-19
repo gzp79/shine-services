@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use uuid::Uuid;
 
 const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
@@ -58,6 +59,21 @@ impl_stable_hash_int!(u8, u16, u32, u64, i8, i16, i32, i64);
 impl StableHash for bool {
     fn stable_hash(&self, hasher: &mut StableHasher) {
         hasher.write(&[*self as u8]);
+    }
+}
+
+/// Length (u64, little endian), then the UTF-8 bytes.
+impl StableHash for str {
+    fn stable_hash(&self, hasher: &mut StableHasher) {
+        (self.len() as u64).stable_hash(hasher);
+        hasher.write(self.as_bytes());
+    }
+}
+
+/// The 16 bytes.
+impl StableHash for Uuid {
+    fn stable_hash(&self, hasher: &mut StableHasher) {
+        hasher.write(self.as_bytes());
     }
 }
 

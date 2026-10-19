@@ -1,44 +1,49 @@
-use crate::demo_state::{envelope, set, user, DemoCommand, DemoState};
-use shine_game::replay::{decode_snapshot, encode_snapshot, stable_hash_of, CheckpointPolicy, Replica};
+use crate::common::{add, command_id, remove, user};
+use shine_game::replay::{
+    decode_snapshot, encode_snapshot, stable_hash_of, ChatCommand, ChatState, CheckpointPolicy, CommandEnvelope,
+    Replica,
+};
 use shine_test::test;
 
+fn log(len: i64) -> Vec<CommandEnvelope<ChatCommand>> {
+    (1..=len)
+        .map(|v| {
+            if v % 5 == 0 {
+                remove(v, user(v as u128 % 3), command_id(v - 2))
+            } else {
+                add(v, user(v as u128 % 3), &format!("message {v} ✓"))
+            }
+        })
+        .collect()
+}
+
 #[test]
-fn snapshot_round_trip_keeps_the_state_authors_and_hash() {
-    let mut replica = Replica::<DemoState>::new();
-    for v in 1..=10 {
-        replica
-            .apply_next(&envelope(v, user(v as u128), set((v % 10) as u32, i64::MIN + v)))
-            .unwrap();
+fn a_snapshot_keeps_the_messages_the_authors_and_the_hash() {
+    let mut replica = Replica::<ChatState>::new();
+    for e in &log(10) {
+        replica.apply_next(e).unwrap();
     }
     let bytes = encode_snapshot(replica.state()).unwrap();
-    let decoded: DemoState = decode_snapshot(&bytes).unwrap();
+    let decoded: ChatState = decode_snapshot(&bytes).unwrap();
     assert_eq!(&decoded, replica.state());
     assert_eq!(stable_hash_of(&decoded), replica.hash());
 }
 
 #[test]
 fn replay_from_a_snapshot_equals_replay_from_zero() {
-    let log: Vec<_> = (1..=20)
-        .map(|v| {
-            envelope(
-                v,
-                user(v as u128 % 4),
-                DemoCommand::Add { idx: (v % 10) as u32, delta: v },
-            )
-        })
-        .collect();
+    let log = log(20);
 
-    let mut full = Replica::<DemoState>::new();
+    let mut full = Replica::<ChatState>::new();
     for e in &log {
         full.apply_next(e).unwrap();
     }
 
-    let mut prefix = Replica::<DemoState>::new();
+    let mut prefix = Replica::<ChatState>::new();
     for e in &log[..10] {
         prefix.apply_next(e).unwrap();
     }
     let snapshot = encode_snapshot(prefix.state()).unwrap();
-    let mut resumed = Replica::from_snapshot(10, decode_snapshot::<DemoState>(&snapshot).unwrap());
+    let mut resumed = Replica::from_snapshot(10, decode_snapshot::<ChatState>(&snapshot).unwrap());
     for e in &log[10..] {
         resumed.apply_next(e).unwrap();
     }
