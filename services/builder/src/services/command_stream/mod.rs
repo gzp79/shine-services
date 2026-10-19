@@ -5,6 +5,8 @@ mod command_stream_service;
 mod stream_access;
 mod stream_core;
 mod stream_egress;
+#[cfg(test)]
+mod stream_integration_test;
 mod stream_kind;
 mod stream_worker;
 #[cfg(test)]

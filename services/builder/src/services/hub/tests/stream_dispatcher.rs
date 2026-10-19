@@ -1,14 +1,14 @@
 //! The stream dispatcher: residency of the stream workers, driven through the hub.
 
 use crate::{
-    models::messages::{HubMessage, StreamMessage},
+    models::messages::{DisconnectReason, HubEvent, HubMessage, StreamMessage},
     services::{
         command_stream::{
             test_utils::{add, setup_with, unique_id, Test},
             AllowAll, CommandStreamService, StreamEgress, StreamKind, StreamKindRegistry, WorkerCommand, WorkerExit,
             WorkerFuture, WorkerHandle,
         },
-        hub_test_utils::{barrier, connect, create_test_hub, Egress, TestHub, TestHubOptions},
+        hub_test_utils::{barrier, connect, create_test_hub, wait_event, Egress, TestHub, TestHubOptions},
     },
 };
 use shine_infra::db::command_log::StreamId;
@@ -303,4 +303,119 @@ async fn a_subscriber_gets_the_commands_of_a_chat_stream_through_the_hub() {
         }
         other => panic!("expected the command, got {other:?}"),
     }
+}
+
+#[test(serial = "hub-service")]
+async fn a_slow_subscriber_never_sees_a_version_gap() {
+    let Some(streams) = setup_with(Arc::new(AllowAll), fast).await else {
+        return;
+    };
+    let (user_id, stream_id) = (Uuid::new_v4(), unique_id());
+    let opened = streams.service.open(user_id, &stream_id, "chat").await.unwrap();
+    let Some(mut test) = create_test_hub(TestHubOptions {
+        command_streams: Some(streams.service.clone()),
+        ..Default::default()
+    })
+    .await
+    else {
+        return;
+    };
+    // A channel for two messages that nobody reads.
+    let (connection_id, mut egress) = connect(&test.hub, user_id, 2);
+    test.hub
+        .request_subscribe_stream(user_id, connection_id, stream_id.clone(), "chat", None)
+        .unwrap();
+    barrier(&test.hub, &mut test.events).await;
+
+    for i in 1..=60 {
+        streams
+            .service
+            .ingest(
+                opened.kind.as_ref(),
+                &stream_id,
+                Uuid::new_v4(),
+                user_id,
+                &add(&format!("m{i}")),
+            )
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    let dropped = wait_event(&mut test.events, Duration::from_secs(15), |event| {
+        matches!(
+            event,
+            HubEvent::UserDisconnected {
+                reason: DisconnectReason::SlowConsumer,
+                ..
+            }
+        )
+    })
+    .await;
+    assert!(dropped.is_some(), "the hub drops a connection that cannot keep up");
+
+    // What it did receive is a contiguous run, and no checkpoint is ahead of it.
+    let mut versions = vec![];
+    let mut checkpoints = vec![];
+    while let Some(message) = timeout(Duration::from_secs(5), egress.recv()).await.unwrap() {
+        match message {
+            HubMessage::Stream(StreamMessage::Sync { commands, .. } | StreamMessage::Commands { commands, .. }) => {
+                versions.extend(commands.iter().map(|c| c.version))
+            }
+            HubMessage::Stream(StreamMessage::Checkpoint { version, .. }) => checkpoints.push(version),
+            _ => {}
+        }
+    }
+    assert!(versions.len() < 60, "it was dropped before the end");
+    assert!(
+        versions.windows(2).all(|pair| pair[1] == pair[0] + 1),
+        "a gap in the delivered versions: {versions:?}"
+    );
+    let last = versions.last().copied().unwrap_or(0);
+    assert!(
+        checkpoints.iter().all(|version| *version <= last),
+        "a checkpoint ahead of the commands"
+    );
+}
+
+#[test(serial = "hub-service")]
+async fn subscribe_unsubscribe_churn_leaves_no_subscription() {
+    let Some((mut test, log)) = fake_hub(Behaviour::Run).await else {
+        return;
+    };
+    let user_id = Uuid::new_v4();
+    let streams: Vec<StreamId> = (0..3).map(|_| unique_id()).collect();
+    let (connection_id, _egress) = connect(&test.hub, user_id, 16);
+
+    for cycle in 0..500 {
+        let stream_id = streams[cycle % streams.len()].clone();
+        test.hub
+            .request_subscribe_stream(user_id, connection_id, stream_id.clone(), "fake", None)
+            .unwrap();
+        test.hub
+            .request_unsubscribe_stream(user_id, connection_id, stream_id)
+            .unwrap();
+    }
+    barrier(&test.hub, &mut test.events).await;
+
+    let settled = timeout(Duration::from_secs(15), async {
+        loop {
+            let balanced = streams.iter().all(|stream_id| {
+                let seen = seen(&log, stream_id);
+                let count = |wanted: fn(&Seen) -> bool| seen.iter().filter(|s| wanted(s)).count();
+                count(|s| matches!(s, Seen::Added(_))) == count(|s| matches!(s, Seen::Removed(_)))
+                    && count(|s| *s == Seen::Started) == count(|s| *s == Seen::Stopped)
+                    && seen.last() == Some(&Seen::Stopped)
+            });
+            if balanced {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await;
+    assert!(
+        settled.is_ok(),
+        "a subscription or a worker was leaked: {:?}",
+        log.lock().unwrap().len()
+    );
 }

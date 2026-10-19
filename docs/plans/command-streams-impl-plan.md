@@ -23,7 +23,8 @@
 | S6b kinds, service, ingest | done | `cargo test -p shine-builder` (114 tests; 13 in `command_stream_service`) |
 | S6c worker, dispatcher, egress | done | `cargo test -p shine-builder` (124 tests; 5 in `stream_worker`, 5 in `hub::tests::stream_dispatcher`) |
 | S7 wire protocol, snapshot route, resume | done | `cargo test -p shine-builder` (144 tests: 6 `read_snapshot`, 4 snapshot route, 11 stream socket); `cargo test -p shine-game --test replay` (35, 7 protocol); wasm check |
-| S8 - S10 | open (S8 next) | |
+| S8 integration and fault tests | done | `cargo test -p shine-builder` (152 tests, 3 runs; 6 in `stream_integration`, 2 new in `hub::tests::stream_dispatcher`) |
+| S9 - S10 | open (S9 next) | |
 | S12 client engine in `shine-game` | open (after S9) | |
 | S11 let the worker prune | decision pending | |
 
@@ -225,7 +226,7 @@ The reference for the algorithms is the old plan's Tasks 6 and 7 (`docs/plans/co
 **Files:** `services/builder/src/services/command_stream/command_stream_test.rs`, fault variants in `services/hub/tests/fault.rs`.
 
 - [ ] **Step 1: Tests** (the `ChatState` registered as a test kind): the plan Task 8 set (ordering across two instances, dedupe window, snapshot race with a drifted loser, generation fencing, orphan sweep, hydration lock) plus `redis_loss_continues_from_the_postgres_head`; `redis_rolled_back_within_a_generation_is_repaired`; `a_slow_subscriber_never_sees_a_version_gap`; `subscribe_unsubscribe_churn_leaves_no_subscription` (500 cycles); `a_postgres_outage_does_not_stop_the_process_and_persistence_resumes` (toxiproxy).
-- [ ] **Step 2:** Fix what the tests expose (each fix is a change in the owning task's files). **Step 3: Verify** with both databases. **Step 4: Checkpoint.**
+- [x] **Step 2-4:** Done; the tests exposed no defect. Notes: the dedupe, hydration lock and orphan sweep tests already exist from S6b; the stale-generation fence is `a_copy_of_another_generation_is_dropped_by_the_sweep`; tests that cut a database off hold `test_utils::setup_for_outage`, which waits for the other tests with a service (a shared gate) so the outage cannot hit them. The user-facing parts of this list (order seen by two users, dedupe, resume, snapshot route status codes) are repeated black-box in the Playwright API tests of S9; the fault, drift, churn and two-instance tests stay in Rust because they need the stores or toxiproxy.
 
 ## Task S9: Example kind - chat, and the switch from the old chat
 

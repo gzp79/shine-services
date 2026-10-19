@@ -5,80 +5,24 @@ use crate::{
     models::messages::StreamMessage,
     repositories::command_stream::redis::RedisStreamMeta,
     services::command_stream::{
-        test_utils::{add, redis_versions, setup_on, setup_with, stored, unique_id, Test},
-        AllowAll, IngestOutcome, StreamCore, StreamEgress, WorkerCommand, WorkerExit, WorkerHandle,
+        test_utils::{
+            add, eventually, fast_cadence, ingest, redis_versions, setup_for_outage, setup_with, start_worker, stored,
+            unique_id, Recorder,
+        },
+        AllowAll, IngestOutcome, StreamCore, WorkerCommand, WorkerExit,
     },
     settings::KindSettings,
 };
-use futures::future::BoxFuture;
 use shine_game::replay::ChatState;
 use shine_infra::db::command_log::{StoredCommand, StreamId};
-use shine_test::{db::get_redis_cns, test, toxiproxy::Toxiproxy};
-use std::{
-    collections::HashSet,
-    sync::{Arc, Mutex},
-    time::Duration,
+use shine_test::{
+    db::{get_pg_cns, get_redis_cns},
+    test,
+    toxiproxy::Toxiproxy,
 };
-use tokio::{task::JoinHandle, time::timeout};
+use std::{sync::Arc, time::Duration};
+use tokio::time::timeout;
 use uuid::Uuid;
-
-/// Records what the workers send; refuses everything to the connections in `refused`.
-#[derive(Default)]
-struct Recorder {
-    refused: HashSet<Uuid>,
-    sent: Mutex<Vec<(Uuid, StreamMessage)>>,
-}
-
-impl Recorder {
-    fn refusing(refused: impl IntoIterator<Item = Uuid>) -> Self {
-        Self {
-            refused: refused.into_iter().collect(),
-            ..Default::default()
-        }
-    }
-
-    fn sent_to(&self, connection_id: Uuid) -> Vec<StreamMessage> {
-        self.sent
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|(id, _)| *id == connection_id)
-            .map(|(_, message)| message.clone())
-            .collect()
-    }
-
-    /// The versions delivered to a connection, in order, `Sync` and `Commands` alike.
-    fn versions(&self, connection_id: Uuid) -> Vec<i64> {
-        self.sent_to(connection_id)
-            .iter()
-            .flat_map(|message| match message {
-                StreamMessage::Sync { commands, .. } | StreamMessage::Commands { commands, .. } => {
-                    commands.iter().map(|c| c.version).collect()
-                }
-                _ => vec![],
-            })
-            .collect()
-    }
-
-    fn checkpoints(&self, connection_id: Uuid) -> Vec<i64> {
-        self.sent_to(connection_id)
-            .iter()
-            .filter_map(|message| match message {
-                StreamMessage::Checkpoint { version, .. } => Some(*version),
-                _ => None,
-            })
-            .collect()
-    }
-}
-
-impl StreamEgress for Recorder {
-    fn send(&self, connection_id: Uuid, message: StreamMessage) -> BoxFuture<'_, bool> {
-        Box::pin(async move {
-            self.sent.lock().unwrap().push((connection_id, message));
-            !self.refused.contains(&connection_id)
-        })
-    }
-}
 
 #[test]
 async fn a_failed_send_stops_all_later_frames() {
@@ -115,64 +59,9 @@ async fn a_failed_send_stops_all_later_frames() {
     );
 }
 
-/// Waits until `condition` holds.
-async fn eventually<F, Fut>(what: &str, mut condition: F)
-where
-    F: FnMut() -> Fut,
-    Fut: std::future::Future<Output = bool>,
-{
-    let found = timeout(Duration::from_secs(15), async {
-        while !condition().await {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    })
-    .await;
-    assert!(found.is_ok(), "timed out waiting for {what}");
-}
-
-/// A running worker of a stream, with one subscriber.
-struct Running {
-    handle: WorkerHandle,
-    task: JoinHandle<WorkerExit>,
-    egress: Arc<Recorder>,
-    connection_id: Uuid,
-}
-
-fn start_worker(test: &Test, stream_id: &StreamId) -> Running {
-    let kind = test.service.kinds().get("chat").unwrap();
-    let egress = Arc::new(Recorder::default());
-    let (handle, future) = kind.create_worker(egress.clone(), test.service.clone(), stream_id.clone());
-    let task = tokio::spawn(future);
-    let connection_id = Uuid::new_v4();
-    handle
-        .tx
-        .send(WorkerCommand::AddSubscriber(connection_id, None))
-        .unwrap();
-    Running {
-        handle,
-        task,
-        egress,
-        connection_id,
-    }
-}
-
-async fn ingest(test: &Test, stream_id: &StreamId, text: &str) -> IngestOutcome {
-    let kind = test.service.kinds().get("chat").unwrap();
-    test.service
-        .ingest(kind.as_ref(), stream_id, Uuid::new_v4(), Uuid::nil(), &add(text))
-        .await
-        .unwrap()
-}
-
-/// Short cadences: a step every 20 ms, commands persisted right away.
-fn fast(config: &mut crate::app_config::CommandStreamConfig) {
-    config.sync_interval_ms = 20;
-    config.persist_delay_ms = 1;
-}
-
 #[test]
 async fn worker_persists_commands_and_stores_a_snapshot_every_k() {
-    let Some(test) = setup_with(Arc::new(AllowAll), fast).await else {
+    let Some(test) = setup_with(Arc::new(AllowAll), fast_cadence).await else {
         return;
     };
     let stream_id = unique_id();
@@ -199,7 +88,13 @@ async fn worker_persists_commands_and_stores_a_snapshot_every_k() {
     })
     .await;
     eventually("the checkpoint and every command", || async {
-        running.egress.checkpoints(running.connection_id) == vec![5]
+        running
+            .egress
+            .checkpoints(running.connection_id)
+            .iter()
+            .map(|(version, _)| *version)
+            .collect::<Vec<_>>()
+            == vec![5]
             && running.egress.versions(running.connection_id) == (1..=6).collect::<Vec<_>>()
     })
     .await;
@@ -219,7 +114,7 @@ async fn worker_persists_commands_and_stores_a_snapshot_every_k() {
 
 #[test]
 async fn worker_trims_redis_to_the_snapshot_horizon() {
-    let Some(test) = setup_with(Arc::new(AllowAll), fast).await else {
+    let Some(test) = setup_with(Arc::new(AllowAll), fast_cadence).await else {
         return;
     };
     let stream_id = unique_id();
@@ -255,7 +150,7 @@ async fn worker_trims_redis_to_the_snapshot_horizon() {
 
 #[test]
 async fn a_stored_command_that_cannot_be_decoded_stops_the_worker_and_the_stream_is_unavailable() {
-    let Some(test) = setup_with(Arc::new(AllowAll), fast).await else {
+    let Some(test) = setup_with(Arc::new(AllowAll), fast_cadence).await else {
         return;
     };
     let stream_id = unique_id();
@@ -279,9 +174,9 @@ async fn a_stored_command_that_cannot_be_decoded_stops_the_worker_and_the_stream
 #[test(serial = "hub-service")]
 async fn worker_survives_a_redis_outage_and_recovers() {
     let Some(toxiproxy) = Toxiproxy::from_env() else { return };
-    if get_redis_cns().is_none() {
+    let (Some(_), Some(pg_cns)) = (get_redis_cns(), get_pg_cns()) else {
         return;
-    }
+    };
     let _reset = toxiproxy.reset_guard().await;
     let proxy = toxiproxy.proxy("redis").await;
     // Short timeouts, so an outage fails fast.
@@ -290,7 +185,7 @@ async fn worker_survives_a_redis_outage_and_recovers() {
         toxiproxy.host(),
         proxy.listen_port()
     );
-    let Some(test) = setup_on(cns, Arc::new(AllowAll), fast).await else {
+    let (Some(test), _outage) = setup_for_outage(cns, pg_cns, Arc::new(AllowAll), fast_cadence).await else {
         return;
     };
     let stream_id = unique_id();

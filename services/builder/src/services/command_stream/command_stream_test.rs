@@ -67,9 +67,7 @@ async fn access_decides_who_reads_and_writes() {
         .unwrap();
     assert!(!opened.can_write);
 
-    let Some(nobody) = setup(Arc::new(Nobody)).await else {
-        return;
-    };
+    let nobody = read_only.with_access(Arc::new(Nobody));
     let stream_id = unique_id();
     assert!(matches!(
         nobody.service.open(Uuid::new_v4(), &stream_id, "chat").await,

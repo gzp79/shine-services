@@ -94,9 +94,7 @@ async fn the_snapshot_route_answers_with_the_status_of_the_failure() {
     let disabled = snapshot_frame(None, Uuid::nil(), unique_id().as_str()).await;
     assert_eq!(status(disabled.unwrap_err()), StatusCode::SERVICE_UNAVAILABLE);
 
-    let Some(nobody) = setup(Arc::new(Nobody)).await else {
-        return;
-    };
+    let nobody = test.with_access(Arc::new(Nobody));
     let stream_id = postgres_stream(&nobody, 1, &[]).await;
     let forbidden = snapshot_frame(Some(&nobody.service), Uuid::nil(), stream_id.as_str()).await;
     assert_eq!(status(forbidden.unwrap_err()), StatusCode::FORBIDDEN);
