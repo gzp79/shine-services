@@ -118,6 +118,8 @@ struct Client {
     to_server: Option<socket::UnboundedSender<Result<WsMessage, Infallible>>>,
     from_server: socket::UnboundedReceiver<WsMessage>,
     server: JoinHandle<()>,
+    /// Stream frames read while waiting for another one, kept for the next wait.
+    stash: Vec<Value>,
 }
 
 impl Client {
@@ -150,6 +152,7 @@ impl Client {
             to_server: Some(to_server),
             from_server,
             server,
+            stash: vec![],
         }
     }
 
@@ -337,24 +340,29 @@ fn json_of(frame: &WsMessage) -> Value {
 }
 
 impl Client {
-    /// The next stream frame that carries state or commands, skipping the others.
-    async fn next_frame_of_stream(&mut self) -> Value {
+    /// The next frame that matches. The frames before it stay available to the later waits.
+    async fn next_matching(&mut self, matches: impl Fn(&Value) -> bool) -> Value {
+        if let Some(index) = self.stash.iter().position(&matches) {
+            return self.stash.remove(index);
+        }
         loop {
             let frame = json_of(&self.next_frame().await);
-            if matches!(frame["type"].as_str(), Some("streamSync" | "streamCommands")) {
+            if matches(&frame) {
                 return frame;
             }
+            self.stash.push(frame);
         }
     }
 
-    /// The next frame of the given type, skipping the others.
+    /// The next stream frame that carries state or commands.
+    async fn next_frame_of_stream(&mut self) -> Value {
+        self.next_matching(|frame| matches!(frame["type"].as_str(), Some("streamSync" | "streamCommands")))
+            .await
+    }
+
+    /// The next frame of the given type.
     async fn next_of(&mut self, ty: &str) -> Value {
-        loop {
-            let frame = json_of(&self.next_frame().await);
-            if frame["type"] == ty {
-                return frame;
-            }
-        }
+        self.next_matching(|frame| frame["type"] == ty).await
     }
 
     fn subscribe(&self, stream_id: &StreamId, kind: &str, resume: Option<(i64, i64)>) {
