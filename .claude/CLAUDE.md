@@ -75,19 +75,19 @@ Rust workspace with identity/builder services. Stack: Axum, PostgreSQL, Redis, T
 Look up crate API, features, and versions on docs.rs (`https://docs.rs/<crate>/latest/<crate>/`) rather than guessing.
 
 ### Skills
-Project skills live in `.claude/skills/`. Invoke before working in a domain.
+Project skills live in `.claude/skills/`; `sdp` comes from the `shine-skills` plugin (shine ai-tools). Invoke before working in a domain.
 
 | Skill | When |
 |---|---|
 | `client-web-architecture` | any file under `client/web/src/` |
 | `service-architecture` | adding/reviewing routes, handlers, services, or repositories |
 | `mesh-topology` | world/chunk/hex geometry |
-| `sdp` | **larger features or architectural changes**, or when explicitly asked to write/sync/update a design doc — keeps the design doc and code in agreement; detects which side is ahead (write doc / write code from doc / sync doc from code). Skip for small additions, helpers, or narrow changes to existing code; not required before writing code |
+| `shine-skills:sdp` | **larger features or architectural changes**, or when explicitly asked to write/sync/update a design doc — keeps the design doc and code in agreement; detects which side is ahead (write doc / write code from doc / sync doc from code). Skip for small additions, helpers, or narrow changes to existing code; not required before writing code |
 | `local-development` | run services locally |
 | `api-test-writing` | writing or modifying tests under `tests/api-tests/` or `tests/mock-tests/` |
 
 ### Design docs
-HTML files under `docs/<domain>/`. Domain subfolders:
+Markdown files under `docs/<domain>/`. Domain subfolders:
 
 | Domain | Path |
 |---|---|
@@ -96,13 +96,13 @@ HTML files under `docs/<domain>/`. Domain subfolders:
 | core game | `docs/core/game/` |
 | cross-cutting | `docs/shared/` |
 
-Docs are human-readable HTML + agentic extensions: `<details data-agent="implementation|test|security|…">` blocks (collapsed by default) carry implementation notes, test plans, and other detail targeted at agents. CSS: `docs/doc.css` (shared, GitHub-raw-friendly via relative path). Conventions: `.claude/skills/sdp/references/conventions.md`.
+Docs are human-readable Markdown (GitHub-rendered, Mermaid diagrams) + agentic extensions: `<details data-agent="implementation|test|security|…">` blocks (collapsed by default) carry implementation notes, test plans, and other detail targeted at agents. Format conventions: the `shine-skills:sdp` plugin skill (`references/conventions.md`).
 
-Only SDP HTML design docs live under `docs/`. Everything else agent-produced is scratch — see below.
+SDP design docs live under `docs/<domain>/`. `docs/plans/` holds non-SDP docs for future investigations (not kept in sync with code). Everything else agent-produced is scratch — see below.
 
 ### Scratch & temp files
 `temp/` (gitignored) is the scratch area for AI agents. Put anything not meant for git here, so the user can track what's going on without it polluting the working tree or getting auto-committed:
-- Plans and non-SDP designs (freeform markdown, drafts) — a design becomes a committed doc only when written as SDP HTML under `docs/`
+- Plans and non-SDP designs (freeform markdown, drafts) — a design becomes a committed doc only when written as an SDP doc under `docs/`
 - Background task / subagent output, logs, review notes, todo scratch, and other transient artifacts
 
 Default any such file to `temp/`. Do not write scratch into `docs/`, source dirs, or the repo root.
