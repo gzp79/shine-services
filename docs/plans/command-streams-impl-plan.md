@@ -20,8 +20,8 @@
 | S4 Redis stream repository | done, scripts reviewed | `cargo test -p shine-builder` (76 tests; 20 in `redis_command_stream`) |
 | S5 Hub subscriptions and stream messages | done | `cargo test -p shine-builder` (`hub::tests::stream`, 5 tests) |
 | S6a pure StreamCore | done | `cargo test -p shine-builder` (100 tests; 19 in `stream_core`) |
-| S6b kinds, service, ingest | next | |
-| S6c worker, dispatcher, egress | open | |
+| S6b kinds, service, ingest | done | `cargo test -p shine-builder` (114 tests; 13 in `command_stream_service`) |
+| S6c worker, dispatcher, egress | next | |
 | S7 - S10 | open | |
 | S12 client engine in `shine-game` | open (after S9) | |
 | S11 let the worker prune | decision pending | |
@@ -189,7 +189,7 @@ The reference for the algorithms is the old plan's Tasks 6 and 7 (`docs/plans/co
 
 **Files:** Create `mod.rs`, `command_stream_metrics.rs`, `stream_access.rs`, `stream_kind.rs`, `command_stream_service.rs`, `command_stream_test.rs`; create `models/command_stream_error.rs`.
 
-**Interfaces:** `trait StreamKind { fn kind(&self) -> &'static str; fn canonicalize(&self, command: &str) -> Option<String>; }` with `ReplayKind<S: ReplayState>` (decode, `validate`, re-serialize); `StreamKindRegistry::new().with::<S>()`; `trait StreamAccess` with `AllowAll`; `CommandStreamError::{StreamNotFound, NotReady, Internal}`; `CommandStreamService::{open, ensure_hydrated, ingest, sweep_orphans, listen_to_wakes, stores, kinds, settings}`; `IngestOutcome::{Accepted(i64), Duplicate(i64), Invalid, NotReady, Busy}`; `OpenError::{UnknownKind, KindMismatch, Forbidden, Failed}`.
+**Interfaces:** `trait StreamKind { fn kind(&self) -> &'static str; fn canonicalize(&self, command: &str) -> Option<String>; }` with `ReplayKind<S: ReplayState>` (decode, `validate`, re-serialize); `StreamKindRegistry::new().with::<S>()`; `trait StreamAccess` with `AllowAll`; `CommandStreamError::{StreamNotFound, NotReady, Internal}`; `CommandStreamService::{open, ensure_hydrated, ingest, persist_tail, sweep_orphans, listen_to_wakes, kinds, settings}` (`persist_tail` is shared by the sweep and the S6c worker; the worker takes the stores from the service when it needs them); `IngestOutcome::{Accepted(i64), Duplicate(i64), Invalid, NotReady, Busy}`; `OpenError::{UnknownKind, KindMismatch, Forbidden, Failed}`.
 
 - Command decoding is shared with the client: `shine_game::replay::decode_command::<S>(&str) -> Result<S::Command, CommandDecodeError>` (serde_json), used by ingest and by `StreamCore`, which replaces its private `decode` with it.
 - Ingest order: decode as the kind's command (a failure is `Invalid`), `validate`, canonicalize, size check (`max_command_bytes`), then the Redis `INGEST`. Nothing undecodable is ever stored.

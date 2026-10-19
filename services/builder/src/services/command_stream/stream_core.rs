@@ -5,7 +5,7 @@ use crate::{
     repositories::command_stream::redis::{RedisStreamEntry, RedisStreamMeta},
     settings::KindSettings,
 };
-use shine_game::replay::{encode_snapshot, ApplyOutcome, CommandEnvelope, ReplayState, Replica};
+use shine_game::replay::{decode_command, encode_snapshot, ApplyOutcome, CommandEnvelope, ReplayState, Replica};
 use shine_infra::db::command_log::{AppendOutcome, SnapshotOutcome, StoredCommand, StreamId};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
@@ -79,8 +79,7 @@ pub struct StreamCore<S: ReplayState> {
 }
 
 fn decode<S: ReplayState>(command: &StoredCommand) -> Result<CommandEnvelope<S::Command>, Fault> {
-    let decoded = serde_json::from_str::<S::Command>(&command.data)
-        .map_err(|_| Fault::Undecodable { version: command.version })?;
+    let decoded = decode_command::<S>(&command.data).map_err(|_| Fault::Undecodable { version: command.version })?;
     Ok(CommandEnvelope {
         version: command.version,
         command_id: command.command_id,

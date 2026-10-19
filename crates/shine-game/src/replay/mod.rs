@@ -9,7 +9,7 @@ mod state;
 
 pub use self::{
     chat::{ChatCommand, ChatMessage, ChatState, CHAT_MAX_TEXT_BYTES, CHAT_WINDOW},
-    codec::{decode_snapshot, encode_snapshot, SnapshotCodecError},
+    codec::{decode_command, decode_snapshot, encode_command, encode_snapshot, CommandCodecError, SnapshotCodecError},
     envelope::{Checkpoint, CommandContext, CommandEnvelope},
     replica::{ApplyOutcome, Gap, Replica},
     stable_hash::{stable_hash_of, StableHash, StableHasher},

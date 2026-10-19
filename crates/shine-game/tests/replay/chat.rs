@@ -1,5 +1,7 @@
 use crate::common::{add, command_id, remove, replace, user};
-use shine_game::replay::{ChatCommand, ChatState, ReplayState, Replica, CHAT_MAX_TEXT_BYTES, CHAT_WINDOW};
+use shine_game::replay::{
+    decode_command, encode_command, ChatCommand, ChatState, ReplayState, Replica, CHAT_MAX_TEXT_BYTES, CHAT_WINDOW,
+};
 use shine_test::test;
 use uuid::Uuid;
 
@@ -175,4 +177,17 @@ fn the_replace_command_json_shape() {
     );
     let without_text = r#"{"type":"replace","id":"00000000-0000-0000-0000-000000000009"}"#;
     assert!(serde_json::from_str::<ChatCommand>(without_text).is_err());
+}
+
+#[test]
+fn commands_are_encoded_canonically_and_decoded_back() {
+    // Unknown fields and the field order of the input do not reach the log.
+    let command = decode_command::<ChatState>(r#"{ "text": "hi", "type": "add", "extra": 1 }"#).unwrap();
+    assert_eq!(command, ChatCommand::Add { text: "hi".into() });
+    let text = encode_command::<ChatState>(&command).unwrap();
+    assert_eq!(text, r#"{"type":"add","text":"hi"}"#);
+    assert_eq!(decode_command::<ChatState>(&text).unwrap(), command);
+
+    assert!(decode_command::<ChatState>("not json").is_err());
+    assert!(decode_command::<ChatState>(r#"{"type":"edit"}"#).is_err());
 }

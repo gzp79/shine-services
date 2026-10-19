@@ -187,6 +187,17 @@ pg_query!( OldestSnapshot =>
     sql = "SELECT MIN(version) AS version FROM cl_snapshots WHERE stream_id = $1"
 );
 
+pg_query!( SnapshotHorizon =>
+    in = stream_id: &str, keep: i64;
+    out = OldestRow;
+    sql = r#"
+        SELECT (
+            SELECT version FROM cl_snapshots WHERE stream_id = $1
+            ORDER BY version DESC OFFSET ($2 - 1) LIMIT 1
+        ) AS version
+    "#
+);
+
 // One statement, so one transaction: the oldest kept snapshot defines both what is deleted. A snapshot row
 // goes with its command row, so the commands are never cut above the oldest kept snapshot.
 pg_query!( Prune =>
@@ -225,6 +236,7 @@ struct Statements {
     get_snapshot_hash: GetSnapshotHash,
     latest_snapshot: LatestSnapshot,
     oldest_snapshot: OldestSnapshot,
+    snapshot_horizon: SnapshotHorizon,
     prune: Prune,
 }
 
@@ -263,6 +275,7 @@ impl PgCommandLogDb {
             get_snapshot_hash: GetSnapshotHash::new(&client).await.map_err(db)?,
             latest_snapshot: LatestSnapshot::new(&client).await.map_err(db)?,
             oldest_snapshot: OldestSnapshot::new(&client).await.map_err(db)?,
+            snapshot_horizon: SnapshotHorizon::new(&client).await.map_err(db)?,
             prune: Prune::new(&client).await.map_err(db)?,
         };
         Ok(Self(Arc::new(Inner { pool: pool.clone(), stmts })))
@@ -502,6 +515,20 @@ impl PgCommandLogDb {
             .stmts
             .oldest_snapshot
             .query_one(&client, &stream_id.as_str())
+            .await
+            .map_err(db)?;
+        Ok(row.version)
+    }
+
+    /// The version of the oldest of the latest `keep` snapshots (at least one): the horizon from which the
+    /// commands are kept. `None` while the stream has fewer snapshots than that.
+    pub async fn snapshot_horizon(&self, stream_id: &StreamId, keep: i64) -> Result<Option<i64>, CommandLogError> {
+        let client = self.client().await?;
+        let row = self
+            .0
+            .stmts
+            .snapshot_horizon
+            .query_one(&client, &stream_id.as_str(), &keep.max(1))
             .await
             .map_err(db)?;
         Ok(row.version)

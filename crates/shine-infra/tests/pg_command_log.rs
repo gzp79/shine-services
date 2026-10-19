@@ -327,3 +327,25 @@ async fn a_repeated_pruned_row_is_reported_as_diverged() {
         AppendOutcome::Diverged { version: 1 }
     );
 }
+
+#[test]
+async fn the_snapshot_horizon_is_the_oldest_kept_snapshot() {
+    let Some(db) = setup().await else { return };
+    let (stream_id, _) = stream_with_snapshots(&db).await; // snapshots at 5, 10, 15, 20
+    assert_eq!(db.snapshot_horizon(&stream_id, 1).await.unwrap(), Some(20));
+    assert_eq!(db.snapshot_horizon(&stream_id, 2).await.unwrap(), Some(15));
+    assert_eq!(db.snapshot_horizon(&stream_id, 4).await.unwrap(), Some(5));
+    assert_eq!(
+        db.snapshot_horizon(&stream_id, 5).await.unwrap(),
+        None,
+        "fewer snapshots than kept"
+    );
+    assert_eq!(
+        db.snapshot_horizon(&stream_id, 0).await.unwrap(),
+        Some(20),
+        "at least one is kept"
+    );
+
+    let empty = new_stream(&db).await;
+    assert_eq!(db.snapshot_horizon(&empty, 3).await.unwrap(), None);
+}
