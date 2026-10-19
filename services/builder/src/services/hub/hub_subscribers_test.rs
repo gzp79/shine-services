@@ -5,7 +5,6 @@ use crate::models::messages::StreamMessage;
 use shine_infra::db::command_log::StreamId;
 use shine_test::test;
 use tokio::sync::mpsc;
-use uuid::Uuid;
 
 /// A message of the Stream topic; its text is the stream id.
 fn payload(text: &str) -> HubMessage {
