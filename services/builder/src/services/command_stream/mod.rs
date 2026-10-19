@@ -12,12 +12,10 @@ pub(crate) mod test_utils;
 
 pub use self::{
     command_stream_metrics::command_stream_metrics,
-    command_stream_service::{
-        CommandStreamService, IngestOutcome, OpenError, OpenedStream, PersistOutcome, StreamStores,
-    },
+    command_stream_service::{CommandStreamService, IngestOutcome, OpenError, StreamStores},
     stream_access::{AllowAll, StreamAccess},
-    stream_core::{Captured, Fault, Observed, StreamCore, FRAME_COMMANDS},
+    stream_core::{Fault, Observed, StreamCore},
     stream_egress::StreamEgress,
-    stream_kind::{ReplayKind, StreamKind, StreamKindRegistry},
+    stream_kind::{StreamKind, StreamKindRegistry},
     stream_worker::{StreamWorker, WorkerCommand, WorkerExit, WorkerFuture, WorkerHandle},
 };

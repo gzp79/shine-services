@@ -1,7 +1,7 @@
 //! The service on real Redis and Postgres: ingest, open, hydration and the orphan sweep.
 
 use crate::{
-    models::CommandStreamError,
+    models::{messages::StreamMessage, CommandStreamError},
     services::command_stream::{
         test_utils::{add, postgres_stream, redis_versions, setup, stored, unique_id, Nobody, ReadOnly},
         AllowAll, IngestOutcome, OpenError,
@@ -352,4 +352,114 @@ async fn sweep_orphans_drops_a_redis_copy_that_diverged_from_postgres() {
         "Postgres wins, the Redis copy is dropped"
     );
     assert_eq!(test.log.head(&stream_id).await.unwrap().unwrap().version, 1);
+}
+
+fn sync_parts(message: StreamMessage) -> (i64, Option<i64>, Vec<i64>) {
+    let StreamMessage::Sync {
+        generation, snapshot, commands, ..
+    } = message
+    else {
+        panic!("expected a Sync, got {message:?}");
+    };
+    (
+        generation,
+        snapshot.map(|snapshot| snapshot.version),
+        commands.iter().map(|command| command.version).collect(),
+    )
+}
+
+#[test]
+async fn read_snapshot_returns_the_snapshot_and_the_commands_after_it() {
+    let Some(test) = setup(Arc::new(AllowAll)).await else {
+        return;
+    };
+    let stream_id = postgres_stream(&test, 12, &[5, 10]).await;
+    let generation = test.log.head(&stream_id).await.unwrap().unwrap().generation;
+
+    let message = test.service.read_snapshot(Uuid::nil(), &stream_id).await.unwrap();
+    if let StreamMessage::Sync { snapshot_every, .. } = &message {
+        assert_eq!(*snapshot_every, 5);
+    }
+    assert_eq!(sync_parts(message), (generation, Some(10), vec![11, 12]));
+}
+
+#[test]
+async fn read_snapshot_without_a_snapshot_returns_every_command() {
+    let Some(test) = setup(Arc::new(AllowAll)).await else {
+        return;
+    };
+    let stream_id = postgres_stream(&test, 3, &[]).await;
+    let (_, snapshot, versions) = sync_parts(test.service.read_snapshot(Uuid::nil(), &stream_id).await.unwrap());
+    assert_eq!((snapshot, versions), (None, vec![1, 2, 3]));
+}
+
+#[test]
+async fn read_snapshot_merges_the_redis_tail_above_the_postgres_head() {
+    let Some(test) = setup(Arc::new(AllowAll)).await else {
+        return;
+    };
+    let stream_id = unique_id();
+    let opened = test.service.open(Uuid::nil(), &stream_id, "chat").await.unwrap();
+    let ingest = |text: &'static str| async {
+        let command = add(text);
+        test.service
+            .ingest(opened.kind.as_ref(), &stream_id, Uuid::new_v4(), Uuid::nil(), &command)
+            .await
+    };
+    ingest("a").await.unwrap();
+    ingest("b").await.unwrap();
+    test.service.sweep_orphans().await; // persists 1 and 2, which Redis still holds
+    ingest("c").await.unwrap();
+    ingest("d").await.unwrap();
+    assert_eq!(test.log.head(&stream_id).await.unwrap().unwrap().version, 2);
+
+    let generation = test.log.head(&stream_id).await.unwrap().unwrap().generation;
+    let message = test.service.read_snapshot(Uuid::nil(), &stream_id).await.unwrap();
+    assert_eq!(sync_parts(message), (generation, None, vec![1, 2, 3, 4]));
+}
+
+#[test]
+async fn read_snapshot_ignores_a_redis_copy_of_another_generation() {
+    let Some(test) = setup(Arc::new(AllowAll)).await else {
+        return;
+    };
+    let stream_id = unique_id();
+    let opened = test.service.open(Uuid::nil(), &stream_id, "chat").await.unwrap();
+    test.service
+        .ingest(
+            opened.kind.as_ref(),
+            &stream_id,
+            Uuid::new_v4(),
+            Uuid::nil(),
+            &add("lost"),
+        )
+        .await
+        .unwrap();
+    let head = test.log.begin_generation(&stream_id).await.unwrap();
+
+    let message = test.service.read_snapshot(Uuid::nil(), &stream_id).await.unwrap();
+    assert_eq!(sync_parts(message), (head.generation, None, vec![]));
+}
+
+#[test]
+async fn read_snapshot_of_an_unknown_stream_is_not_found() {
+    let Some(test) = setup(Arc::new(AllowAll)).await else {
+        return;
+    };
+    assert!(matches!(
+        test.service.read_snapshot(Uuid::nil(), &unique_id()).await,
+        Err(CommandStreamError::StreamNotFound)
+    ));
+}
+
+#[test]
+async fn read_snapshot_needs_read_access() {
+    let Some(test) = setup(Arc::new(Nobody)).await else {
+        return;
+    };
+    let stream_id = postgres_stream(&test, 1, &[]).await;
+    assert!(matches!(
+        test.service.read_snapshot(Uuid::nil(), &stream_id).await,
+        Err(CommandStreamError::Forbidden)
+    ));
 }

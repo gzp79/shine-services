@@ -10,7 +10,7 @@ use crate::{
 };
 use shine_game::replay::{decode_snapshot, ReplayState};
 use shine_infra::db::{
-    command_log::{CommandLogError, SnapshotOutcome, StreamId},
+    command_log::{CommandLogError, StreamId},
     redis::RedisError,
 };
 use std::{collections::HashSet, future::Future, pin::Pin, sync::Arc, time::Duration};

@@ -9,6 +9,8 @@ pub struct CommandStreamMetrics {
     pub drift: Counter<u64>,
     /// Stored commands that could not be decoded: the stream is unavailable.
     pub decode_errors: Counter<u64>,
+    /// Snapshot reads over HTTP, by outcome.
+    pub snapshot_reads: Counter<u64>,
 }
 
 static METRICS: LazyLock<CommandStreamMetrics> = LazyLock::new(CommandStreamMetrics::new);
@@ -33,6 +35,10 @@ impl CommandStreamMetrics {
             decode_errors: meter
                 .u64_counter("command_stream_decode_errors")
                 .with_description("Stored commands that could not be decoded")
+                .build(),
+            snapshot_reads: meter
+                .u64_counter("command_stream_snapshot_reads")
+                .with_description("Snapshot reads over HTTP")
                 .build(),
         }
     }

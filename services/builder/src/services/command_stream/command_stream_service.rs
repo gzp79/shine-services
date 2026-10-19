@@ -1,12 +1,15 @@
 use crate::{
-    models::CommandStreamError,
+    models::{
+        messages::{StreamCommand, StreamMessage, StreamSnapshot},
+        CommandStreamError,
+    },
     repositories::command_stream::redis::{MarkOutcome, RedisCommandStreamDb, RedisIngest, RedisStreamMeta},
     services::command_stream::{command_stream_metrics, StreamAccess, StreamKind, StreamKindRegistry},
     settings::CommandStreamSettings,
 };
 use opentelemetry::KeyValue;
 use shine_infra::db::command_log::{
-    AppendOutcome, CommandLogError, PgCommandLogDb, StoredCommand, StreamHead, StreamId,
+    AppendOutcome, CommandLogError, PgCommandLogDb, StoredCommand, StoredSnapshot, StreamHead, StreamId,
 };
 use std::{
     collections::HashSet,
@@ -49,8 +52,8 @@ pub enum OpenError {
 impl OpenError {
     pub fn reason(&self) -> &'static str {
         match self {
-            Self::UnknownKind => "unknown_kind",
-            Self::KindMismatch => "kind_mismatch",
+            Self::UnknownKind => "unknownKind",
+            Self::KindMismatch => "kindMismatch",
             Self::Forbidden => "forbidden",
             Self::Failed(_) => "failed",
         }
@@ -77,7 +80,7 @@ impl IngestOutcome {
             Self::Accepted(_) => "accepted",
             Self::Duplicate(_) => "duplicate",
             Self::Invalid => "invalid",
-            Self::NotReady => "not_ready",
+            Self::NotReady => "notReady",
             Self::Busy => "busy",
         }
     }
@@ -171,6 +174,117 @@ impl CommandStreamService {
             can_write: self.0.access.can_write(user_id, stream_id),
             kind,
         })
+    }
+
+    /// The state of a stream as a `Sync` message, built from storage: the newest stored snapshot, the stored
+    /// commands after it and the Redis commands above the stored head, contiguous by version. Any instance
+    /// can answer it. A Redis that is down or of another history only leaves the Redis part out.
+    #[instrument(name = "stream snapshot", level = "debug", skip(self), fields(stream.id = %stream_id))]
+    pub async fn read_snapshot(
+        &self,
+        user_id: Uuid,
+        stream_id: &StreamId,
+    ) -> Result<StreamMessage, CommandStreamError> {
+        let result = self.build_snapshot(user_id, stream_id).await;
+        let outcome = match &result {
+            Ok(_) => "ok",
+            Err(CommandStreamError::StreamNotFound) => "not_found",
+            Err(CommandStreamError::Forbidden) => "forbidden",
+            Err(_) => "error",
+        };
+        command_stream_metrics()
+            .snapshot_reads
+            .add(1, &[KeyValue::new("outcome", outcome)]);
+        result
+    }
+
+    async fn build_snapshot(&self, user_id: Uuid, stream_id: &StreamId) -> Result<StreamMessage, CommandStreamError> {
+        let stores = &self.0.stores;
+        if !self.0.access.can_read(user_id, stream_id) {
+            return Err(CommandStreamError::Forbidden);
+        }
+        let head = stores
+            .log
+            .head(stream_id)
+            .await?
+            .ok_or(CommandStreamError::StreamNotFound)?;
+        let snapshot = stores.log.latest_snapshot(stream_id, head.version).await?;
+
+        let mut commands = Vec::new();
+        let mut version = snapshot.as_ref().map_or(0, |snapshot| snapshot.version);
+        while version < head.version {
+            let batch = stores.log.commands_after(stream_id, version, PERSIST_BATCH).await?;
+            let Some(last) = batch.last().map(|command| command.version) else {
+                return Err(CommandStreamError::NotReady);
+            };
+            commands.extend(
+                batch
+                    .into_iter()
+                    .filter(|command| command.version <= head.version)
+                    .map(|command| StreamCommand {
+                        version: command.version,
+                        command_id: command.command_id,
+                        user_id: command.user_id,
+                        data: Arc::from(command.data.as_str()),
+                    }),
+            );
+            version = last;
+        }
+
+        let mut tip = head.version;
+        loop {
+            let (meta, entries) = match stores.redis.read_after(stream_id, tip, PERSIST_BATCH).await {
+                Ok(read) => read,
+                Err(err) => {
+                    tracing::warn!("[{stream_id}] Snapshot without the Redis commands: {err:#?}");
+                    break;
+                }
+            };
+            if meta.is_none_or(|meta| meta.generation != head.generation) {
+                break;
+            }
+            let full = entries.len() as i64 == PERSIST_BATCH;
+            for entry in entries {
+                if entry.version != tip + 1 {
+                    tracing::warn!(
+                        "[{stream_id}] The Redis commands are not contiguous at {}",
+                        entry.version
+                    );
+                    return Ok(self.sync_message(stream_id, &head, snapshot, commands));
+                }
+                tip = entry.version;
+                commands.push(StreamCommand {
+                    version: entry.version,
+                    command_id: entry.command_id,
+                    user_id: entry.user_id,
+                    data: Arc::from(entry.data.as_str()),
+                });
+            }
+            if !full {
+                break;
+            }
+        }
+        Ok(self.sync_message(stream_id, &head, snapshot, commands))
+    }
+
+    fn sync_message(
+        &self,
+        stream_id: &StreamId,
+        head: &StreamHead,
+        snapshot: Option<StoredSnapshot>,
+        commands: Vec<StreamCommand>,
+    ) -> StreamMessage {
+        StreamMessage::Sync {
+            stream_id: stream_id.clone(),
+            generation: head.generation,
+            snapshot_every: self.0.stores.settings.for_kind(&head.kind).snapshot_every,
+            snapshot: snapshot.map(|snapshot| StreamSnapshot {
+                version: snapshot.version,
+                hash: snapshot.hash,
+                data: snapshot.data.into(),
+            }),
+            commands: commands.into(),
+        }
     }
 
     /// Orders a command of an opened stream. The stored text is the canonical form of the command.

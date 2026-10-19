@@ -13,7 +13,6 @@ pub struct KindSettings {
 
 impl KindSettings {
     /// Whether a snapshot is taken (and a checkpoint pushed) at the version.
-    #[allow(dead_code)] // used by the stream worker
     pub fn is_snapshot_version(&self, version: i64) -> bool {
         version > 0 && version % self.snapshot_every == 0
     }
@@ -21,9 +20,7 @@ impl KindSettings {
 
 /// Normalized command stream configuration.
 #[derive(Clone, Debug)]
-#[allow(dead_code)] // read by the stream service and worker
 pub struct CommandStreamSettings {
-    pub enabled: bool,
     defaults: KindSettings,
     kinds: HashMap<String, KindSettings>,
     /// Unpersisted commands per stream before writes are refused.
@@ -72,7 +69,6 @@ impl CommandStreamSettings {
             .collect::<Result<HashMap<_, _>, AnyError>>()?;
 
         Ok(Self {
-            enabled: config.enabled,
             defaults,
             kinds,
             redis_max_unpersisted: config.redis_max_unpersisted.max(1),
@@ -87,7 +83,6 @@ impl CommandStreamSettings {
     }
 
     /// The retention of a kind: its own settings over the defaults.
-    #[allow(dead_code)] // used by the stream service and worker
     pub fn for_kind(&self, kind: &str) -> KindSettings {
         self.kinds.get(kind).copied().unwrap_or(self.defaults)
     }

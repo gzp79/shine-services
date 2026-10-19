@@ -91,7 +91,6 @@ pub enum HubMessage {
     Hub(HubEvent),
     Chat(ChatBatch),
     /// Command stream egress to one connection.
-    #[allow(dead_code)] // built by the command stream service (S6)
     Stream(StreamMessage),
     /// Command stream subscription change, for internal subscribers.
     StreamEvent(StreamEvent),

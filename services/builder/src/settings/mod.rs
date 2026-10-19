@@ -21,6 +21,5 @@ impl WsSettings {
 
 pub struct BuilderSettings {
     pub ws: WsSettings,
-    #[allow(dead_code)] // read by the stream service and worker
     pub command_stream: CommandStreamSettings,
 }

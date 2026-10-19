@@ -135,6 +135,15 @@ struct Client {
 impl Client {
     /// Opens a socket and waits until the hub has registered it.
     async fn open(test: &mut TestHub, chat: &ChatService, user_id: Uuid) -> Self {
+        Self::open_with(test, chat, user_id, None).await
+    }
+
+    async fn open_with(
+        test: &mut TestHub,
+        chat: &ChatService,
+        user_id: Uuid,
+        streams: Option<CommandStreamService>,
+    ) -> Self {
         let (to_server, server_rx) = socket::unbounded();
         let (server_tx, from_server) = socket::unbounded();
         let server = tokio::spawn(serve_socket(
@@ -144,6 +153,7 @@ impl Client {
             key(),
             test.hub.clone(),
             chat.clone(),
+            streams,
             SpanContext::empty_context(),
         ));
         let seen = wait_event(
@@ -266,6 +276,7 @@ async fn a_forced_drop_and_a_shutdown_close_the_sockets_with_their_reason() {
         key(),
         test.hub.clone(),
         chat.clone(),
+        None,
         SpanContext::empty_context(),
     )
     .await;
@@ -335,4 +346,287 @@ async fn client_chat_is_appended_and_delivered_back() {
     assert_eq!(client.finished().await, [WsMessage::Close(None)]);
     let seen = barrier(&test.hub, &mut test.events).await;
     assert_eq!(drops(&seen), dropped(&[]));
+}
+
+// --- Streams on the socket ----------------------------------------------------------------------
+
+use crate::services::command_stream::{
+    test_utils::{add, fast_cadence, setup_with, unique_id, Test},
+    AllowAll,
+};
+use serde_json::{json, Value};
+use shine_game::replay::protocol::ClientFrame;
+use shine_infra::db::command_log::StreamId;
+use std::sync::Arc;
+
+async fn stream_hub() -> Option<(TestHub, ChatService, Test)> {
+    let streams = setup_with(Arc::new(AllowAll), |config| {
+        fast_cadence(config);
+        config.unload_grace_seconds = 60;
+    })
+    .await?;
+    let test = create_test_hub(TestHubOptions {
+        command_streams: Some(streams.service.clone()),
+        ..Default::default()
+    })
+    .await?;
+    let chat_db = RedisChatCommentsDb::new(&test.redis, 200, 3600).await.unwrap();
+    let chat = ChatService::with_room(chat_db, test.chat_room.clone());
+    Some((test, chat, streams))
+}
+
+fn json_of(frame: &WsMessage) -> Value {
+    let WsMessage::Text(text) = frame else {
+        panic!("expected a text frame, got {frame:?}");
+    };
+    serde_json::from_str(text.as_str()).unwrap()
+}
+
+impl Client {
+    /// The next stream frame that carries state or commands, skipping the others.
+    async fn next_frame_of_stream(&mut self) -> Value {
+        loop {
+            let frame = json_of(&self.next_frame().await);
+            if matches!(frame["type"].as_str(), Some("streamSync" | "streamCommands")) {
+                return frame;
+            }
+        }
+    }
+
+    /// The next frame of the given type, skipping the others.
+    async fn next_of(&mut self, ty: &str) -> Value {
+        loop {
+            let frame = json_of(&self.next_frame().await);
+            if frame["type"] == ty {
+                return frame;
+            }
+        }
+    }
+
+    fn subscribe(&self, stream_id: &StreamId, kind: &str, resume: Option<(i64, i64)>) {
+        let mut frame = json!({ "type": "streamSubscribe", "streamId": stream_id.as_str(), "kind": kind });
+        if let Some((generation, version)) = resume {
+            frame["resume"] = json!({ "generation": generation, "version": version });
+        }
+        self.send(&frame.to_string());
+    }
+
+    fn write(&self, stream_id: &StreamId, command_id: Uuid, text: &str) {
+        self.send(
+            &json!({
+                "type": "streamCommand", "streamId": stream_id.as_str(), "commandId": command_id, "command": add(text)
+            })
+            .to_string(),
+        );
+    }
+}
+
+fn versions(frame: &Value) -> Vec<i64> {
+    frame["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|command| command["version"].as_i64().unwrap())
+        .collect()
+}
+
+#[test]
+async fn a_resume_frame_is_parsed() {
+    let frame =
+        r#"{"type":"streamSubscribe","streamId":"chat-global","kind":"chat","resume":{"generation":2,"version":7}}"#;
+    let Some(Incoming::Stream(ClientFrame::StreamSubscribe { resume, .. })) = Incoming::parse(frame) else {
+        panic!("not a subscribe");
+    };
+    assert_eq!(resume.map(|r| (r.generation, r.version)), Some((2, 7)));
+    assert!(matches!(
+        Incoming::parse(r#"{"type":"chat","text":"hi"}"#),
+        Some(Incoming::Chat(_))
+    ));
+    assert!(Incoming::parse(r#"{"type":"nonsense"}"#).is_none());
+}
+
+#[test(serial = "hub-service")]
+async fn a_subscriber_gets_a_sync_and_sees_its_own_command() {
+    let Some((mut test, chat, streams)) = stream_hub().await else {
+        return;
+    };
+    let (user, stream_id) = (Uuid::new_v4(), unique_id());
+    let mut client = Client::open_with(&mut test, &chat, user, Some(streams.service.clone())).await;
+
+    client.subscribe(&stream_id, "chat", None);
+    let sync = client.next_of("streamSync").await;
+    assert_eq!(sync["streamId"], stream_id.as_str());
+    assert_eq!(sync["snapshot"], Value::Null);
+    assert_eq!(sync["snapshotEvery"], 5);
+
+    let command_id = Uuid::new_v4();
+    client.write(&stream_id, command_id, "hello");
+    let commands = client.next_of("streamCommands").await;
+    assert_eq!(versions(&commands), [1]);
+    assert_eq!(commands["commands"][0]["commandId"], command_id.to_string());
+    assert_eq!(commands["commands"][0]["userId"], user.to_string());
+    assert_eq!(commands["commands"][0]["command"], r#"{"type":"add","text":"hello"}"#);
+
+    // The same command id again is refused, not applied twice.
+    client.write(&stream_id, command_id, "hello");
+    let nack = client.next_of("streamNack").await;
+    assert_eq!(nack["reason"], "duplicate");
+    assert_eq!(nack["commandId"], command_id.to_string());
+
+    client.leave();
+    client.finished().await;
+}
+
+#[test(serial = "hub-service")]
+async fn a_command_for_an_unsubscribed_stream_gets_not_subscribed() {
+    let Some((mut test, chat, streams)) = stream_hub().await else {
+        return;
+    };
+    let (user, stream_id) = (Uuid::new_v4(), unique_id());
+    let mut client = Client::open_with(&mut test, &chat, user, Some(streams.service.clone())).await;
+
+    client.write(&stream_id, Uuid::new_v4(), "nobody listens");
+    assert_eq!(client.next_of("streamNack").await["reason"], "notSubscribed");
+
+    client.subscribe(&stream_id, "chat", None);
+    client.next_of("streamSync").await;
+    client.send(&json!({ "type": "streamUnsubscribe", "streamId": stream_id.as_str() }).to_string());
+    client.write(&stream_id, Uuid::new_v4(), "after the unsubscribe");
+    assert_eq!(client.next_of("streamNack").await["reason"], "notSubscribed");
+}
+
+#[test(serial = "hub-service")]
+async fn invalid_and_oversized_commands_get_invalid() {
+    let Some((mut test, chat, streams)) = stream_hub().await else {
+        return;
+    };
+    let (user, stream_id) = (Uuid::new_v4(), unique_id());
+    let mut client = Client::open_with(&mut test, &chat, user, Some(streams.service.clone())).await;
+    client.subscribe(&stream_id, "chat", None);
+    client.next_of("streamSync").await;
+
+    client.write(&stream_id, Uuid::new_v4(), &"x".repeat(300));
+    assert_eq!(client.next_of("streamNack").await["reason"], "invalid");
+    client.send(
+        &json!({ "type": "streamCommand", "streamId": stream_id.as_str(), "commandId": Uuid::new_v4(), "command": "nope" })
+            .to_string(),
+    );
+    assert_eq!(client.next_of("streamNack").await["reason"], "invalid");
+}
+
+#[test(serial = "hub-service")]
+async fn an_unknown_kind_gets_subscribe_failed_unknown_kind() {
+    let Some((mut test, chat, streams)) = stream_hub().await else {
+        return;
+    };
+    let (user, stream_id) = (Uuid::new_v4(), unique_id());
+    let mut client = Client::open_with(&mut test, &chat, user, Some(streams.service.clone())).await;
+
+    client.subscribe(&stream_id, "nonsense", None);
+    let failed = client.next_of("streamSubscribeFailed").await;
+    assert_eq!(failed["streamId"], stream_id.as_str());
+    assert_eq!(failed["reason"], "unknownKind");
+
+    // A stream keeps the kind it was created with.
+    client.subscribe(&stream_id, "chat", None);
+    client.next_of("streamSync").await;
+    client.subscribe(&stream_id, "counter", None);
+    assert_eq!(client.next_of("streamSubscribeFailed").await["reason"], "kindMismatch");
+}
+
+#[test(serial = "hub-service")]
+async fn without_command_streams_a_subscribe_is_unavailable() {
+    let Some((mut test, chat)) = socket_hub().await else {
+        return;
+    };
+    let mut client = Client::open(&mut test, &chat, Uuid::new_v4()).await;
+    client.subscribe(&unique_id(), "chat", None);
+    assert_eq!(client.next_of("streamSubscribeFailed").await["reason"], "unavailable");
+}
+
+/// A stream with a first subscriber and `count` commands written, so its worker is resident.
+async fn resident_stream(
+    test: &mut TestHub,
+    chat: &ChatService,
+    streams: CommandStreamService,
+    count: i64,
+) -> (StreamId, Client, i64) {
+    let (user, stream_id) = (Uuid::new_v4(), unique_id());
+    let mut first = Client::open_with(test, chat, user, Some(streams)).await;
+    first.subscribe(&stream_id, "chat", None);
+    let generation = first.next_of("streamSync").await["generation"].as_i64().unwrap();
+    for i in 1..=count {
+        first.write(&stream_id, Uuid::new_v4(), &format!("m{i}"));
+    }
+    let mut seen = 0;
+    while seen < count {
+        seen += versions(&first.next_of("streamCommands").await).len() as i64;
+    }
+    (stream_id, first, generation)
+}
+
+#[test(serial = "hub-service")]
+async fn resume_inside_the_window_sends_only_the_tail() {
+    let Some((mut test, chat, streams)) = stream_hub().await else {
+        return;
+    };
+    let (stream_id, _first, generation) = resident_stream(&mut test, &chat, streams.service.clone(), 3).await;
+
+    let mut second = Client::open_with(&mut test, &chat, Uuid::new_v4(), Some(streams.service.clone())).await;
+    second.subscribe(&stream_id, "chat", Some((generation, 2)));
+    let frame = second.next_frame_of_stream().await;
+    assert_eq!(frame["type"], "streamCommands");
+    assert_eq!(versions(&frame), [3]);
+
+    // Resuming at the head sends nothing: the next frame is the next command.
+    second.subscribe(&stream_id, "chat", Some((generation, 3)));
+    second.write(&stream_id, Uuid::new_v4(), "m4");
+    let frame = second.next_frame_of_stream().await;
+    assert_eq!(frame["type"], "streamCommands");
+    assert_eq!(versions(&frame), [4]);
+}
+
+#[test(serial = "hub-service")]
+async fn resume_with_a_changed_generation_sends_a_full_sync() {
+    let Some((mut test, chat, streams)) = stream_hub().await else {
+        return;
+    };
+    let (stream_id, _first, generation) = resident_stream(&mut test, &chat, streams.service.clone(), 3).await;
+
+    let mut second = Client::open_with(&mut test, &chat, Uuid::new_v4(), Some(streams.service.clone())).await;
+    second.subscribe(&stream_id, "chat", Some((generation + 1, 2)));
+    let sync = second.next_frame_of_stream().await;
+    assert_eq!(sync["type"], "streamSync");
+    assert_eq!(versions(&sync), [1, 2, 3]);
+}
+
+#[test(serial = "hub-service")]
+async fn resume_above_the_head_sends_a_full_sync() {
+    let Some((mut test, chat, streams)) = stream_hub().await else {
+        return;
+    };
+    let (stream_id, _first, generation) = resident_stream(&mut test, &chat, streams.service.clone(), 3).await;
+
+    let mut second = Client::open_with(&mut test, &chat, Uuid::new_v4(), Some(streams.service.clone())).await;
+    second.subscribe(&stream_id, "chat", Some((generation, 99)));
+    let sync = second.next_frame_of_stream().await;
+    assert_eq!(sync["type"], "streamSync");
+    assert_eq!(versions(&sync), [1, 2, 3]);
+}
+
+#[test(serial = "hub-service")]
+async fn resume_older_than_the_base_version_sends_a_full_sync() {
+    let Some((mut test, chat, streams)) = stream_hub().await else {
+        return;
+    };
+    // Six commands with a snapshot every five: the base of the worker is version 5 once the checkpoint is out.
+    let (stream_id, mut first, generation) = resident_stream(&mut test, &chat, streams.service.clone(), 6).await;
+    assert_eq!(first.next_of("streamCheckpoint").await["version"], 5);
+
+    let mut second = Client::open_with(&mut test, &chat, Uuid::new_v4(), Some(streams.service.clone())).await;
+    second.subscribe(&stream_id, "chat", Some((generation, 2)));
+    let sync = second.next_frame_of_stream().await;
+    assert_eq!(sync["type"], "streamSync");
+    assert_eq!(sync["snapshot"]["version"], 5);
+    assert_eq!(versions(&sync), [6]);
 }

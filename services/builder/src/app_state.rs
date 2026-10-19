@@ -120,7 +120,6 @@ impl AppState {
         &self.0.chat_service
     }
 
-    #[allow(dead_code)] // used by the socket routes (S7)
     pub fn command_stream_service(&self) -> Option<&CommandStreamService> {
         self.0.command_stream_service.as_ref()
     }

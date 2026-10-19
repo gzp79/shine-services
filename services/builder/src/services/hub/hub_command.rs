@@ -26,7 +26,6 @@ pub enum ControlCommand {
     HubRegistryChanged {
         user_id: Uuid,
     },
-    #[allow(dead_code)] // built by the command stream service (S6)
     SubscribeStream {
         user_id: Uuid,
         connection_id: Uuid,
@@ -34,7 +33,6 @@ pub enum ControlCommand {
         kind: &'static str,
         resume: Option<StreamResume>,
     },
-    #[allow(dead_code)] // built by the command stream service (S6)
     UnsubscribeStream {
         user_id: Uuid,
         connection_id: Uuid,

@@ -168,3 +168,9 @@ pub async fn redis_versions(test: &Test, stream_id: &StreamId) -> Vec<i64> {
     let (_, entries) = test.redis.read_after(stream_id, 0, 1000).await.unwrap();
     entries.iter().map(|e| e.version).collect()
 }
+
+/// Short cadences: a worker step every 20 ms, commands persisted right away.
+pub fn fast_cadence(config: &mut CommandStreamConfig) {
+    config.sync_interval_ms = 20;
+    config.persist_delay_ms = 1;
+}

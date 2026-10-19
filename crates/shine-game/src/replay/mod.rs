@@ -3,6 +3,7 @@
 mod chat;
 mod codec;
 mod envelope;
+pub mod protocol;
 mod replica;
 mod stable_hash;
 mod state;

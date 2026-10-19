@@ -5,7 +5,7 @@ use crate::{
     models::messages::StreamMessage,
     repositories::command_stream::redis::RedisStreamMeta,
     services::command_stream::{
-        test_utils::{add, redis_versions, setup, setup_on, setup_with, stored, unique_id, Test},
+        test_utils::{add, redis_versions, setup_on, setup_with, stored, unique_id, Test},
         AllowAll, IngestOutcome, StreamCore, StreamEgress, WorkerCommand, WorkerExit, WorkerHandle,
     },
     settings::KindSettings,

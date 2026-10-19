@@ -31,7 +31,6 @@ pub struct StreamResume {
 /// Egress to one connection about one stream. Sent directly, never broadcast; the command lists are
 /// shared by every subscriber of a step.
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[allow(dead_code)] // built by the command stream service (S6)
 pub enum StreamMessage {
     /// The state to start from (a snapshot, if any) and the first commands after it; more follow as
     /// `Commands`. It replaces the client's state of the stream.

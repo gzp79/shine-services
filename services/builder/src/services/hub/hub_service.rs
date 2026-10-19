@@ -161,7 +161,6 @@ impl HubService {
     }
 
     /// Requests a stream subscription for a connection; ignored if the connection is gone by then.
-    #[allow(dead_code)] // called by the socket routes (S7)
     pub fn request_subscribe_stream(
         &self,
         user_id: Uuid,
@@ -180,7 +179,6 @@ impl HubService {
     }
 
     /// Ends a stream subscription of a connection; the connection itself stays.
-    #[allow(dead_code)] // called by the socket routes (S7)
     pub fn request_unsubscribe_stream(
         &self,
         user_id: Uuid,

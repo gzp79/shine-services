@@ -8,6 +8,8 @@ pub enum CommandStreamError {
     StreamNotFound,
     #[error("Stream is not ready in Redis")]
     NotReady,
+    #[error("The user may not read the stream")]
+    Forbidden,
     #[error("Internal command stream error")]
     Internal {
         #[source]

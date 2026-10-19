@@ -9,7 +9,7 @@ mod settings;
 use self::{app_config::AppConfig, app_state::AppState, services::HubStatus};
 use anyhow::Error as AnyError;
 use repositories::{create_postgres_pool, create_redis_pool};
-use routes::ws::ws_routes;
+use routes::{command_stream::stream_routes, ws::ws_routes};
 use shine_infra::{
     db::postgres::PostgresPoolStatus,
     web::{AppBuildContext, FeatureConfig, WebAppConfig, WebApplication},
@@ -50,7 +50,10 @@ impl WebApplication for Application {
             }
         });
 
-        *router = router.clone().nest(&format!("/{}", Self::AppConfig::NAME), ws_routes());
+        *router = router.clone().nest(
+            &format!("/{}", Self::AppConfig::NAME),
+            ws_routes().merge(stream_routes()),
+        );
 
         Ok(state)
     }

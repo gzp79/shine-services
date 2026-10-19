@@ -3,5 +3,6 @@
 mod chat;
 mod common;
 mod hash;
+mod protocol;
 mod replica;
 mod snapshot;

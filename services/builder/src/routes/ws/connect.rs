@@ -1,8 +1,11 @@
 use crate::{
     app_state::AppState,
     models::messages::{DisconnectReason, HubEvent, HubMessage, TopicKey},
-    routes::ws::message::{ChatWireComment, WSMessageRequest, WSMessageResponse},
-    services::{hub_metrics, ChatService, HubService},
+    routes::ws::{
+        message::{stream_frame, ChatWireComment, Incoming, WSMessageOut, WSMessageResponse},
+        stream_socket::StreamSession,
+    },
+    services::{hub_metrics, ChatService, CommandStreamService, HubService},
 };
 use axum::{
     extract::{
@@ -91,14 +94,17 @@ pub async fn connect(
 
     let hub_service = state.hub_service().clone();
     let chat_service = state.chat_service().clone();
+    let command_streams = state.command_stream_service().cloned();
     let span_context = current_span_context();
-    Ok(ws.on_upgrade(move |socket| handle_socket(socket, user, hub_service, chat_service, span_context)))
+    Ok(ws.on_upgrade(move |socket| {
+        handle_socket(socket, user, hub_service, chat_service, command_streams, span_context)
+    }))
 }
 
-fn event_to_wire_message(message: HubMessage) -> Option<WSMessageResponse> {
+fn event_to_wire_message(message: HubMessage) -> Option<WSMessageOut> {
     match message {
-        // Stream frames reach the client once the socket speaks the stream protocol.
-        HubMessage::Hub(_) | HubMessage::Stream(_) | HubMessage::StreamEvent(_) => None,
+        HubMessage::Hub(_) | HubMessage::StreamEvent(_) => None,
+        HubMessage::Stream(message) => Some(WSMessageOut::Stream(stream_frame(message))),
         HubMessage::Chat(batch) => {
             let messages = batch
                 .comments
@@ -109,7 +115,7 @@ fn event_to_wire_message(message: HubMessage) -> Option<WSMessageResponse> {
                     text: comment.text,
                 })
                 .collect();
-            Some(WSMessageResponse::Chat { messages })
+            Some(WSMessageOut::Chat(WSMessageResponse::Chat { messages }))
         }
     }
 }
@@ -119,6 +125,7 @@ async fn handle_socket(
     user: CurrentUser,
     hub_service: HubService,
     chat_service: ChatService,
+    command_streams: Option<CommandStreamService>,
     span_context: SpanContext,
 ) {
     let (ws_sender, ws_receiver) = socket.split();
@@ -129,6 +136,7 @@ async fn handle_socket(
         user.key,
         hub_service,
         chat_service,
+        command_streams,
         span_context,
     )
     .await
@@ -142,6 +150,7 @@ async fn serve_socket<S, R, E>(
     session_key: SessionKey,
     hub_service: HubService,
     chat_service: ChatService,
+    command_streams: Option<CommandStreamService>,
     span_context: SpanContext,
 ) where
     S: Sink<WsMessage> + Unpin + Send + 'static,
@@ -150,6 +159,7 @@ async fn serve_socket<S, R, E>(
     E: Send + 'static,
 {
     let (tx, rx) = mpsc::channel::<HubMessage>(WS_CLIENT_CHANNEL_CAPACITY);
+    let replies = tx.downgrade();
 
     let Some(connection_id) = open_connection(span_context, &hub_service, current_user_id, session_key, tx) else {
         // There is no live connection to keep, so close the socket without emitting a disconnect for it.
@@ -160,14 +170,32 @@ async fn serve_socket<S, R, E>(
     };
     tracing::info!("[{current_user_id}] [{connection_id}] Connected to the hub");
 
+    let mut streams = StreamSession::new(
+        current_user_id,
+        connection_id,
+        hub_service.clone(),
+        command_streams,
+        replies,
+    );
     let mut recv_task = {
         tokio::spawn(async move {
             while let Some(Ok(message)) = ws_receiver.next().await {
                 tracing::debug!("[{current_user_id}] WsMessage received");
                 if let WsMessage::Text(text) = message {
-                    let msg = match serde_json::from_str::<WSMessageRequest>(&text) {
-                        Ok(WSMessageRequest::Chat { text }) => Some(text),
-                        Err(_) => {
+                    let msg = match Incoming::parse(&text) {
+                        Some(Incoming::Chat(text)) => Some(text),
+                        Some(Incoming::Stream(frame)) => {
+                            let span = info_span!(
+                                parent: None,
+                                "ws message",
+                                enduser.id = %current_user_id,
+                                ws.connection_id = %connection_id,
+                                ws.message.kind = "stream"
+                            );
+                            streams.handle(frame).instrument(span).await;
+                            None
+                        }
+                        None => {
                             hub_metrics()
                                 .ws_messages_received
                                 .add(1, &[label("kind", "unknown"), label("outcome", "invalid")]);
