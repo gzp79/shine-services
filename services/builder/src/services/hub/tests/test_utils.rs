@@ -323,12 +323,22 @@ pub fn dropped(entries: &[(DisconnectReason, u64)]) -> BTreeMap<DisconnectReason
 }
 
 pub async fn find_registry_connection(registry: &RedisHubConnectionDb, user_id: Uuid) -> Option<Uuid> {
-    let mut context = registry.create_context().await.unwrap();
-    context
-        .find_connection_by_user(user_id)
-        .await
-        .unwrap()
-        .map(|connection| connection.connection_id)
+    // `registry` keeps its own pool, independent of the hub under test. A connection idle through
+    // a proxy outage can fail once on its first reuse after recovery (RDS-3 trades the double round
+    // trip of a PING-every-checkout for exactly this one-shot failure); retry instead of asserting
+    // a guarantee the pool no longer makes.
+    let mut last_err = None;
+    for attempt in 0..5 {
+        if attempt > 0 {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        let mut context = registry.create_context().await.unwrap();
+        match context.find_connection_by_user(user_id).await {
+            Ok(found) => return found.map(|connection| connection.connection_id),
+            Err(err) => last_err = Some(err),
+        }
+    }
+    panic!("find_connection_by_user kept failing: {last_err:?}");
 }
 
 /// The hub's local view, its registry and the events all agree on the active connection of each user.
@@ -373,8 +383,20 @@ pub async fn seed_session(redis: &RedisConnectionPool, user_id: Uuid, session_ke
 }
 
 pub async fn delete_key(redis: &RedisConnectionPool, key: &str) {
-    let mut conn = redis.get().await.unwrap();
-    let _: () = redis::cmd("DEL").arg(key).query_async(&mut *conn).await.unwrap();
+    // See the comment on `find_registry_connection`: a connection idle through a proxy outage can
+    // fail once on its first reuse after recovery.
+    let mut last_err = None;
+    for attempt in 0..5 {
+        if attempt > 0 {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        let mut conn = redis.get().await.unwrap();
+        match redis::cmd("DEL").arg(key).query_async::<()>(&mut *conn).await {
+            Ok(()) => return,
+            Err(err) => last_err = Some(err),
+        }
+    }
+    panic!("DEL kept failing: {last_err:?}");
 }
 
 /// Requests a connection with a given session key, on the Stream topic.

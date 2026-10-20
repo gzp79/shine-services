@@ -363,7 +363,7 @@ impl HubService {
                     // failed (e.g. a lost response). Then the registry already names the new
                     // connection, and keeping the old one would only get it dropped as inactive.
                     if !self.is_registry_connection(user_id, connection_id).await {
-                        tracing::error!("[{user_id}] Failed to create hub connection: {err:#?}");
+                        tracing::warn!("[{user_id}] Failed to create hub connection: {err:#?}");
                         return true;
                     }
                     tracing::warn!("[{user_id}] Hub connection registered despite an error: {err:#?}");
@@ -424,7 +424,7 @@ impl HubService {
                 if let Err(err) = self.remove_registry_connection(user_id, removed_connection_id).await {
                     // Best-effort: publish UserDisconnected regardless so the socket and trackers
                     // never wedge, and let the registry TTL clean up the stale row.
-                    tracing::error!("[{user_id}] Failed to remove hub connection (relying on TTL cleanup): {err:#?}");
+                    tracing::warn!("[{user_id}] Failed to remove hub connection (relying on TTL cleanup): {err:#?}");
                 }
 
                 self.publish(HubEvent::UserDisconnected {
@@ -442,7 +442,7 @@ impl HubService {
                 if let Some(removed) = self.inner.connections.remove_connection_by_id(connection_id).await {
                     let (user_id, connection_id) = self.record_drop(removed, reason);
                     if let Err(err) = self.remove_registry_connection(user_id, connection_id).await {
-                        tracing::error!("[{user_id}] Failed to remove dropped connection from registry (TTL will clean up): {err:#?}");
+                        tracing::warn!("[{user_id}] Failed to remove dropped connection from registry (TTL will clean up): {err:#?}");
                     }
                     self.publish(HubEvent::UserDisconnected { user_id, connection_id, reason })
                         .await;
@@ -541,7 +541,7 @@ impl HubService {
         let is_active = match self.heartbeat_registry_connection(user_id, connection_id).await {
             Ok(is_active) => is_active,
             Err(err) => {
-                tracing::error!("[{user_id}] Failed to heartbeat hub connection: {err:#?}");
+                tracing::warn!("[{user_id}] Failed to heartbeat hub connection: {err:#?}");
                 return;
             }
         };
@@ -613,7 +613,7 @@ impl HubService {
                     if let Some(removed) = self.inner.connections.remove_connection_by_id(connection_id).await {
                         let (user_id, connection_id) = self.record_drop(removed, reason);
                         if let Err(err) = self.remove_registry_connection(user_id, connection_id).await {
-                            tracing::error!(
+                            tracing::warn!(
                                 "[{user_id}] Failed to remove dead connection from registry (TTL will clean up): {err:#?}"
                             );
                         }

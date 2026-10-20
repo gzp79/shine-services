@@ -9,9 +9,12 @@ use crate::{
     },
 };
 use shine_game::replay::{decode_snapshot, ReplayState};
-use shine_infra::db::{
-    command_log::{CommandLogError, SnapshotOutcome, StreamId},
-    redis::RedisError,
+use shine_infra::{
+    db::{
+        command_log::{CommandLogError, SnapshotOutcome, StreamId},
+        redis::RedisError,
+    },
+    telemetry::{flap_trace_failed, flap_trace_recovered, FlappingTrace},
 };
 use std::{collections::HashSet, future::Future, pin::Pin, sync::Arc, time::Duration};
 use tokio::{
@@ -125,6 +128,7 @@ pub struct StreamWorker<S: ReplayState> {
     last_step: Instant,
     /// A stored command could not be decoded.
     unavailable: bool,
+    step_health: FlappingTrace,
 }
 
 impl<S: ReplayState> StreamWorker<S> {
@@ -149,6 +153,7 @@ impl<S: ReplayState> StreamWorker<S> {
             persist_due: None,
             last_step: Instant::now(),
             unavailable: false,
+            step_health: FlappingTrace::default(),
         };
         (WorkerHandle { tx, wake }, Box::pin(worker.run(rx)))
     }
@@ -207,10 +212,13 @@ impl<S: ReplayState> StreamWorker<S> {
         let span = tracing::debug_span!("stream step", stream.id = %self.stream_id);
         match self.try_step(persist).instrument(span).await {
             // Reset only after a full step, so a stream that reloads right after each load keeps backing off.
-            Ok(()) if !self.needs_load => self.load_backoff = RELOAD_BACKOFF_MIN,
+            Ok(()) if !self.needs_load => {
+                self.load_backoff = RELOAD_BACKOFF_MIN;
+                flap_trace_recovered::warn!(self.step_health, "[{}] Stream step recovered", self.stream_id);
+            }
             Ok(()) => {}
             Err(StepError::Failed(err)) => {
-                tracing::warn!("[{}] Stream step failed: {err:#?}", self.stream_id);
+                flap_trace_failed::error!(self.step_health, "[{}] Stream step failed: {err:#?}", self.stream_id);
                 // Only a failed load is retried with backoff; a later failure keeps the loaded state.
                 if loading && self.needs_load {
                     self.schedule_load();

@@ -150,6 +150,37 @@ async fn mark_persisted_refuses_a_copy_that_disagrees() {
 }
 
 #[test]
+async fn missing_meta_fields_are_not_ready() {
+    // HYDRATE always writes all three fields; this only happens if meta is corrupted.
+    let Some(redis) = setup(100).await else { return };
+    let stream_id = unique_id();
+    let keys = redis.keys(&stream_id);
+    {
+        let mut client = redis.client().await.unwrap();
+        let _: () = redis::cmd("HSET")
+            .arg(&keys.meta)
+            .arg("generation")
+            .arg(1)
+            .query_async(&mut *client)
+            .await
+            .unwrap();
+    }
+
+    assert_eq!(
+        redis
+            .ingest(&stream_id, Uuid::new_v4(), Uuid::nil(), "{}")
+            .await
+            .unwrap(),
+        RedisIngest::NotReady
+    );
+    assert_eq!(
+        redis.mark_persisted(&stream_id, 1, 1, Uuid::new_v4(), 1).await.unwrap(),
+        MarkOutcome::Refused
+    );
+    assert!(!redis.retire_active(&stream_id).await.unwrap());
+}
+
+#[test]
 async fn hydrate_copies_tail_and_newer_generation_wins() {
     let Some(redis) = setup(3).await else { return };
     let stream_id = unique_id();

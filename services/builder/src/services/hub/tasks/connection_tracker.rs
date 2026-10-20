@@ -77,6 +77,28 @@ fn consumer_name<C: ConnectionConsumer>() -> &'static str {
     std::any::type_name::<C>().rsplit("::").next().unwrap_or_default()
 }
 
+/// Max lifecycle events drained per due tick, so a flood of connects/disconnects cannot stall a tick
+/// indefinitely either.
+const MAX_DRAIN_PER_TICK: usize = 1_024;
+
+/// Applies every already-queued lifecycle event, without waiting for more. A tick whose own work
+/// takes at least one interval would otherwise be due again the instant it returns — and under a
+/// biased select that keeps picking it over `subscription.recv()`, the connection view would never
+/// advance for as long as that keeps happening. Returns `true` on a shutdown event.
+fn drain_pending(subscription: &mut mpsc::UnboundedReceiver<HubMessage>, tracker: &mut ConnectionTracker) -> bool {
+    for _ in 0..MAX_DRAIN_PER_TICK {
+        match subscription.try_recv() {
+            Ok(message) => {
+                if tracker.apply(message) {
+                    return true;
+                }
+            }
+            Err(_) => break,
+        }
+    }
+    false
+}
+
 /// Runs a single tick and measures its duration, labelled by the consumer's type name.
 async fn run_tick<C: ConnectionConsumer>(consumer: &mut C, tracker: &ConnectionTracker) {
     let start = std::time::Instant::now();
@@ -119,6 +141,10 @@ pub async fn run_connection_loop<C: ConnectionConsumer>(
             // `on_tick` is ready at once, so steady wakes would otherwise starve the connection view.
             biased;
             _ = ticker.tick() => {
+                if drain_pending(&mut subscription, &mut tracker) {
+                    tracing::info!("{} loop stopped on hub shutdown", consumer_name::<C>());
+                    break;
+                }
                 run_tick(&mut consumer, &tracker).await;
             }
             message = subscription.recv() => match message {
@@ -135,6 +161,10 @@ pub async fn run_connection_loop<C: ConnectionConsumer>(
                 }
             },
             _ = woken => {
+                if drain_pending(&mut subscription, &mut tracker) {
+                    tracing::info!("{} loop stopped on hub shutdown", consumer_name::<C>());
+                    break;
+                }
                 run_tick(&mut consumer, &tracker).await;
             }
         }

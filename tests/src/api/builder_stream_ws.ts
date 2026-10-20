@@ -99,19 +99,31 @@ export class StreamSocket {
         if (options.sid !== undefined) {
             headers.Cookie = `sid=${options.sid}`;
         }
-        const ws = new WebSocket(wsConnectUrl(builderWSUrl), {
-            origin: options.origin,
-            headers
-        });
-        const socket = new StreamSocket(ws);
-        await new Promise<void>((resolve, reject) => {
-            ws.once('open', () => resolve());
-            ws.once('unexpected-response', (_req: unknown, res: IncomingMessage) =>
-                reject(new Error(`unexpected upgrade response: ${res.statusCode}`))
-            );
-            ws.once('error', (err: Error) => reject(err));
-        });
-        return socket;
+
+        // A 503 right after an outage test re-enabled its proxy can mean the session pool handed out
+        // a connection that died invisibly during the outage (RDS-3 trades a PING on every checkout
+        // for exactly this: a one-shot, self-healing failure on that connection's next use). Retry a
+        // few times, as a real client reconnecting with backoff would; any other rejection is final.
+        for (let attempt = 0; ; attempt++) {
+            const ws = new WebSocket(wsConnectUrl(builderWSUrl), {
+                origin: options.origin,
+                headers
+            });
+            try {
+                await new Promise<void>((resolve, reject) => {
+                    ws.once('open', () => resolve());
+                    ws.once('unexpected-response', (_req: unknown, res: IncomingMessage) =>
+                        reject(new Error(`unexpected upgrade response: ${res.statusCode}`))
+                    );
+                    ws.once('error', (err: Error) => reject(err));
+                });
+                return new StreamSocket(ws);
+            } catch (err) {
+                if (attempt >= 3 || !(err instanceof Error) || !err.message.endsWith('response: 503')) {
+                    throw err;
+                }
+            }
+        }
     }
 
     public subscribe(streamId: string, kind: string, resume?: Resume): void {

@@ -8,7 +8,7 @@ pub static INGEST: LazyLock<Script> = LazyLock::new(|| {
     Script::new(
         r#"
 local meta = redis.call('HMGET', KEYS[1], 'generation', 'version', 'persisted')
-if not meta[1] then return {'not_ready', 0} end
+if not meta[1] or not meta[2] or not meta[3] then return {'not_ready', 0} end
 local dup = redis.call('ZSCORE', KEYS[3], ARGV[2])
 if dup then return {'duplicate', tonumber(dup)} end
 local version = tonumber(meta[2])
@@ -69,6 +69,7 @@ pub static MARK_PERSISTED: LazyLock<Script> = LazyLock::new(|| {
         r#"
 local meta = redis.call('HMGET', KEYS[1], 'generation', 'version', 'persisted')
 if not meta[1] or meta[1] ~= ARGV[1] then return 0 end
+if not meta[2] or not meta[3] then return -1 end
 local version = tonumber(meta[2])
 local v = tonumber(ARGV[2])
 if v <= tonumber(meta[3]) then return 0 end
@@ -130,8 +131,11 @@ return redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', now_ms - tonumber(ARGV[1]), 
 pub static RETIRE_ACTIVE: LazyLock<Script> = LazyLock::new(|| {
     Script::new(
         r#"
-local meta = redis.call('HMGET', KEYS[2], 'version', 'persisted')
-if meta[1] and tonumber(meta[1]) > tonumber(meta[2]) then return 0 end
+local meta = redis.call('HMGET', KEYS[2], 'generation', 'version', 'persisted')
+-- Meta exists (the stream was hydrated) but is missing a field it should have: corrupted, so
+-- refuse rather than guess at whether anything is still unpersisted.
+if meta[1] and not meta[2] then return 0 end
+if meta[2] and (not meta[3] or tonumber(meta[2]) > tonumber(meta[3])) then return 0 end
 redis.call('ZREM', KEYS[1], ARGV[1])
 return 1
 "#,

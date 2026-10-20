@@ -99,10 +99,10 @@ Why this order:
 | PG-5 | A Postgres outage stalls every command-log call for the full pool timeout (30 s), not a fast failure | Med | C | Done | S | 1 |
 | RDS-1 | The pub/sub listener never checks its connection is alive | Med | G | Open | M | 5 |
 | RDS-2 | A failed first `listen` is permanent | Med | G | Open | S | 5 |
-| RDS-3 | The pool PINGs on every checkout | Low | C | Open | S | 1 |
+| RDS-3 | The pool PINGs on every checkout | Low | C | Done | S | 1 |
 | RDS-4 | The HYDRATE tail is bounded by count, not bytes | Low | D | Open | S | 8 |
 | RDS-5 | HYDRATE deletes before it writes | Low | A | Open | S | 2 |
-| RDS-6 | Scripts do not guard missing meta fields | Low | K | Open | S | 1 |
+| RDS-6 | Scripts do not guard missing meta fields | Low | K | Done | S | 1 |
 | RDS-7 | An unreadable log entry loops the worker or makes the sweep delete the copy | Low | A | Open | S | 2 |
 | RDS-8 | The generation of unpersisted entries is not checked | Low | A | Open | S | 2 |
 | RDS-9 | `to_meta` turns missing fields into zeros | Low | K | Open | S | 8 |
@@ -116,7 +116,7 @@ Why this order:
 | HUB-1 | Every socket gets every lifecycle event | High | F | Open | S | 5 |
 | HUB-2 | Serial registry round trips on the command loop, without a timeout | High | C | Open | M | 5 |
 | HUB-3 | An aborted registry transaction becomes an error | Low | F | Open | M | 5 |
-| HUB-4 | A long tick starves lifecycle events | Low | C | Open | S | 1 |
+| HUB-4 | A long tick starves lifecycle events | Low | C | Done | S | 1 |
 | HUB-5 | The command loop and the consumers are unsupervised | High | G | Open | M | 5 |
 | HUB-6 | `remove_connection_by_id` scans every connection | Low | F | Open | S | 5 |
 | HUB-7 | Every foreign registry notice becomes a command | Low | F | Open | S | 5 |
@@ -158,9 +158,9 @@ Why this order:
 | OPS-5 | Prod origins trust the dev site | Low | H | Confirm | S | 1 |
 | OPS-6 | TLS to Postgres and Redis is not enforced | Low | H | Open | S | 1 |
 | OPS-7 | The host allow-list trusts client headers | Low | H | Open | S | 6 |
-| OBS-1 | Registry per-event spans are `info` | Low | L | Open | S | 1 |
+| OBS-1 | Registry per-event spans are `info` | Low | L | Done | S | 1 |
 | OBS-2 | Metric and status gaps | Low | L | Open | S | 8 |
-| OBS-3 | Per-tick warn/error logs during outages | Low | L | Open | S | 1 |
+| OBS-3 | Per-tick warn/error logs during outages | Low | L | Done | S | 1 |
 | TST-1 … TST-8 | Test suite (see *Test plan*) | High … Low | T | Open | M | 0, then with each fix |
 
 ---
@@ -279,20 +279,21 @@ Each finding states where the defect is, what goes wrong, the fix, and the tests
   - explicit `timeout`/`pool_timeout` in the production connection string.
 - **Tests:** `batch_heartbeat_chunks_cover_the_edges` (255, 256 and 257 connections; replaces `lifecycle.rs:591`); `a_registry_operation_times_out_in_two_seconds` (toxiproxy).
 
-**HUB-4. A long tick starves lifecycle events.** `services/hub/tasks/connection_tracker.rs`.
+**HUB-4. A long tick starves lifecycle events.** `services/hub/tasks/connection_tracker.rs`. — **Done**
 - **Problem:** the tracker loop is `biased` towards its ticker with `MissedTickBehavior::Delay`, so a tick that lasts at least one interval is due again at once, and lifecycle events are never read. The session checker hits this during a Redis outage with more than 256 connections, or after any stall of 2 s or more with the test config. It heals after the outage.
-- **Fix:** apply pending lifecycle events (up to 1 024 per round) before a due tick.
-- **Tests:** `ticks_longer_than_the_interval_still_apply_lifecycle_events`.
+- **Fix:** `drain_pending` applies every already-queued lifecycle event (capped at 1 024) before running a due tick, on both the ticker and the wake branch of the select.
+- **Tests:** `ticks_longer_than_the_interval_still_apply_lifecycle_events` (a tick that always sleeps three times its own interval; written to fail first — it hung without the fix — then verified green after it).
 
 **HUB-13. Startup waits for the stream dispatcher's listener.** `HubService::new`, `services/hub/tasks/stream_dispatcher.rs`.
 - **Problem:** `StreamDispatcher::start` is awaited inside `HubService::new`, so a pool stall delays startup by up to 30 s.
 - **Fix:** start the listener in the background with the RDS-2 retry.
 - **Tests:** covered by RDS-2's tests.
 
-**RDS-3. The pool PINGs on every checkout.** `crates/shine-infra/src/db/redis/redis_connection.rs:163,264-268`.
+**RDS-3. The pool PINGs on every checkout.** `crates/shine-infra/src/db/redis/redis_connection.rs:163,264-268`. — **Done**
 - **Problem:** bb8's default `test_on_check_out = true` sends a PING on every `pool.get()`, which doubles the round trips of every ingest and read.
-- **Fix:** `test_on_check_out(false)` plus a shared broken flag (`Arc<AtomicBool>`) read by `has_broken`. The flag is set on a dropped connection or an unrecoverable error, not on a plain response timeout. Without it, dead connections stay pooled for 10-30 min, because redis 1.7.1 has no public `is_closed`.
-- **Tests:** `a_pool_checkout_sends_no_ping` (Redis `INFO commandstats`).
+- **Fix:** `test_on_check_out(false)` plus a shared broken flag (`Arc<AtomicBool>`) read by `has_broken`, set from `ConnectionLike::req_packed_command`/`req_packed_commands` when a result's `is_connection_dropped()` or `is_unrecoverable_error()` is true — not on a plain response timeout. Without it, dead connections stay pooled for 10-30 min, because redis 1.7.1 has no public `is_closed`.
+- **Found along the way:** this trades the double round trip for a one-shot cost: a connection that died invisibly while idle (e.g. every pooled connection through a disabled toxiproxy) now fails once, on its first reuse after the outage, instead of being caught at checkout. The failing call gets a normal nack/error — nothing wedges — and the connection is evicted right after (bb8 checks `has_broken` when a connection is returned). Production-shaped (one client, steady traffic) self-heals on the very next call; the test suite's fault-injection tests needed the same tolerance a real client already has to have: `find_registry_connection`/`delete_key` (`hub/tests/test_utils.rs`) retry a few times, `chat_stream_failures.ts`'s post-recovery write retries once, and `StreamSocket.open` (`builder_stream_ws.ts`) retries a 503 a few times before giving up.
+- **Tests:** `a_pool_checkout_sends_no_ping` (Redis `INFO commandstats`; a single-connection pool forces the second checkout to reuse the first connection).
 
 **RDS-16. A Redis outage stalls `ingest` for the full pool timeout (30 s), not a fast nack.** `repositories/command_stream/redis/redis_command_stream_db.rs:152-158` (`client()` → `self.0.pool.get()`), `crates/shine-infra/src/db/redis/redis_connection.rs:228,249,263,266` (`pool_timeout` default 30 000 ms, no override on the builder's command-stream pool). — **Done**
 - **Problem:** found while writing the API test for "a Redis outage nacks writes" (TST-4). `ingest`'s `pool.get()` carried no `tokio::time::timeout` of its own, so when every pooled connection is broken and a fresh one can't be established, bb8 blocked the whole call for up to `pool_timeout` (30 s, unset in `server_config.test.json`) before returning `PoolError::TimedOut`, which only then became a `failed` nack. The socket itself stays open and usable (confirmed live: `streamSync`/`streamCommands` worked before and after), so there was no gap or reset — but a client that simply tried to write during an outage waited 30 s for its nack, not milliseconds. The worker's own `persist_delay` step hit the identical stall (`Internal { source: PoolError(TimedOut) }`), which is the Redis analogue of STR-12's Postgres finding, on the same root cause (RC C); `client()` is shared by every `RedisCommandStreamDb` method, so the same fix covers both.
@@ -617,10 +618,10 @@ Each finding states where the defect is, what goes wrong, the fix, and the tests
 
 ### RC K: missing defensive checks
 
-**RDS-6. Scripts do not guard missing meta fields.** `scripts.rs:14-15` (INGEST), MARK_PERSISTED, RETIRE_ACTIVE.
+**RDS-6. Scripts do not guard missing meta fields.** `scripts.rs:14-15` (INGEST), MARK_PERSISTED, RETIRE_ACTIVE. — **Done**
 - **Problem:** once `meta[1]` exists, `tonumber` on a missing `version` or `persisted` raises a Lua error instead of a clean outcome. This needs corrupted meta, because HYDRATE always writes all three fields.
-- **Fix:** treat a missing field as `not_ready` (INGEST), `refused` (MARK) or `false` (RETIRE).
-- **Tests:** `missing_meta_fields_are_not_ready` (all three scripts).
+- **Fix:** treat a missing field as `not_ready` (INGEST), `refused` (MARK, returning -1, which the Rust side already maps to `Refused`) or `false` (RETIRE, extending its `HMGET` to also read `generation` so a hydrated-but-corrupted meta is told apart from "no meta at all", which stays a safe retire).
+- **Tests:** `missing_meta_fields_are_not_ready` (all three scripts; written to fail first — it hit the Lua arithmetic error directly — then verified green after the fix).
 
 **RDS-9. `to_meta` turns missing fields into zeros.** `redis_command_stream_db.rs:98`.
 - **Problem:** missing fields default to 0 without a warning, which hides corruption.
@@ -653,8 +654,8 @@ Each finding states where the defect is, what goes wrong, the fix, and the tests
 
 ### RC L: observability and layering
 
-**OBS-1. Registry per-event spans are `info`.**
-- **Fix:** `debug`, per the log-level rules.
+**OBS-1. Registry per-event spans are `info`.** — **Done**
+- **Fix:** `debug`, per the log-level rules (`repositories/hub_registry/redis/redis_hub_registry.rs`).
 - **Tests:** none.
 
 **OBS-2. Metric and status gaps.**
@@ -666,10 +667,10 @@ Each finding states where the defect is, what goes wrong, the fix, and the tests
   - add `running`, `pending_commands` and `stopped_tasks` to `HubStatus`.
 - **Tests:** none beyond HUB-5.
 
-**OBS-3. Per-tick warn/error logs during outages.** `stream_worker.rs:213`, `services/hub/tasks/heartbeat.rs:46`, `services/hub/hub_service.rs:366,427,445,544,617`.
+**OBS-3. Per-tick warn/error logs during outages.** `stream_worker.rs:213`, `services/hub/tasks/heartbeat.rs:46`, `services/hub/hub_service.rs:366,427,445,544,617`. — **Done**
 - **Problem:** the worker logs `warn!` on every failed step, once per tick per resident stream. The heartbeat and the hub log transient Redis errors at `error!`.
-- **Fix:** `warn` on the first failure and on recovery, and `debug` (or rate-limited) for the repeats. Transient infrastructure errors are `warn`, never `error`.
-- **Tests:** none; check at the checkpoint.
+- **Fix:** `step_failing`/`failing` bools on `StreamWorker`/`Heartbeat` gate the log: `warn` on the first failure and on recovery, `debug` for the repeats. The five `hub_service.rs` sites (all per-connect/disconnect registry errors, not a tight loop) drop straight from `error!` to `warn!`: transient infrastructure errors are warn, never error.
+- **Tests:** none; checked at the checkpoint.
 
 **WS-15. The stream session orchestrates services inside the routes layer.** `routes/ws/stream_socket.rs:164`.
 - **Problem:** `StreamSession` coordinates `CommandStreamService` (open, ingest) with `HubService` (subscribe) and makes the `can_write` decision. The layer rules in `CLAUDE.md` give orchestration to handlers.

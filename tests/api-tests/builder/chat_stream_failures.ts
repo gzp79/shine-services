@@ -75,12 +75,23 @@ test.describe('Builder chat stream failures', { tag: ['@infrastructure'] }, () =
 
         await redisProxy.update({ enabled: true, listen: redisProxy.listen, upstream: redisProxy.upstream });
 
-        // Live delivery resumes right where it left off: no gap, no reset.
-        const afterId = randomUUID();
-        socket.command(CHAT, afterId, { type: 'add', text: `after ${randomUUID()}` });
-        const frame = await socket.next('streamCommands', ownsCommand(afterId));
-        const delivered = frame.commands.find((c) => c.commandId === afterId)!;
-        expect(delivered.version).toBe(before + 1);
+        // Live delivery resumes right where it left off: no gap, no reset. The pool can still hand
+        // out a connection that died invisibly during the outage (RDS-3 trades a PING on every
+        // checkout for exactly this: a one-shot, self-healing nack on that connection's next use),
+        // so retry once, as a real client would on a transient nack.
+        let delivered: { version: number } | undefined;
+        for (let attempt = 0; !delivered && attempt < 3; attempt++) {
+            const afterId = randomUUID();
+            socket.command(CHAT, afterId, { type: 'add', text: `after ${randomUUID()}` });
+            const outcome = await Promise.race([
+                socket.next('streamCommands', ownsCommand(afterId)).then((frame) => ({ frame })),
+                socket.next('streamNack', (nack) => nack.commandId === afterId).then((nack) => ({ nack }))
+            ]);
+            if ('frame' in outcome) {
+                delivered = outcome.frame.commands.find((c) => c.commandId === afterId)!;
+            }
+        }
+        expect(delivered?.version).toBe(before + 1);
     });
 
     test('Chat stream shall keep delivering during a Postgres outage and push the checkpoint once Postgres returns', async ({
