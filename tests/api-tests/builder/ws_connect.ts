@@ -4,6 +4,7 @@ import { MintedSession, SessionMint } from '$lib/mocks/session_mint';
 import { DEFAULT_USER_AGENT } from '$lib/utils';
 import { randomUUID } from 'node:crypto';
 import { IncomingMessage } from 'node:http';
+import { Toxiproxy } from 'toxiproxy-node-client';
 import { WebSocket } from 'ws';
 
 // Close code of a socket the hub dropped; the close reason carries the drop reason.
@@ -308,5 +309,61 @@ test.describe('Builder websocket', { tag: ['@regression'] }, () => {
 
         const result = await closeCtx.settled;
         expect(result).toEqual({ kind: 'closed', code: HUB_DROPPED_CLOSE_CODE, reason: 'session_invalid' });
+    });
+});
+
+test.describe('Builder websocket failures', { tag: ['@infrastructure'] }, () => {
+    // Shares the redis proxy with the other @infrastructure files; keep this file's own
+    // infra tests serial too, so a failure here can't leave the proxy disabled for a later file.
+    test.describe.configure({ mode: 'serial' });
+
+    let toxiproxy: Toxiproxy;
+    let mint: SessionMint;
+    let user: MintedSession;
+
+    async function enableAllProxies(): Promise<void> {
+        for (const name of ['redis', 'postgres']) {
+            const proxy = await toxiproxy.get(name);
+            await proxy.update({ enabled: true, listen: proxy.listen, upstream: proxy.upstream });
+        }
+    }
+
+    test.beforeAll(async () => {
+        toxiproxy = new Toxiproxy('http://localhost:8474');
+        await enableAllProxies();
+    });
+
+    test.beforeEach(async () => {
+        // SessionMint writes straight into Redis, so mint before the test disables the proxy.
+        mint = await SessionMint.fromServerConfig();
+        user = await mint.createUserSession({ userId: randomUUID() });
+    });
+
+    test.afterEach(async () => {
+        await toxiproxy.reset();
+        await enableAllProxies();
+        await mint.teardownCreatedSessions();
+    });
+
+    test('WS connect shall be refused while Redis is down and accepted after recovery', async ({
+        homeUrl,
+        builderWSUrl
+    }) => {
+        const url = wsConnectUrl(builderWSUrl);
+        const options = { sid: user.sessionCookie, ...wsHeaders(homeUrl, builderWSUrl) };
+
+        const redisProxy = await toxiproxy.get('redis');
+        await redisProxy.update({ enabled: false, listen: redisProxy.listen, upstream: redisProxy.upstream });
+
+        // The session check needs Redis, so the upgrade is refused before it opens a socket. The
+        // session pool's own pool_timeout (5s in the test config) is the slow path here, so give
+        // the client a longer timeout than that rather than racing it.
+        const down = await connectWs(url, { ...options, timeoutMs: 8_000 });
+        expect(down).toEqual({ kind: 'http_error', status: 503 });
+
+        await redisProxy.update({ enabled: true, listen: redisProxy.listen, upstream: redisProxy.upstream });
+
+        const recovered = await connectWs(url, options);
+        expect(recovered).toEqual({ kind: 'open' });
     });
 });

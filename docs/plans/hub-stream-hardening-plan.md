@@ -736,8 +736,8 @@ Keep → drop. Drop a test that TST-4 replaces only when its API replacement lan
 **`routes/ws/connect_test.rs`:**
 - The stream section `:396-577` repeats the API and core tests: `:396` (= `replay/protocol.rs:10,61`), `:408`, `:440`, `:458`, `:477`, `:523`, `:549`, `:563` and `:577`. `:477` becomes a unit table over `OpenError::reason()`. Keep `:497` (streams disabled).
   - **Done** for the part with no API dependency: dropped `:396` (`a_resume_frame_is_parsed`, an exact duplicate of `replay/protocol.rs:10,61`); added `every_open_error_maps_to_its_reason` as the unit table over `OpenError::reason()` (`command_stream_test.rs`), alongside the existing socket-level test (kept — it also proves the reason reaches the wire end to end).
-  - `:408`, `:440`, `:458`, `:523`, `:549`, `:563`, `:577` are in TST-4's "Replaces" column — deferred until their API replacement lands.
-- `:202` (replaced socket) → extend `ws_connect.ts:236`. `lifecycle.rs:24` keeps the drop counts and registry state. Deferred to TST-4.
+  - `:408`, `:440`, `:458`, `:523`, `:549`, `:563`, `:577` are in TST-4's "Replaces" column. **Done**, now that TST-4's replacements landed.
+- `:202` (replaced socket) → extend `ws_connect.ts:236`. `lifecycle.rs:24` keeps the drop counts and registry state. **Done.**
 - The `request_drop` half of `:226` (= `:87`, `lifecycle.rs:100`, `ws_connect.ts:264`) → keep only the shutdown and hub-stopped parts. **Done** (`a_shutdown_closes_every_socket_and_stops_new_connections`).
 
 **Hub:**
@@ -749,15 +749,15 @@ Keep → drop. Drop a test that TST-4 replaces only when its API replacement lan
 
 **Command stream:**
 - **Dedupe:** keep `redis_command_stream_test.rs:401` and `chat_stream.ts:144`; drop `redis_command_stream_test.rs:84` (a subset of `:401`) and `command_stream_test.rs:83` (an enum mapping). **Done.**
-- **Invalid or oversized:** keep `replay/chat.rs:75` and the API table; drop `command_stream_test.rs:111` (moves to the API). Deferred to TST-4 (needs its API replacement first).
-- **Canonical text:** keep `replay/chat.rs:183` and add a pure `ReplayKind::canonicalize` test; drop `command_stream_test.rs:141` (moves to the API). Deferred to TST-4.
+- **Invalid or oversized:** keep `replay/chat.rs:75` and the API table; drop `command_stream_test.rs:111` (moves to the API). **Done.**
+- **Canonical text:** keep `replay/chat.rs:183` and add a pure `ReplayKind::canonicalize` test; drop `command_stream_test.rs:141` (moves to the API). **Done** for the drop; the pure `ReplayKind::canonicalize` test is still open, tracked under TST-6.
 - **Subscribe → Sync → delivered:** keep `chat_stream.ts:49` and `stream_worker_test.rs:64`; drop `hub/tests/stream_dispatcher.rs:268` and `chat_test.rs:187`. **Done.**
 - **Chat logic:**
   - `chat_test.rs:104,116,130,143,167` run Redis+Postgres to test pure `ChatState::apply`, which `replay/chat.rs` covers → drop. **Done.**
   - `chat_test.rs:33` (= `chat_stream.ts:212` + `command_stream_test.rs:16,59`) → drop. **Done.**
-- **Resume:** keep `stream_core_test.rs:363,386,399,421` and the API resume table; drop `stream_integration_test.rs:415`. `hub/tests/stream.rs:69` is optional. Deferred to TST-4.
+- **Resume:** keep `stream_core_test.rs:363,386,399,421` and the API resume table; drop `stream_integration_test.rs:415`. `hub/tests/stream.rs:69` is optional. **Done.**
 - **Snapshot route:**
-  - `routes/command_stream_test.rs:52` is a weaker, Redis-only subset of `command_stream_test.rs:395` → dropped now (**Done**); `routes/command_stream_test.rs:19` and `stream_integration_test.rs:447` repeat `command_stream_test.rs:370` too, but TST-4 replaces them with an API test, so those two are deferred to TST-4.
+  - `routes/command_stream_test.rs:52` is a weaker, Redis-only subset of `command_stream_test.rs:395` → dropped now (**Done**); `routes/command_stream_test.rs:19` and `stream_integration_test.rs:447` repeat `command_stream_test.rs:370` too, but each exercises a distinct code path the API test can't reach deterministically — kept both instead of dropping them (see TST-4's deviation note).
   - `routes/command_stream_test.rs:82` keeps only its "disabled → 503" line and the 404 mapping (Rust-only). **Done.**
 - **Other:**
   - `replay/snapshot.rs:32` is a subset of `:83` → drop. **Done.**
@@ -785,7 +785,7 @@ Keep → drop. Drop a test that TST-4 replaces only when its API replacement lan
 | "Chat shall refuse a command longer than maxCommandBytes as invalid" (a frame over 16 KiB; kept until WS-1 lowers the frame limit, then a Rust unit check) | `command_stream_test.rs:111`, `connect_test.rs:458` | **Done** |
 | `chat_stream_failures.ts` (`@infrastructure`): "Chat stream shall nack writes during a Redis outage and continue without a gap or a reset after it" (the live socket stays open, because the session check skips transient errors) | `stream_worker_test.rs:176` | **Done**. Along the way, found and fixed RDS-16 (the nack took ~30 s before the fix; serial-mode `test.describe.configure` added so these toxiproxy tests, which share proxy state, never interleave). `stream_worker_test.rs:176` not dropped — it's a Rust-only fault-injection hook, kept. |
 | `chat_stream_failures.ts`: "Chat stream shall keep delivering during a Postgres outage and push the checkpoint once Postgres returns"; "Chat snapshot route shall answer 503 while Postgres is down and recover"; "Chat subscribe shall fail with streamSubscribeFailed while Postgres is down and the stream is cold" | `stream_integration_test.rs:276` | **Done**. Along the way, found and fixed PG-5. `stream_integration_test.rs:276` not dropped — see "stays in Rust" notes below (two-instance/internal-hook cases). |
-| `ws_connect.ts` (`@infrastructure`): "WS connect shall be refused while Redis is down and accepted after recovery" (confirm the status, probably 503) | none | Open (toxiproxy) |
+| `ws_connect.ts` (`@infrastructure`): "WS connect shall be refused while Redis is down and accepted after recovery" | none | **Done** (503; the session check needs Redis) |
 
 These stay in Rust, with the reason for each:
 - **Config not deployed:** `command_stream_test.rs:16,59`, `connect_test.rs:497`.
