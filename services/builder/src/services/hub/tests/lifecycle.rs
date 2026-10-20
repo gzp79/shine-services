@@ -162,64 +162,113 @@ async fn client_close_while_connect_is_queued_is_not_a_drop() {
 }
 
 #[test(serial = "hub-service")]
-async fn dead_channel_is_pruned_once() {
-    let Some(mut test) = hub().await else {
-        return;
-    };
-    let user = Uuid::new_v4();
+async fn a_dead_or_slow_connection_is_pruned_once_from_every_entry_point() {
+    // `drop_dead` is reached from three call sites (`send_to_connection`, `broadcast`,
+    // `send_to_user`); each must prune the connection it finds exactly once, however many times
+    // it rediscovers the same problem.
 
-    let (connection, rx) = connect(&test.hub, user, 8);
-    barrier(&test.hub, &mut test.events).await;
-    drop(rx);
+    // send_to_connection and broadcast both finding the same dead channel.
+    {
+        let Some(mut test) = hub().await else {
+            return;
+        };
+        let user = Uuid::new_v4();
 
-    // Every send finds the channel closed and queues a prune; only the first one removes it.
-    for idx in 0..3 {
-        assert_eq!(
-            test.hub
-                .send_to_connection(connection, payload(format!("d-{idx}")))
-                .await
-                .ok(),
-            Some(false)
-        );
-        test.hub.broadcast(payload(format!("b-{idx}"))).await.unwrap();
-    }
-    let seen = barrier(&test.hub, &mut test.events).await;
+        let (connection, rx) = connect(&test.hub, user, 8);
+        barrier(&test.hub, &mut test.events).await;
+        drop(rx);
 
-    assert_eq!(lifecycle_of(&seen, user), [Lifecycle::Disconnected(connection)]);
-    assert_eq!(drops(&seen), dropped(&[(DisconnectReason::DeadChannel, 1)]));
-    assert_consistent(&test.hub, &test.registry, [user], &HashMap::new()).await;
-}
-
-#[test(serial = "hub-service")]
-async fn slow_consumer_is_dropped_and_its_channel_released() {
-    let Some(mut test) = hub().await else {
-        return;
-    };
-    let user = Uuid::new_v4();
-
-    let (connection, mut rx) = connect(&test.hub, user, 2);
-    barrier(&test.hub, &mut test.events).await;
-
-    // The first two fill the buffer, the rest find it full. Broadcasts are sent off the loop, so
-    // more of them may still find the connection before the prune is processed.
-    for idx in 0..5 {
-        test.hub.broadcast(payload(format!("b-{idx}"))).await.unwrap();
-    }
-    let seen = barrier(&test.hub, &mut test.events).await;
-
-    assert_eq!(lifecycle_of(&seen, user), [Lifecycle::Disconnected(connection)]);
-    // The buffered messages are still delivered; the close notice did not fit, the channel closing
-    // ends the socket.
-    assert_eq!(
-        egress_state(&mut rx),
-        EgressState {
-            payloads: vec!["b-0".into(), "b-1".into()],
-            notices: vec![],
-            closed: true,
+        for idx in 0..3 {
+            assert_eq!(
+                test.hub
+                    .send_to_connection(connection, payload(format!("d-{idx}")))
+                    .await
+                    .ok(),
+                Some(false)
+            );
+            test.hub.broadcast(payload(format!("b-{idx}"))).await.unwrap();
         }
-    );
-    assert_eq!(drops(&seen), dropped(&[(DisconnectReason::SlowConsumer, 1)]));
-    assert_consistent(&test.hub, &test.registry, [user], &HashMap::new()).await;
+        let seen = barrier(&test.hub, &mut test.events).await;
+
+        assert_eq!(lifecycle_of(&seen, user), [Lifecycle::Disconnected(connection)]);
+        assert_eq!(drops(&seen), dropped(&[(DisconnectReason::DeadChannel, 1)]));
+        assert_consistent(&test.hub, &test.registry, [user], &HashMap::new()).await;
+    }
+
+    // broadcast finding a slow consumer.
+    {
+        let Some(mut test) = hub().await else {
+            return;
+        };
+        let user = Uuid::new_v4();
+
+        let (connection, mut rx) = connect(&test.hub, user, 2);
+        barrier(&test.hub, &mut test.events).await;
+
+        // The first two fill the buffer, the rest find it full. Broadcasts are sent off the loop, so
+        // more of them may still find the connection before the prune is processed.
+        for idx in 0..5 {
+            test.hub.broadcast(payload(format!("b-{idx}"))).await.unwrap();
+        }
+        let seen = barrier(&test.hub, &mut test.events).await;
+
+        assert_eq!(lifecycle_of(&seen, user), [Lifecycle::Disconnected(connection)]);
+        // The buffered messages are still delivered; the close notice did not fit, the channel closing
+        // ends the socket.
+        assert_eq!(
+            egress_state(&mut rx),
+            EgressState {
+                payloads: vec!["b-0".into(), "b-1".into()],
+                notices: vec![],
+                closed: true,
+            }
+        );
+        assert_eq!(drops(&seen), dropped(&[(DisconnectReason::SlowConsumer, 1)]));
+        assert_consistent(&test.hub, &test.registry, [user], &HashMap::new()).await;
+    }
+
+    // send_to_user finding a dead and a slow connection at once.
+    {
+        let Some(mut test) = hub().await else {
+            return;
+        };
+        let (gone_user, slow_user) = (Uuid::new_v4(), Uuid::new_v4());
+
+        let (gone, gone_rx) = connect(&test.hub, gone_user, 8);
+        let (slow, mut slow_rx) = connect(&test.hub, slow_user, 1);
+        barrier(&test.hub, &mut test.events).await;
+        drop(gone_rx);
+
+        // Every send finds the problem and queues a prune; only the first one removes the connection.
+        for idx in 0..3 {
+            test.hub
+                .send_to_user(gone_user, payload(format!("g-{idx}")))
+                .await
+                .unwrap();
+            test.hub
+                .send_to_user(slow_user, payload(format!("s-{idx}")))
+                .await
+                .unwrap();
+        }
+        let seen = barrier(&test.hub, &mut test.events).await;
+
+        assert_eq!(lifecycle_of(&seen, gone_user), [Lifecycle::Disconnected(gone)]);
+        assert_eq!(lifecycle_of(&seen, slow_user), [Lifecycle::Disconnected(slow)]);
+        // The slow client keeps what fit in its buffer; the notice did not fit.
+        assert_eq!(
+            egress_state(&mut slow_rx),
+            EgressState {
+                payloads: vec!["s-0".into()],
+                notices: vec![],
+                closed: true,
+            }
+        );
+        assert_eq!(
+            drops(&seen),
+            dropped(&[(DisconnectReason::DeadChannel, 1), (DisconnectReason::SlowConsumer, 1)])
+        );
+        assert_consistent(&test.hub, &test.registry, [gone_user, slow_user], &HashMap::new()).await;
+    }
 }
 
 #[test(serial = "hub-service")]
@@ -265,49 +314,6 @@ async fn send_to_user_reaches_only_the_active_connection() {
         }
     );
     assert_eq!(egress_state(&mut other_rx), open());
-}
-
-#[test(serial = "hub-service")]
-async fn send_to_user_prunes_a_dead_or_slow_connection_once() {
-    let Some(mut test) = hub().await else {
-        return;
-    };
-    let (gone_user, slow_user) = (Uuid::new_v4(), Uuid::new_v4());
-
-    let (gone, gone_rx) = connect(&test.hub, gone_user, 8);
-    let (slow, mut slow_rx) = connect(&test.hub, slow_user, 1);
-    barrier(&test.hub, &mut test.events).await;
-    drop(gone_rx);
-
-    // Every send finds the problem and queues a prune; only the first one removes the connection.
-    for idx in 0..3 {
-        test.hub
-            .send_to_user(gone_user, payload(format!("g-{idx}")))
-            .await
-            .unwrap();
-        test.hub
-            .send_to_user(slow_user, payload(format!("s-{idx}")))
-            .await
-            .unwrap();
-    }
-    let seen = barrier(&test.hub, &mut test.events).await;
-
-    assert_eq!(lifecycle_of(&seen, gone_user), [Lifecycle::Disconnected(gone)]);
-    assert_eq!(lifecycle_of(&seen, slow_user), [Lifecycle::Disconnected(slow)]);
-    // The slow client keeps what fit in its buffer; the notice did not fit.
-    assert_eq!(
-        egress_state(&mut slow_rx),
-        EgressState {
-            payloads: vec!["s-0".into()],
-            notices: vec![],
-            closed: true,
-        }
-    );
-    assert_eq!(
-        drops(&seen),
-        dropped(&[(DisconnectReason::DeadChannel, 1), (DisconnectReason::SlowConsumer, 1)])
-    );
-    assert_consistent(&test.hub, &test.registry, [gone_user, slow_user], &HashMap::new()).await;
 }
 
 #[test(serial = "hub-service")]

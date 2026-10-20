@@ -53,11 +53,11 @@ async fn directed_send_to_unknown_target_is_ok_noop() {
 }
 
 #[test]
-async fn send_to_user_follows_the_active_connection_and_reports_dead_ones() {
+async fn send_to_user_follows_the_active_connection() {
     let users = Connections::new();
     let user_id = Uuid::new_v4();
     let (old_tx, mut old_rx) = mpsc::channel(4);
-    let (new_tx, mut new_rx) = mpsc::channel(1);
+    let (new_tx, mut new_rx) = mpsc::channel(4);
     let (old_id, new_id) = (Uuid::new_v4(), Uuid::new_v4());
     users.register_connection(user_id, old_id, key(), old_tx, vec![]).await;
     users.register_connection(user_id, new_id, key(), new_tx, vec![]).await;
@@ -68,60 +68,34 @@ async fn send_to_user_follows_the_active_connection_and_reports_dead_ones() {
         matches!(new_rx.try_recv(), Ok(HubMessage::Stream(StreamMessage::Reset { stream_id })) if stream_id.as_str() == "1")
     );
     assert!(old_rx.try_recv().is_err());
-
-    assert!(users.send_to_user(user_id, payload("2")).await.is_ok());
-    assert_eq!(
-        users.send_to_user(user_id, payload("3")).await,
-        Err(DeadConnection {
-            connection_id: new_id,
-            reason: DisconnectReason::SlowConsumer
-        })
-    );
-    drop(new_rx);
-    assert_eq!(
-        users.send_to_user(user_id, payload("4")).await,
-        Err(DeadConnection {
-            connection_id: new_id,
-            reason: DisconnectReason::DeadChannel
-        })
-    );
 }
 
 #[test]
-async fn full_channel_reports_dead_connection() {
-    let users = Connections::new();
-    let (tx, _rx) = mpsc::channel(1);
-    let conn_id = Uuid::new_v4();
-    users
-        .register_connection(Uuid::new_v4(), conn_id, key(), tx, vec![TopicKey::Stream])
-        .await;
+async fn send_reports_dead_connection_for_a_full_or_closed_channel() {
+    for (close_before_send, reason) in [
+        (false, DisconnectReason::SlowConsumer),
+        (true, DisconnectReason::DeadChannel),
+    ] {
+        let users = Connections::new();
+        let (tx, rx) = mpsc::channel(1);
+        let conn_id = Uuid::new_v4();
+        users
+            .register_connection(Uuid::new_v4(), conn_id, key(), tx, vec![TopicKey::Stream])
+            .await;
 
-    assert!(users.send_to_connection(conn_id, payload("1")).await.is_ok()); // fills capacity 1
-    assert_eq!(
-        users.send_to_connection(conn_id, payload("2")).await,
-        Err(DeadConnection {
-            connection_id: conn_id,
-            reason: DisconnectReason::SlowConsumer
-        })
-    );
-}
+        if close_before_send {
+            drop(rx);
+        } else {
+            assert!(users.send_to_connection(conn_id, payload("fill")).await.is_ok());
+            // fills capacity 1
+        }
 
-#[test]
-async fn closed_channel_reports_dead_connection() {
-    let users = Connections::new();
-    let (tx, rx) = mpsc::channel(1);
-    let conn_id = Uuid::new_v4();
-    users
-        .register_connection(Uuid::new_v4(), conn_id, key(), tx, vec![TopicKey::Stream])
-        .await;
-    drop(rx);
-    assert_eq!(
-        users.send_to_connection(conn_id, payload("1")).await,
-        Err(DeadConnection {
-            connection_id: conn_id,
-            reason: DisconnectReason::DeadChannel
-        })
-    );
+        assert_eq!(
+            users.send_to_connection(conn_id, payload("x")).await,
+            Err(DeadConnection { connection_id: conn_id, reason }),
+            "{reason}"
+        );
+    }
 }
 
 #[test]

@@ -222,27 +222,17 @@ async fn a_replaced_socket_is_closed_with_the_reason() {
     assert_eq!(lifecycle_of(&seen, user), [Lifecycle::Disconnected(second_id)]);
 }
 
+// The request_drop → close round trip is covered by `lifecycle::forced_drop_tells_the_socket_why`
+// (hub side) and the API test "WS connection shall be dropped when session is deleted" (socket
+// side); this test keeps only the shutdown and hub-stopped behaviour.
 #[test(serial = "hub-service")]
-async fn a_forced_drop_and_a_shutdown_close_the_sockets_with_their_reason() {
+async fn a_shutdown_closes_every_socket_and_stops_new_connections() {
     let Some(mut test) = socket_hub().await else {
         return;
     };
-    let (dropped_user, other_user) = (Uuid::new_v4(), Uuid::new_v4());
+    let other_user = Uuid::new_v4();
 
-    let dropped_client = Client::open(&mut test, dropped_user).await;
     let other = Client::open(&mut test, other_user).await;
-
-    test.hub
-        .request_drop(
-            dropped_user,
-            dropped_client.connection_id,
-            DisconnectReason::SessionInvalid,
-        )
-        .unwrap();
-    assert_eq!(
-        dropped_client.finished().await,
-        [close(CLOSE_CODE_DROPPED, "session_invalid")]
-    );
 
     test.hub.request_shutdown().unwrap();
     assert_eq!(other.finished().await, [close(close_code::AWAY, "shutdown")]);
@@ -314,7 +304,6 @@ use crate::services::command_stream::{
     AllowAll,
 };
 use serde_json::{json, Value};
-use shine_game::replay::protocol::ClientFrame;
 use shine_infra::db::command_log::StreamId;
 use std::sync::Arc;
 
@@ -390,18 +379,6 @@ fn versions(frame: &Value) -> Vec<i64> {
         .iter()
         .map(|command| command["version"].as_i64().unwrap())
         .collect()
-}
-
-#[test]
-async fn a_resume_frame_is_parsed() {
-    let frame =
-        r#"{"type":"streamSubscribe","streamId":"chat-global","kind":"chat","resume":{"generation":2,"version":7}}"#;
-    let Ok(ClientFrame::StreamSubscribe { resume, .. }) = serde_json::from_str(frame) else {
-        panic!("not a subscribe");
-    };
-    assert_eq!(resume.map(|r| (r.generation, r.version)), Some((2, 7)));
-    // The chat frames of the old protocol are gone.
-    assert!(serde_json::from_str::<ClientFrame>(r#"{"type":"chat","text":"hi"}"#).is_err());
 }
 
 #[test(serial = "hub-service")]

@@ -369,7 +369,7 @@ async fn the_worker_prunes_after_storing_a_snapshot() {
         .iter()
         .map(|c| c.version)
         .collect();
-    assert_eq!(versions.first(), Some(&10));
+    // The lower bound is already asserted by `pruned_stream`'s wait.
     assert_eq!(versions.last(), Some(&15));
     assert_eq!(test.log.snapshot_horizon(&stream_id, 2).await.unwrap(), Some(10));
     assert_eq!(

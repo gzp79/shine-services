@@ -1,5 +1,5 @@
 import { expect, test } from '$fixtures/setup';
-import { StreamSocket, StreamSocketOptions, WireCommand, fetchSnapshot, wsOptions } from '$lib/api/builder_stream_ws';
+import { StreamSocket, WireCommand, fetchSnapshot, wsOptions } from '$lib/api/builder_stream_ws';
 import { MintedSession, SessionMint } from '$lib/mocks/session_mint';
 import { randomUUID } from 'node:crypto';
 
@@ -46,36 +46,54 @@ test.describe('Builder chat stream', { tag: ['@regression'] }, () => {
         return (frame) => frame.commands.some((command) => command.commandId === commandId);
     }
 
-    test('Chat shall deliver a message to its sender and to other subscribers', async ({ homeUrl, builderWSUrl }) => {
+    test('Chat shall order commands from both writers identically, with user id and content intact', async ({
+        homeUrl,
+        builderWSUrl
+    }) => {
         const a = await joinChat(homeUrl, builderWSUrl, alice);
         const b = await joinChat(homeUrl, builderWSUrl, bob);
 
-        const commandId = randomUUID();
-        const text = `hello ${randomUUID()}`;
-        const add: ChatCommand = { type: 'add', text };
-        a.socket.command(CHAT, commandId, add);
-
-        // No ack: the writer sees its own commandId in the ordered commands, like everybody else.
-        const own = await a.socket.next('streamCommands', ownsCommand(commandId));
-        const other = await b.socket.next('streamCommands', ownsCommand(commandId));
-        for (const frame of [own, other]) {
-            expect(frame.streamId).toBe(CHAT);
-            const command = frame.commands.find((c) => c.commandId === commandId)!;
-            // The author comes from the session, never from the payload.
-            expect(command.userId).toBe(alice.userId);
-            // The command text is stored canonically and sent as a string.
-            expect(JSON.parse(command.command)).toEqual(add);
+        // A sequence of steps by both writers: add, then remove/replace/no-op remove by either of them.
+        // Whether a command takes effect is the state's decision on replay (only the author may change a
+        // message; covered by the Rust tests): the log accepts and orders all of them, so both sockets see
+        // every command delivered, with the same version, user id, command and generation.
+        const messageId = randomUUID();
+        const steps: Array<{ socket: StreamSocket; other: StreamSocket; user: MintedSession; command: ChatCommand }> = [
+            { socket: a.socket, other: b.socket, user: alice, command: { type: 'add', text: `mine ${messageId}` } },
+            { socket: b.socket, other: a.socket, user: bob, command: { type: 'remove', id: messageId } },
+            {
+                socket: a.socket,
+                other: b.socket,
+                user: alice,
+                command: { type: 'replace', id: messageId, text: 'edited' }
+            },
+            { socket: a.socket, other: b.socket, user: alice, command: { type: 'remove', id: randomUUID() } },
+            { socket: a.socket, other: b.socket, user: alice, command: { type: 'remove', id: messageId } }
+        ];
+        let previous = 0;
+        for (const step of steps) {
+            const commandId = step.command.type === 'add' ? messageId : randomUUID();
+            step.socket.command(CHAT, commandId, step.command);
+            const own = await step.socket.next('streamCommands', ownsCommand(commandId));
+            const other = await step.other.next('streamCommands', ownsCommand(commandId));
+            for (const frame of [own, other]) {
+                expect(frame.streamId).toBe(CHAT);
+                const delivered = frame.commands.find((c) => c.commandId === commandId)!;
+                // The author comes from the session, never from the payload.
+                expect(delivered.userId).toBe(step.user.userId);
+                // The command text is stored canonically and sent as a string.
+                expect(JSON.parse(delivered.command)).toEqual(step.command);
+                expect(delivered.version).toBeGreaterThan(previous);
+            }
+            const [ownVersion] = own.commands.filter((c) => c.commandId === commandId).map((c) => c.version);
+            const [otherVersion] = other.commands.filter((c) => c.commandId === commandId).map((c) => c.version);
+            expect(otherVersion).toBe(ownVersion);
+            expect(own.generation).toBe(other.generation);
+            previous = ownVersion;
         }
-        const [ownCommand] = own.commands.filter((c) => c.commandId === commandId);
-        const [otherCommand] = other.commands.filter((c) => c.commandId === commandId);
-        expect(otherCommand.version).toBe(ownCommand.version);
-        expect(own.generation).toBe(other.generation);
-    });
 
-    test('Chat shall order the commands of two writers identically for everyone', async ({ homeUrl, builderWSUrl }) => {
-        const a = await joinChat(homeUrl, builderWSUrl, alice);
-        const b = await joinChat(homeUrl, builderWSUrl, bob);
-
+        // Two writers sending concurrently still get one consistent, gapless order, each keeping its own
+        // sending order.
         const tag = randomUUID();
         const ids = { a: [] as string[], b: [] as string[] };
         for (let i = 0; i < 5; i++) {
@@ -102,46 +120,12 @@ test.describe('Builder chat stream', { tag: ['@regression'] }, () => {
         const versions = forAlice.map((c) => c.version);
         expect([...versions].sort((x, y) => x - y)).toEqual(versions);
         expect(new Set(versions).size).toBe(versions.length);
-        // Each writer's own commands keep their sending order.
         for (const own of [ids.a, ids.b]) {
             expect(forAlice.filter((c) => own.includes(c.commandId)).map((c) => c.commandId)).toEqual(own);
         }
     });
 
-    test('Chat shall record removes and replaces of any message as ordered commands', async ({
-        homeUrl,
-        builderWSUrl
-    }) => {
-        const a = await joinChat(homeUrl, builderWSUrl, alice);
-        const b = await joinChat(homeUrl, builderWSUrl, bob);
-
-        const messageId = randomUUID();
-        a.socket.command(CHAT, messageId, { type: 'add', text: `mine ${randomUUID()}` });
-        await b.socket.next('streamCommands', ownsCommand(messageId));
-
-        // Whether a command takes effect is the state's decision on replay (only the author may change a
-        // message; covered by the Rust tests): the log accepts and orders all of them, so the writers
-        // below all see their commands delivered, including the ones that change nothing.
-        const steps: Array<{ socket: StreamSocket; user: MintedSession; command: ChatCommand }> = [
-            { socket: b.socket, user: bob, command: { type: 'remove', id: messageId } },
-            { socket: a.socket, user: alice, command: { type: 'replace', id: messageId, text: 'edited' } },
-            { socket: a.socket, user: alice, command: { type: 'remove', id: randomUUID() } },
-            { socket: a.socket, user: alice, command: { type: 'remove', id: messageId } }
-        ];
-        let previous = 0;
-        for (const step of steps) {
-            const commandId = randomUUID();
-            step.socket.command(CHAT, commandId, step.command);
-            const frame = await b.socket.next('streamCommands', ownsCommand(commandId));
-            const delivered = frame.commands.find((c) => c.commandId === commandId)!;
-            expect(delivered.userId).toBe(step.user.userId);
-            expect(JSON.parse(delivered.command)).toEqual(step.command);
-            expect(delivered.version).toBeGreaterThan(previous);
-            previous = delivered.version;
-        }
-    });
-
-    test('Chat shall refuse a retried command id once and invalid commands', async ({ homeUrl, builderWSUrl }) => {
+    test('Chat shall refuse a retried command id once', async ({ homeUrl, builderWSUrl }) => {
         const a = await joinChat(homeUrl, builderWSUrl, alice);
 
         const commandId = randomUUID();
@@ -153,25 +137,28 @@ test.describe('Builder chat stream', { tag: ['@regression'] }, () => {
         const duplicate = await a.socket.next('streamNack', (frame) => frame.commandId === commandId);
         expect(duplicate).toMatchObject({ streamId: CHAT, reason: 'duplicate' });
         await a.socket.expectNone('streamCommands', 500, ownsCommand(commandId));
+    });
 
-        const invalid: Array<[string, object]> = [
+    test('Chat shall refuse invalid chat commands', async ({ homeUrl, builderWSUrl }) => {
+        const a = await joinChat(homeUrl, builderWSUrl, alice);
+
+        const invalid: Array<[string, object | string]> = [
             ['an unknown command type', { type: 'shout', text: 'x' }],
             ['an empty text', { type: 'add', text: '   ' }],
             ['an oversized text', { type: 'add', text: 'x'.repeat(2001) }],
-            ['a missing field', { type: 'remove' }]
+            ['a missing field', { type: 'remove' }],
+            ['a non-JSON command payload', 'not json']
         ];
         for (const [title, command] of invalid) {
             const id = randomUUID();
-            a.socket.command(CHAT, id, command);
+            if (typeof command === 'string') {
+                a.socket.sendRaw(JSON.stringify({ type: 'streamCommand', streamId: CHAT, commandId: id, command }));
+            } else {
+                a.socket.command(CHAT, id, command);
+            }
             const nack = await a.socket.next('streamNack', (frame) => frame.commandId === id);
             expect(nack.reason, title).toBe('invalid');
         }
-
-        const notJson = randomUUID();
-        a.socket.sendRaw(
-            JSON.stringify({ type: 'streamCommand', streamId: CHAT, commandId: notJson, command: 'not json' })
-        );
-        expect((await a.socket.next('streamNack', (frame) => frame.commandId === notJson)).reason).toBe('invalid');
     });
 
     test('Chat socket shall ignore malformed frames without dropping the connection', async ({
@@ -285,40 +272,43 @@ test.describe('Builder chat stream', { tag: ['@regression'] }, () => {
         await socket.expectNone('streamSync', 500);
     });
 
-    test('Chat resume from another generation shall be answered with a full sync', async ({
+    test('Chat resume from another generation shall be answered with a full sync that includes prior history', async ({
         homeUrl,
         builderWSUrl
     }) => {
         const b = await joinChat(homeUrl, builderWSUrl, bob);
+        const commandId = randomUUID();
+        b.socket.command(CHAT, commandId, { type: 'add', text: `resync ${randomUUID()}` });
+        const echo = await b.socket.next('streamCommands', ownsCommand(commandId));
+        const version = echo.commands.find((c) => c.commandId === commandId)!.version;
 
         const socket = await StreamSocket.open(builderWSUrl, wsOptions(homeUrl, builderWSUrl, alice.sessionCookie));
         sockets.push(socket);
         socket.subscribe(CHAT, 'chat', { generation: b.generation + 1000, version: 1 });
         const sync = await socket.next('streamSync');
         expect(sync.generation).toBe(b.generation);
+        // The command is either still in the tail, or already folded into the snapshot.
+        const covered =
+            sync.commands.some((c) => c.commandId === commandId) || (sync.snapshot?.version ?? 0) >= version;
+        expect(covered).toBe(true);
     });
 
     test('Chat snapshot route shall reject a missing session and any other stream', async ({ builderUrl }) => {
-        expect((await fetchSnapshot(builderUrl, CHAT)).status).toBe(401);
-        expect((await fetchSnapshot(builderUrl, CHAT, 'not-a-valid-signed-sid')).status).toBe(401);
-        // Only the global chat exists for users: any other stream is closed to them.
-        expect((await fetchSnapshot(builderUrl, 'chat-private', alice.sessionCookie)).status).toBe(403);
-        expect((await fetchSnapshot(builderUrl, 'not a stream id!', alice.sessionCookie)).status).toBe(400);
+        for (const rejectCase of [
+            { title: 'missing session cookie', sid: undefined, streamId: CHAT, status: 401 },
+            { title: 'tampered session cookie', sid: 'not-a-valid-signed-sid', streamId: CHAT, status: 401 },
+            // Only the global chat exists for users: any other stream is closed to them.
+            { title: 'another stream', sid: alice.sessionCookie, streamId: 'chat-private', status: 403 },
+            { title: 'an invalid stream id', sid: alice.sessionCookie, streamId: 'not a stream id!', status: 400 }
+        ]) {
+            const result = await fetchSnapshot(builderUrl, rejectCase.streamId, rejectCase.sid);
+            expect(result.status, rejectCase.title).toBe(rejectCase.status);
+        }
+
+        const ok = await fetchSnapshot(builderUrl, CHAT, alice.sessionCookie);
+        expect(ok.cacheControl).toBe('no-store');
     });
 
-    test('Chat socket shall be closed when its session is deleted', async ({ homeUrl, builderWSUrl }) => {
-        const options: StreamSocketOptions = wsOptions(homeUrl, builderWSUrl, alice.sessionCookie);
-        const socket = await StreamSocket.open(builderWSUrl, options);
-        sockets.push(socket);
-        socket.subscribe(CHAT, 'chat');
-        await socket.next('streamSync');
-
-        // The session checker (every 2 s in the test config) drops the connection of a deleted session.
-        await mint.deleteUser(alice);
-        const closed = await Promise.race([
-            socket.closed,
-            new Promise<never>((_, reject) => setTimeout(() => reject(new Error('socket still open')), 12_000))
-        ]);
-        expect(closed).toEqual({ code: 4000, reason: 'session_invalid' });
-    });
+    // A deleted session closing the socket is covered generically by ws_connect.ts's
+    // "WS connection shall be dropped when session is deleted".
 });

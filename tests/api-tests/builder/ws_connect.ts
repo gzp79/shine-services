@@ -1,5 +1,5 @@
 import { expect, test } from '$fixtures/setup';
-import { wsConnectUrl } from '$lib/api/builder_stream_ws';
+import { StreamSocket, wsConnectUrl, wsOptions } from '$lib/api/builder_stream_ws';
 import { MintedSession, SessionMint } from '$lib/mocks/session_mint';
 import { DEFAULT_USER_AGENT } from '$lib/utils';
 import { randomUUID } from 'node:crypto';
@@ -174,58 +174,67 @@ test.describe('Builder websocket', { tag: ['@regression'] }, () => {
         await mint.teardownCreatedSessions();
     });
 
-    test('WS connect shall reject missing Origin header', async ({ builderWSUrl }) => {
-        const result = await connectWs(wsConnectUrl(builderWSUrl), {
-            sid: user.sessionCookie,
-            extraHeaders: { 'x-forwarded-host': new URL(builderWSUrl).host }
-        });
-
-        expect(result).toEqual({ kind: 'http_error', status: 400 });
+    test('WS connect shall reject a malformed or unauthenticated request before opening a socket', async ({
+        homeUrl,
+        builderUrl,
+        builderWSUrl
+    }) => {
+        for (const rejectCase of [
+            {
+                title: 'missing Origin header',
+                status: 400,
+                url: wsConnectUrl(builderWSUrl),
+                options: {
+                    sid: user.sessionCookie,
+                    extraHeaders: { 'x-forwarded-host': new URL(builderWSUrl).host }
+                }
+            },
+            {
+                title: 'disallowed Origin header',
+                status: 403,
+                url: wsConnectUrl(builderWSUrl),
+                options: {
+                    sid: user.sessionCookie,
+                    origin: 'https://example.com',
+                    extraHeaders: { 'x-forwarded-host': new URL(builderWSUrl).host }
+                }
+            },
+            {
+                title: 'non-ws host even with an allowed origin',
+                status: 403,
+                url: wsConnectUrl(builderUrl),
+                options: { sid: user.sessionCookie, ...wsHeaders(homeUrl, builderUrl) }
+            },
+            {
+                title: 'missing session cookie',
+                status: 401,
+                url: wsConnectUrl(builderWSUrl),
+                options: wsHeaders(homeUrl, builderWSUrl)
+            },
+            {
+                title: 'tampered session cookie',
+                status: 401,
+                url: wsConnectUrl(builderWSUrl),
+                options: { sid: 'not-a-valid-signed-sid', ...wsHeaders(homeUrl, builderWSUrl) }
+            }
+        ]) {
+            const result = await connectWs(rejectCase.url, rejectCase.options);
+            expect(result, rejectCase.title).toEqual({ kind: 'http_error', status: rejectCase.status });
+        }
     });
 
-    test('WS connect shall reject disallowed Origin header', async ({ builderWSUrl }) => {
-        const result = await connectWs(wsConnectUrl(builderWSUrl), {
-            sid: user.sessionCookie,
-            origin: 'https://example.com',
-            extraHeaders: { 'x-forwarded-host': new URL(builderWSUrl).host }
-        });
-
-        expect(result).toEqual({ kind: 'http_error', status: 403 });
+    // The global chat is the only stream open to users; subscribing to it and getting a sync proves
+    // the socket is usable, not just that the upgrade was accepted. (A `hello` frame joins this once WS-11 lands.)
+    test('WS connect shall allow a configured Origin header and let the socket subscribe and sync', async ({
+        homeUrl,
+        builderWSUrl
+    }) => {
+        const socket = await StreamSocket.open(builderWSUrl, wsOptions(homeUrl, builderWSUrl, user.sessionCookie));
+        socket.subscribe('chat-global', 'chat');
+        const sync = await socket.next('streamSync');
+        expect(sync.streamId).toBe('chat-global');
+        socket.close();
     });
-
-    test('WS connect shall reject non-ws host even with allowed origin', async ({ homeUrl, builderUrl }) => {
-        const result = await connectWs(wsConnectUrl(builderUrl), {
-            sid: user.sessionCookie,
-            ...wsHeaders(homeUrl, builderUrl)
-        });
-
-        expect(result).toEqual({ kind: 'http_error', status: 403 });
-    });
-
-    test('WS connect shall allow configured Origin header', async ({ homeUrl, builderWSUrl }) => {
-        const result = await connectWs(wsConnectUrl(builderWSUrl), {
-            sid: user.sessionCookie,
-            ...wsHeaders(homeUrl, builderWSUrl)
-        });
-
-        expect(result).toEqual({ kind: 'open' });
-    });
-
-    // Auth is the primary gate: with a valid origin/host, a missing or tampered session must still
-    // be rejected with 401 before any socket opens.
-    for (const authCase of [
-        { title: 'missing session cookie', sid: undefined },
-        { title: 'tampered session cookie', sid: 'not-a-valid-signed-sid' }
-    ]) {
-        test(`WS connect with ${authCase.title} shall be rejected`, async ({ homeUrl, builderWSUrl }) => {
-            const result = await connectWs(wsConnectUrl(builderWSUrl), {
-                sid: authCase.sid,
-                ...wsHeaders(homeUrl, builderWSUrl)
-            });
-
-            expect(result).toEqual({ kind: 'http_error', status: 401 });
-        });
-    }
 
     test('WS second connection for a user shall drop the first (last connection wins)', async ({
         homeUrl,

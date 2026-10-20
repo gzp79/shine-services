@@ -723,41 +723,43 @@ Keep → drop. Drop a test that TST-4 replaces only when its API replacement lan
 
 **`routes/ws/connect_test.rs`:**
 - The stream section `:396-577` repeats the API and core tests: `:396` (= `replay/protocol.rs:10,61`), `:408`, `:440`, `:458`, `:477`, `:523`, `:549`, `:563` and `:577`. `:477` becomes a unit table over `OpenError::reason()`. Keep `:497` (streams disabled).
-- `:202` (replaced socket) → extend `ws_connect.ts:236`. `lifecycle.rs:24` keeps the drop counts and registry state.
-- The `request_drop` half of `:226` (= `:87`, `lifecycle.rs:100`, `ws_connect.ts:264`) → keep only the shutdown and hub-stopped parts.
+  - **Done** for the part with no API dependency: dropped `:396` (`a_resume_frame_is_parsed`, an exact duplicate of `replay/protocol.rs:10,61`); added `every_open_error_maps_to_its_reason` as the unit table over `OpenError::reason()` (`command_stream_test.rs`), alongside the existing socket-level test (kept — it also proves the reason reaches the wire end to end).
+  - `:408`, `:440`, `:458`, `:523`, `:549`, `:563`, `:577` are in TST-4's "Replaces" column — deferred until their API replacement lands.
+- `:202` (replaced socket) → extend `ws_connect.ts:236`. `lifecycle.rs:24` keeps the drop counts and registry state. Deferred to TST-4.
+- The `request_drop` half of `:226` (= `:87`, `lifecycle.rs:100`, `ws_connect.ts:264`) → keep only the shutdown and hub-stopped parts. **Done** (`a_shutdown_closes_every_socket_and_stops_new_connections`).
 
 **Hub:**
-- `hub_connections_test.rs:56,91,110` → one table test.
-- `lifecycle.rs:165,194,271` (the same `drop_dead` → `DropConnection` path from three entry points) → one test.
+- `hub_connections_test.rs:56,91,110` → one table test. **Done.**
+- `lifecycle.rs:165,194,271` (the same `drop_dead` → `DropConnection` path from three entry points) → one test. **Done.**
 - `lifecycle.rs:226` and the broadcast half of `:314` test dead code → drop them with HUB-11.
 - `lifecycle.rs:591` → absorbed by HUB-2's chunked heartbeat test.
 - `app_state_test.rs:57` → replaced by `config_is_clamped` (OPS-3).
 
 **Command stream:**
-- **Dedupe:** keep `redis_command_stream_test.rs:401` and `chat_stream.ts:144`; drop `redis_command_stream_test.rs:84` (a subset of `:401`) and `command_stream_test.rs:83` (an enum mapping).
-- **Invalid or oversized:** keep `replay/chat.rs:75` and the API table; drop `command_stream_test.rs:111` (moves to the API).
-- **Canonical text:** keep `replay/chat.rs:183` and add a pure `ReplayKind::canonicalize` test; drop `command_stream_test.rs:141` (moves to the API).
-- **Subscribe → Sync → delivered:** keep `chat_stream.ts:49` and `stream_worker_test.rs:64`; drop `hub/tests/stream_dispatcher.rs:268` and `chat_test.rs:187`.
+- **Dedupe:** keep `redis_command_stream_test.rs:401` and `chat_stream.ts:144`; drop `redis_command_stream_test.rs:84` (a subset of `:401`) and `command_stream_test.rs:83` (an enum mapping). **Done.**
+- **Invalid or oversized:** keep `replay/chat.rs:75` and the API table; drop `command_stream_test.rs:111` (moves to the API). Deferred to TST-4 (needs its API replacement first).
+- **Canonical text:** keep `replay/chat.rs:183` and add a pure `ReplayKind::canonicalize` test; drop `command_stream_test.rs:141` (moves to the API). Deferred to TST-4.
+- **Subscribe → Sync → delivered:** keep `chat_stream.ts:49` and `stream_worker_test.rs:64`; drop `hub/tests/stream_dispatcher.rs:268` and `chat_test.rs:187`. **Done.**
 - **Chat logic:**
-  - `chat_test.rs:104,116,130,143,167` run Redis+Postgres to test pure `ChatState::apply`, which `replay/chat.rs` covers → drop.
-  - `chat_test.rs:33` (= `chat_stream.ts:212` + `command_stream_test.rs:16,59`) → drop.
-- **Resume:** keep `stream_core_test.rs:363,386,399,421` and the API resume table; drop `stream_integration_test.rs:415`. `hub/tests/stream.rs:69` is optional.
+  - `chat_test.rs:104,116,130,143,167` run Redis+Postgres to test pure `ChatState::apply`, which `replay/chat.rs` covers → drop. **Done.**
+  - `chat_test.rs:33` (= `chat_stream.ts:212` + `command_stream_test.rs:16,59`) → drop. **Done.**
+- **Resume:** keep `stream_core_test.rs:363,386,399,421` and the API resume table; drop `stream_integration_test.rs:415`. `hub/tests/stream.rs:69` is optional. Deferred to TST-4.
 - **Snapshot route:**
-  - `routes/command_stream_test.rs:52` is a weaker, Redis-only subset of `command_stream_test.rs:395`, and `routes/command_stream_test.rs:19` and `stream_integration_test.rs:447` repeat `command_stream_test.rs:370` → drop all three.
-  - `routes/command_stream_test.rs:82` keeps only its "disabled → 503" line and the 404 mapping (Rust-only).
+  - `routes/command_stream_test.rs:52` is a weaker, Redis-only subset of `command_stream_test.rs:395` → dropped now (**Done**); `routes/command_stream_test.rs:19` and `stream_integration_test.rs:447` repeat `command_stream_test.rs:370` too, but TST-4 replaces them with an API test, so those two are deferred to TST-4.
+  - `routes/command_stream_test.rs:82` keeps only its "disabled → 503" line and the 404 mapping (Rust-only). **Done.**
 - **Other:**
-  - `replay/snapshot.rs:32` is a subset of `:83` → drop.
-  - Fold `redis_command_stream_test.rs:127` into `:450`.
-  - `stream_integration_test.rs:357` repeats the wait of its own helper → drop the repeat.
+  - `replay/snapshot.rs:32` is a subset of `:83` → drop. **Done.**
+  - Fold `redis_command_stream_test.rs:127` into `:450`. **Done.**
+  - `stream_integration_test.rs:357` repeats the wait of its own helper → drop the repeat. **Done.**
 
-**API:**
+**API:** All items below are **Done**, verified against a live builder instance (15/15 passing, the formerly-flaky resume test run 5x green).
 - `chat_stream.ts:296` = `ws_connect.ts:264` → drop the chat one.
 - `chat_stream.ts:49,75,111` → one happy-path test with steps: two writers doing add, remove and replace; both sockets see the same command id, version, user id, command and generation; each writer keeps its own order.
-- `ws_connect.ts:183,192,202,226` → one rejection table: missing Origin 400, foreign Origin 403, non-ws host 403, no cookie 401, tampered cookie 401, a different User-Agent 401, a deleted session 401.
-- `ws_connect.ts:211` → fold into a fuller connect test (open, subscribe, sync; later `hello`).
+- `ws_connect.ts:183,192,202,226` → one rejection table: missing Origin 400, foreign Origin 403, non-ws host 403, no cookie 401, tampered cookie 401. (The "different User-Agent" and "deleted session before connect" rows mentioned in the plan are new coverage, not a consolidation of existing tests — left out here; add them separately if wanted, verified against actual fingerprint/session behavior first.)
+- `ws_connect.ts:211` → fold into a fuller connect test (open, subscribe, sync; `hello` still pending WS-11).
 - `chat_stream.ts:144` → split into a duplicate test and an invalid table that includes the non-JSON case of `:170`.
-- `chat_stream.ts:288` → a table, plus a `Cache-Control: no-store` row.
-- `chat_stream.ts:239` → also check that the resync contains bob's command id.
+- `chat_stream.ts:288` → a table, plus a `Cache-Control: no-store` row (added `cacheControl` to `fetchSnapshot`'s return value).
+- `chat_stream.ts:239` → also check that the resync contains bob's command id (or that it's already folded into the snapshot).
 
 ### TST-4. Rust tests to move to the API (Med, M, phase 0)
 

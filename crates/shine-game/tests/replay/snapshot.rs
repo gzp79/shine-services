@@ -29,27 +29,6 @@ fn a_state_survives_a_serde_round_trip_with_the_same_hash() {
 }
 
 #[test]
-fn replay_from_a_state_equals_replay_from_zero() {
-    let log = log(20);
-
-    let mut full = Replica::<ChatState>::new();
-    for e in &log {
-        full.apply_next(e).unwrap();
-    }
-
-    let mut prefix = Replica::<ChatState>::new();
-    for e in &log[..10] {
-        prefix.apply_next(e).unwrap();
-    }
-    let mut resumed = Replica::from_snapshot(10, prefix.state().clone());
-    for e in &log[10..] {
-        resumed.apply_next(e).unwrap();
-    }
-    assert_eq!(resumed.hash(), full.hash());
-    assert_eq!(resumed.version(), 20);
-}
-
-#[test]
 fn a_replica_resumed_from_a_state_rejects_older_versions() {
     let log = log(6);
     let mut prefix = Replica::<ChatState>::new();

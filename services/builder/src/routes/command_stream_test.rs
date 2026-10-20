@@ -4,7 +4,7 @@ use super::{problem_of, snapshot_frame};
 use crate::{
     models::CommandStreamError,
     services::command_stream::{
-        test_utils::{add, postgres_stream, setup, unique_id, Nobody},
+        test_utils::{add, postgres_stream, setup, unique_id},
         AllowAll,
     },
 };
@@ -48,36 +48,9 @@ async fn the_snapshot_route_returns_the_snapshot_plus_the_tail_in_wire_form() {
     assert_eq!(commands[0].command, add("m11"), "the command text is sent as stored");
 }
 
-#[test]
-async fn the_snapshot_route_merges_the_redis_tail_above_the_postgres_head() {
-    let Some(test) = setup(Arc::new(AllowAll)).await else {
-        return;
-    };
-    let stream_id = unique_id();
-    let opened = test.service.open(Uuid::nil(), &stream_id, "chat").await.unwrap();
-    for text in ["a", "b", "c"] {
-        test.service
-            .ingest(
-                opened.kind.as_ref(),
-                &stream_id,
-                Uuid::new_v4(),
-                Uuid::nil(),
-                &add(text),
-            )
-            .await
-            .unwrap();
-    }
-
-    let frame = snapshot_frame(Some(&test.service), Uuid::nil(), stream_id.as_str())
-        .await
-        .unwrap();
-    let ServerFrame::StreamSync { commands, snapshot, .. } = frame else {
-        panic!("expected a streamSync");
-    };
-    assert!(snapshot.is_none());
-    assert_eq!(commands.iter().map(|c| c.version).collect::<Vec<_>>(), [1, 2, 3]);
-}
-
+// The route's 400/403 statuses (invalid stream id, forbidden) are covered by the API test "Chat
+// snapshot route shall reject a missing session and any other stream"; "disabled" and "unknown
+// stream" have no deployed API path to reach them, so they stay here.
 #[test]
 async fn the_snapshot_route_answers_with_the_status_of_the_failure() {
     let Some(test) = setup(Arc::new(AllowAll)).await else {
@@ -88,16 +61,8 @@ async fn the_snapshot_route_answers_with_the_status_of_the_failure() {
     let unknown = snapshot_frame(Some(&test.service), Uuid::nil(), unique_id().as_str()).await;
     assert_eq!(status(unknown.unwrap_err()), StatusCode::NOT_FOUND);
 
-    let invalid = snapshot_frame(Some(&test.service), Uuid::nil(), "not a stream id!").await;
-    assert_eq!(status(invalid.unwrap_err()), StatusCode::BAD_REQUEST);
-
     let disabled = snapshot_frame(None, Uuid::nil(), unique_id().as_str()).await;
     assert_eq!(status(disabled.unwrap_err()), StatusCode::SERVICE_UNAVAILABLE);
-
-    let nobody = test.with_access(Arc::new(Nobody));
-    let stream_id = postgres_stream(&nobody, 1, &[]).await;
-    let forbidden = snapshot_frame(Some(&nobody.service), Uuid::nil(), stream_id.as_str()).await;
-    assert_eq!(status(forbidden.unwrap_err()), StatusCode::FORBIDDEN);
 }
 
 #[test]

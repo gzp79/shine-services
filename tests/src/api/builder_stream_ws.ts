@@ -204,13 +204,14 @@ export async function fetchSnapshot(
     builderUrl: string,
     streamId: string,
     sid?: string
-): Promise<{ status: number; frame?: StreamSyncFrame }> {
+): Promise<{ status: number; cacheControl: string | null; frame?: StreamSyncFrame }> {
     const headers: Record<string, string> = { 'User-Agent': DEFAULT_USER_AGENT };
     if (sid !== undefined) {
         headers.Cookie = `sid=${sid}`;
     }
     const response = await fetch(joinURL(builderUrl, `/api/streams/${streamId}/snapshot`), { headers });
+    const cacheControl = response.headers.get('cache-control');
     return response.ok
-        ? { status: response.status, frame: (await response.json()) as StreamSyncFrame }
-        : { status: response.status };
+        ? { status: response.status, cacheControl, frame: (await response.json()) as StreamSyncFrame }
+        : { status: response.status, cacheControl };
 }

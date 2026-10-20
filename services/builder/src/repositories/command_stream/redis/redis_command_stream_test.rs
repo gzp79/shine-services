@@ -81,23 +81,6 @@ async fn ingest_requires_hydration_and_assigns_dense_versions() {
 }
 
 #[test]
-async fn ingest_dedupes_command_id() {
-    let Some(redis) = setup(3).await else { return };
-    let stream_id = unique_id();
-    redis.hydrate(&stream_id, 1, 0, &[]).await.unwrap();
-    let command_id = Uuid::new_v4();
-    assert_eq!(
-        redis.ingest(&stream_id, command_id, Uuid::nil(), "{}").await.unwrap(),
-        RedisIngest::Accepted(1)
-    );
-    assert_eq!(
-        redis.ingest(&stream_id, command_id, Uuid::nil(), "{}").await.unwrap(),
-        RedisIngest::Duplicate(1)
-    );
-    assert_eq!(redis.read_after(&stream_id, 0, 10).await.unwrap().1.len(), 1);
-}
-
-#[test]
 async fn ingest_is_busy_when_persistence_lags() {
     let Some(redis) = setup(3).await else { return };
     let stream_id = unique_id();
@@ -120,37 +103,6 @@ async fn ingest_is_busy_when_persistence_lags() {
             .await
             .unwrap(),
         RedisIngest::Accepted(4)
-    );
-}
-
-#[test]
-async fn mark_persisted_keeps_everything_from_the_oldest_snapshot() {
-    let Some(redis) = setup(100).await else { return };
-    let stream_id = unique_id();
-    redis.hydrate(&stream_id, 1, 0, &[]).await.unwrap();
-    let ids = ingest_many(&redis, &stream_id, 6).await;
-    assert_eq!(
-        redis.mark_persisted(&stream_id, 2, 5, ids[4], 1).await.unwrap(),
-        MarkOutcome::Unchanged,
-        "other generation"
-    );
-
-    // Persisted up to 3, the oldest stored snapshot is at 1: nothing may go.
-    assert_eq!(
-        redis.mark_persisted(&stream_id, 1, 3, ids[2], 1).await.unwrap(),
-        MarkOutcome::Marked
-    );
-    assert_eq!(versions(&redis, &stream_id).await, vec![1, 2, 3, 4, 5, 6]);
-
-    // Persisted up to 6, the oldest stored snapshot is at 5: the commands below 5 go.
-    assert_eq!(
-        redis.mark_persisted(&stream_id, 1, 6, ids[5], 5).await.unwrap(),
-        MarkOutcome::Marked
-    );
-    assert_eq!(versions(&redis, &stream_id).await, vec![5, 6]);
-    assert_eq!(
-        redis.mark_persisted(&stream_id, 1, 6, ids[5], 5).await.unwrap(),
-        MarkOutcome::Unchanged
     );
 }
 
@@ -452,6 +404,19 @@ async fn mark_persisted_trims_exactly_below_keep_from() {
     let stream_id = unique_id();
     redis.hydrate(&stream_id, 1, 0, &[]).await.unwrap();
     let ids = ingest_many(&redis, &stream_id, 6).await;
+
+    assert_eq!(
+        redis.mark_persisted(&stream_id, 2, 5, ids[4], 1).await.unwrap(),
+        MarkOutcome::Unchanged,
+        "other generation"
+    );
+
+    // Persisted up to 3, the oldest stored snapshot is at 1: nothing may go.
+    assert_eq!(
+        redis.mark_persisted(&stream_id, 1, 3, ids[2], 1).await.unwrap(),
+        MarkOutcome::Marked
+    );
+    assert_eq!(versions(&redis, &stream_id).await, vec![1, 2, 3, 4, 5, 6]);
 
     assert_eq!(
         redis.mark_persisted(&stream_id, 1, 6, ids[5], 3).await.unwrap(),

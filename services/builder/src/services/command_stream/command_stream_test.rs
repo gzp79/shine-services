@@ -13,6 +13,18 @@ use std::{sync::Arc, time::Duration};
 use uuid::Uuid;
 
 #[test]
+fn every_open_error_maps_to_its_reason() {
+    for (error, reason) in [
+        (OpenError::UnknownKind, "unknownKind"),
+        (OpenError::KindMismatch, "kindMismatch"),
+        (OpenError::Forbidden, "forbidden"),
+        (OpenError::Failed(CommandStreamError::NotReady), "failed"),
+    ] {
+        assert_eq!(error.reason(), reason);
+    }
+}
+
+#[test]
 async fn open_creates_the_stream_with_the_kind_and_rejects_another_kind() {
     let Some(test) = setup(Arc::new(AllowAll)).await else {
         return;
@@ -77,34 +89,6 @@ async fn access_decides_who_reads_and_writes() {
         nobody.log.head(&stream_id).await.unwrap().is_none(),
         "nothing was created"
     );
-}
-
-#[test]
-async fn ingest_dedupes_command_id() {
-    let Some(test) = setup(Arc::new(AllowAll)).await else {
-        return;
-    };
-    let stream_id = unique_id();
-    let opened = test.service.open(Uuid::nil(), &stream_id, "chat").await.unwrap();
-    let command_id = Uuid::new_v4();
-
-    // Same command id, same text: the second is a duplicate at the same version.
-    let text = add("hi");
-    let first = test
-        .service
-        .ingest(opened.kind.as_ref(), &stream_id, command_id, Uuid::nil(), &text)
-        .await
-        .unwrap();
-    let second = test
-        .service
-        .ingest(opened.kind.as_ref(), &stream_id, command_id, Uuid::nil(), &text)
-        .await
-        .unwrap();
-    assert_eq!(
-        (first, second),
-        (IngestOutcome::Accepted(1), IngestOutcome::Duplicate(1))
-    );
-    assert_eq!(redis_versions(&test, &stream_id).await, vec![1]);
 }
 
 #[test]

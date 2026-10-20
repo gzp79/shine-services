@@ -265,47 +265,6 @@ async fn a_stream_that_cannot_be_replayed_refuses_its_subscribers() {
 }
 
 #[test(serial = "hub-service")]
-async fn a_subscriber_gets_the_commands_of_a_chat_stream_through_the_hub() {
-    let Some(streams) = setup_with(Arc::new(AllowAll), fast).await else {
-        return;
-    };
-    let (user_id, stream_id) = (Uuid::new_v4(), unique_id());
-    let opened = streams.service.open(user_id, &stream_id, "chat").await.unwrap();
-    let Some(mut test) = create_test_hub(TestHubOptions {
-        command_streams: Some(streams.service.clone()),
-        ..Default::default()
-    })
-    .await
-    else {
-        return;
-    };
-    let (connection_id, mut egress) = connect(&test.hub, user_id, 64);
-    test.hub
-        .request_subscribe_stream(user_id, connection_id, stream_id.clone(), "chat", None)
-        .unwrap();
-    barrier(&test.hub, &mut test.events).await;
-
-    assert!(
-        matches!(
-            next_stream_message(&mut egress).await,
-            StreamMessage::Sync { snapshot: None, .. }
-        ),
-        "the subscriber starts with a Sync"
-    );
-    streams
-        .service
-        .ingest(opened.kind.as_ref(), &stream_id, Uuid::new_v4(), user_id, &add("hello"))
-        .await
-        .unwrap();
-    match next_stream_message(&mut egress).await {
-        StreamMessage::Commands { commands, .. } => {
-            assert_eq!(commands.iter().map(|c| c.version).collect::<Vec<_>>(), vec![1]);
-        }
-        other => panic!("expected the command, got {other:?}"),
-    }
-}
-
-#[test(serial = "hub-service")]
 async fn a_slow_subscriber_never_sees_a_version_gap() {
     let Some(streams) = setup_with(Arc::new(AllowAll), fast).await else {
         return;
