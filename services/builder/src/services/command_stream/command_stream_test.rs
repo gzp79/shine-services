@@ -99,13 +99,11 @@ async fn ingest_rejects_invalid_and_oversized_commands() {
     let stream_id = unique_id();
     let opened = test.service.open(Uuid::nil(), &stream_id, "chat").await.unwrap();
 
-    let oversized = add(&"x".repeat(300));
     let invalid = [
         "not json".to_string(),
         r#"{"type":"edit"}"#.to_string(),
         r#"{"type":"add"}"#.to_string(),
         add("   "),
-        oversized,
     ];
     for command in invalid {
         let outcome = test
@@ -119,28 +117,6 @@ async fn ingest_rejects_invalid_and_oversized_commands() {
         redis_versions(&test, &stream_id).await.is_empty(),
         "nothing invalid was stored"
     );
-}
-
-#[test]
-async fn ingest_canonicalizes_the_command_text() {
-    let Some(test) = setup(Arc::new(AllowAll)).await else {
-        return;
-    };
-    let stream_id = unique_id();
-    let opened = test.service.open(Uuid::nil(), &stream_id, "chat").await.unwrap();
-
-    test.service
-        .ingest(
-            opened.kind.as_ref(),
-            &stream_id,
-            Uuid::new_v4(),
-            Uuid::nil(),
-            r#"{ "text": "hi", "type": "add", "extra": 1 }"#,
-        )
-        .await
-        .unwrap();
-    let (_, entries) = test.redis.read_after(&stream_id, 0, 10).await.unwrap();
-    assert_eq!(entries[0].data, r#"{"type":"add","text":"hi"}"#);
 }
 
 #[test]

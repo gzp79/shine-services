@@ -1,5 +1,5 @@
 import { expect, test } from '$fixtures/setup';
-import { StreamSocket, wsConnectUrl, wsOptions } from '$lib/api/builder_stream_ws';
+import { StreamSocket, simulateRegistryTakeover, wsConnectUrl, wsOptions } from '$lib/api/builder_stream_ws';
 import { MintedSession, SessionMint } from '$lib/mocks/session_mint';
 import { DEFAULT_USER_AGENT } from '$lib/utils';
 import { randomUUID } from 'node:crypto';
@@ -236,32 +236,59 @@ test.describe('Builder websocket', { tag: ['@regression'] }, () => {
         socket.close();
     });
 
-    test('WS second connection for a user shall drop the first (last connection wins)', async ({
+    // Invariant 2: a user has at most one connection; a new one kills the previous, whether it is the
+    // same session reconnecting or another session of the same user. This is driven by the
+    // ConnectUser command, so no interval wait is needed.
+    for (const secondSessionCase of [
+        { title: 'the same session', secondSession: () => user },
+        {
+            title: 'another session of the same user',
+            secondSession: () => mint.createUserSession({ userId: user.userId })
+        }
+    ]) {
+        test(`WS second connection for a user shall close the first with replaced and keep serving the second (${secondSessionCase.title})`, async ({
+            homeUrl,
+            builderWSUrl
+        }) => {
+            const first = await StreamSocket.open(builderWSUrl, wsOptions(homeUrl, builderWSUrl, user.sessionCookie));
+            const secondSession = await secondSessionCase.secondSession();
+            const second = await StreamSocket.open(
+                builderWSUrl,
+                wsOptions(homeUrl, builderWSUrl, secondSession.sessionCookie)
+            );
+
+            expect(await first.closed).toEqual({ code: HUB_DROPPED_CLOSE_CODE, reason: 'replaced' });
+
+            // The second socket keeps serving: it can still subscribe and get a command delivered.
+            second.subscribe('chat-global', 'chat');
+            await second.next('streamSync');
+            const commandId = randomUUID();
+            second.command('chat-global', commandId, { type: 'add', text: `still here ${randomUUID()}` });
+            await second.next('streamCommands', (frame) => frame.commands.some((c) => c.commandId === commandId));
+
+            second.close();
+        });
+    }
+
+    test('WS connection taken over through the registry shall close with registry_inactive', async ({
         homeUrl,
         builderWSUrl
     }) => {
         const url = wsConnectUrl(builderWSUrl);
-        const headers = wsHeaders(homeUrl, builderWSUrl);
 
-        // Invariant 2: a user has at most one connection; a new one kills the previous. This is
-        // driven by the ConnectUser command, so no interval wait is needed.
-        const first = openAndWaitClose(url, {
+        const closeCtx = openAndWaitClose(url, {
             sid: user.sessionCookie,
-            ...headers,
+            ...wsHeaders(homeUrl, builderWSUrl),
             holdTimeoutMs: 10_000
         });
-        expect(await first.opened).toBe(true);
+        expect(await closeCtx.opened).toBe(true);
 
-        const second = openAndWaitClose(url, {
-            sid: user.sessionCookie,
-            ...headers,
-            holdTimeoutMs: 10_000
-        });
-        expect(await second.opened).toBe(true);
+        // Simulate another instance taking this user's row over directly in Redis (no second
+        // instance needed): the hub's registry listener reacts to the change notice.
+        await simulateRegistryTakeover(user.userId);
 
-        // The first socket must be force-closed by the hub, telling the client why; the second stays open.
-        const firstResult = await first.settled;
-        expect(firstResult).toEqual({ kind: 'closed', code: HUB_DROPPED_CLOSE_CODE, reason: 'replaced' });
+        const result = await closeCtx.settled;
+        expect(result).toEqual({ kind: 'closed', code: HUB_DROPPED_CLOSE_CODE, reason: 'registry_inactive' });
     });
 
     test('WS connection shall be dropped when session is deleted', async ({ homeUrl, builderWSUrl }) => {

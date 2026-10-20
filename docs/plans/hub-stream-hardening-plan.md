@@ -111,6 +111,7 @@ Why this order:
 | RDS-13 | An unparsable wake wakes every stream | Low | K | Open | S | 8 |
 | RDS-14 | Nothing checks the Redis version or eviction policy | Low | H | Open | S | 1 |
 | RDS-15 | Redis Cluster is unsupported but undocumented as a limit | Low | H | Open | S | 6 |
+| RDS-16 | A Redis outage stalls `ingest` for the full pool timeout (30 s), not a fast nack | Med | C | Done | S | 1 |
 | HUB-1 | Every socket gets every lifecycle event | High | F | Open | S | 5 |
 | HUB-2 | Serial registry round trips on the command loop, without a timeout | High | C | Open | M | 5 |
 | HUB-3 | An aborted registry transaction becomes an error | Low | F | Open | M | 5 |
@@ -291,6 +292,11 @@ Each finding states where the defect is, what goes wrong, the fix, and the tests
 - **Problem:** bb8's default `test_on_check_out = true` sends a PING on every `pool.get()`, which doubles the round trips of every ingest and read.
 - **Fix:** `test_on_check_out(false)` plus a shared broken flag (`Arc<AtomicBool>`) read by `has_broken`. The flag is set on a dropped connection or an unrecoverable error, not on a plain response timeout. Without it, dead connections stay pooled for 10-30 min, because redis 1.7.1 has no public `is_closed`.
 - **Tests:** `a_pool_checkout_sends_no_ping` (Redis `INFO commandstats`).
+
+**RDS-16. A Redis outage stalls `ingest` for the full pool timeout (30 s), not a fast nack.** `repositories/command_stream/redis/redis_command_stream_db.rs:152-158` (`client()` → `self.0.pool.get()`), `crates/shine-infra/src/db/redis/redis_connection.rs:228,249,263,266` (`pool_timeout` default 30 000 ms, no override on the builder's command-stream pool). — **Done**
+- **Problem:** found while writing the API test for "a Redis outage nacks writes" (TST-4). `ingest`'s `pool.get()` carried no `tokio::time::timeout` of its own, so when every pooled connection is broken and a fresh one can't be established, bb8 blocked the whole call for up to `pool_timeout` (30 s, unset in `server_config.test.json`) before returning `PoolError::TimedOut`, which only then became a `failed` nack. The socket itself stays open and usable (confirmed live: `streamSync`/`streamCommands` worked before and after), so there was no gap or reset — but a client that simply tried to write during an outage waited 30 s for its nack, not milliseconds. The worker's own `persist_delay` step hit the identical stall (`Internal { source: PoolError(TimedOut) }`), which is the Redis analogue of STR-12's Postgres finding, on the same root cause (RC C); `client()` is shared by every `RedisCommandStreamDb` method, so the same fix covers both.
+- **Fix:** `client()` now wraps `self.0.pool.get()` in a 2 s `tokio::time::timeout`, well under the pool's 30 s, and maps a timeout to the same `RedisError::PoolError(RedisConnectionError::TimedOut)` the pool itself already returns — no new error variant needed, no behaviour change on the success path.
+- **Tests:** verified live against toxiproxy (`enabled:false` on the `redis` proxy): the nack now lands in ~2 s instead of ~30 s. `cargo test -p shine-builder` (145 passed), `cargo fmt`/`clippy` clean. API: `chat_stream_failures.ts`'s "Chat stream shall nack writes during a Redis outage..." pins the now-fast nack.
 
 ### RC D: missing budgets and limits
 
@@ -763,17 +769,17 @@ Keep → drop. Drop a test that TST-4 replaces only when its API replacement lan
 
 ### TST-4. Rust tests to move to the API (Med, M, phase 0)
 
-| API test (file) | Replaces |
-|---|---|
-| "WS second connection for a user shall close the first with replaced and keep serving the second" (`ws_connect.ts`, extends `:236`; one row per minted session of the same user) | `connect_test.rs:202` |
-| "Chat shall refuse commands after the socket unsubscribed" (`chat_stream.ts`; today the API covers only the never-subscribed nack) | `connect_test.rs:440` |
-| Resume table with `chat_stream.ts:275`: "Chat resume at the head shall be answered with an empty streamCommands and then follow live"; "… above the head shall be answered with a full sync"; "… older than the newest snapshot shall be answered with a full sync" (wait for `streamCheckpoint v`, then resume at v-1) | `connect_test.rs:523,549,563,577`, `stream_integration_test.rs:415` |
-| "Chat shall start a joining client from the newest snapshot and only the commands after it"; extend `chat_stream.ts:242` to check the commands start right after the snapshot and are contiguous | `chat_test.rs:217`, `routes/command_stream_test.rs:19`, `stream_integration_test.rs:447` |
-| "Chat shall store and deliver a command in its canonical form" (exact bytes, not `JSON.parse`) | `command_stream_test.rs:141`, `connect_test.rs:408` |
-| "Chat shall refuse a command longer than maxCommandBytes as invalid" (a frame over 16 KiB; kept until WS-1 lowers the frame limit, then a Rust unit check) | `command_stream_test.rs:111`, `connect_test.rs:458` |
-| `chat_stream_failures.ts` (`@infrastructure`): "Chat stream shall nack writes during a Redis outage and continue without a gap or a reset after it" (the live socket stays open, because the session check skips transient errors) | `stream_worker_test.rs:176` |
-| `chat_stream_failures.ts`: "Chat stream shall keep delivering during a Postgres outage and push the checkpoint once Postgres returns"; "Chat snapshot route shall answer 503 while Postgres is down and recover"; "Chat subscribe shall fail with streamSubscribeFailed while Postgres is down and the stream is cold" | `stream_integration_test.rs:276` |
-| `ws_connect.ts` (`@infrastructure`): "WS connect shall be refused while Redis is down and accepted after recovery" (confirm the status, probably 503) | none |
+| API test (file) | Replaces | Status |
+|---|---|---|
+| "WS second connection for a user shall close the first with replaced and keep serving the second" (`ws_connect.ts`, extends `:236`; one row per minted session of the same user) | `connect_test.rs:202` | **Done** |
+| "Chat shall refuse commands after the socket unsubscribed" (`chat_stream.ts`; today the API covers only the never-subscribed nack) | `connect_test.rs:440` | **Done** |
+| Resume table with `chat_stream.ts:275`: "Chat resume at the head shall be answered with an empty streamCommands and then follow live"; "… above the head shall be answered with a full sync"; "… older than the newest snapshot shall be answered with a full sync" (wait for `streamCheckpoint v`, then resume at v-1) | `connect_test.rs:523,549,563,577`, `stream_integration_test.rs:415` | **Done**, plus dropped the now-redundant `resume_with_a_changed_generation_sends_a_full_sync` (covered by the existing "another generation" API test) |
+| "Chat shall start a joining client from the newest snapshot and only the commands after it"; extend `chat_stream.ts:242` to check the commands start right after the snapshot and are contiguous | `chat_test.rs:217`, `routes/command_stream_test.rs:19`, `stream_integration_test.rs:447` | **Done**, with a deviation: `routes/command_stream_test.rs:19` (`postgres_stream`, no Redis copy at all) and `stream_integration_test.rs:447` (post-pruning, via `pruned_stream`) each exercise a distinct code path the API test can't reach deterministically (`chat-global` always has a resident worker when the API test runs, and pruning on the shared room isn't controllable) — kept both instead of dropping them. |
+| "Chat shall store and deliver a command in its canonical form" (exact bytes, not `JSON.parse`) | `command_stream_test.rs:141`, `connect_test.rs:408` | **Done** |
+| "Chat shall refuse a command longer than maxCommandBytes as invalid" (a frame over 16 KiB; kept until WS-1 lowers the frame limit, then a Rust unit check) | `command_stream_test.rs:111`, `connect_test.rs:458` | **Done** |
+| `chat_stream_failures.ts` (`@infrastructure`): "Chat stream shall nack writes during a Redis outage and continue without a gap or a reset after it" (the live socket stays open, because the session check skips transient errors) | `stream_worker_test.rs:176` | Open (toxiproxy) |
+| `chat_stream_failures.ts`: "Chat stream shall keep delivering during a Postgres outage and push the checkpoint once Postgres returns"; "Chat snapshot route shall answer 503 while Postgres is down and recover"; "Chat subscribe shall fail with streamSubscribeFailed while Postgres is down and the stream is cold" | `stream_integration_test.rs:276` | Open (toxiproxy) |
+| `ws_connect.ts` (`@infrastructure`): "WS connect shall be refused while Redis is down and accepted after recovery" (confirm the status, probably 503) | none | Open (toxiproxy) |
 
 These stay in Rust, with the reason for each:
 - **Config not deployed:** `command_stream_test.rs:16,59`, `connect_test.rs:497`.
@@ -784,13 +790,15 @@ These stay in Rust, with the reason for each:
 - **Volume:** the rest of `contention.rs` and `stress.rs`.
 - **Ticks the test config lacks:** `lifecycle.rs:460,525`.
 
-### TST-5. Missing API coverage of current behaviour (Med, S, phase 0)
+### TST-5. Missing API coverage of current behaviour (Med, S, phase 0) — Done
 
-- "WS connection taken over through the registry shall close with registry_inactive" (`SET` + `PUBLISH`).
+All items below are done, verified against live identity + builder instances.
+
+- "WS connection taken over through the registry shall close with registry_inactive" (`SET` + `PUBLISH`). Needed a new test helper, `simulateRegistryTakeover` in `builder_stream_ws.ts`, which connects to the shared test Redis directly (reading `services/server_config_test.json`, same pattern `SessionMint` uses) and does the `SET`+`PUBLISH` against today's unprefixed `hub-connection:`/`hub-registry-changed` keys (HUB-12 will version these later).
 - "Chat checkpoint hash shall equal the snapshot route hash" (at each `streamCheckpoint`).
 - "Chat command after a failed subscribe shall be nacked notSubscribed"; "Chat command id reused by another user shall be refused as duplicate".
 - "Chat shall accept a command sent right after the subscribe, before the sync" (the guard for WS-5).
-- Silently ignored input: binary frames, a non-UUID command id, and invalid stream ids in subscribe, command and unsubscribe. Pin today's silence with `expectNone`; WS-8 flips the rows.
+- Silently ignored input: binary frames, a non-UUID command id, and invalid stream ids in subscribe, command and unsubscribe. Pinned today's silence with `expectNone`; WS-8 flips the rows. Needed a new `StreamSocket.sendBinary` helper.
 - The `hub` status in `shared/health.ts`.
 
 ### TST-6. Missing unit and Rust coverage of current behaviour (Med, M, any time)

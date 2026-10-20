@@ -4,12 +4,12 @@ use crate::{
             AppendOutcome, CommandLogError, PruneOutcome, SnapshotOutcome, StoredCommand, StoredSnapshot, StreamHead,
             StreamId,
         },
-        postgres::{PgConnection, PgConnectionPool, PgError, PgPooledConnection, PgRawConnection},
+        postgres::{PgConnection, PgConnectionPool, PgError, PgPoolError, PgPooledConnection, PgRawConnection},
     },
     pg_query,
 };
 use postgres_from_row::FromRow;
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio_postgres::IsolationLevel;
 use uuid::Uuid;
 
@@ -17,6 +17,10 @@ const MIGRATION_V1: &str = include_str!("sql/V1__command_log.sql");
 
 /// Bounds of an append transaction: a dead or stuck holder must not keep the stream's row lock.
 const APPEND_TIMEOUTS: &str = "SET LOCAL lock_timeout = '5s'; SET LOCAL idle_in_transaction_session_timeout = '30s'";
+
+/// Checkout deadline, well under the pool's own `pool_timeout` (30 s by default): a down Postgres
+/// fails a request fast instead of parking it for half a minute (PG-1).
+const CLIENT_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(FromRow)]
 struct HeadRow {
@@ -282,7 +286,10 @@ impl PgCommandLogDb {
     }
 
     async fn client(&self) -> Result<PgPooledConnection<'_>, CommandLogError> {
-        self.0.pool.get().await.map_err(|err| db(PgError::PoolError(err)))
+        match tokio::time::timeout(CLIENT_TIMEOUT, self.0.pool.get()).await {
+            Ok(result) => result.map_err(|err| db(PgError::PoolError(err))),
+            Err(_) => Err(db(PgError::PoolError(PgPoolError::TimedOut))),
+        }
     }
 
     pub async fn ensure_stream(&self, stream_id: &StreamId, kind: &str) -> Result<StreamHead, CommandLogError> {

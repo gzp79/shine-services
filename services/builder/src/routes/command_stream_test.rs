@@ -48,9 +48,6 @@ async fn the_snapshot_route_returns_the_snapshot_plus_the_tail_in_wire_form() {
     assert_eq!(commands[0].command, add("m11"), "the command text is sent as stored");
 }
 
-// The route's 400/403 statuses (invalid stream id, forbidden) are covered by the API test "Chat
-// snapshot route shall reject a missing session and any other stream"; "disabled" and "unknown
-// stream" have no deployed API path to reach them, so they stay here.
 #[test]
 async fn the_snapshot_route_answers_with_the_status_of_the_failure() {
     let Some(test) = setup(Arc::new(AllowAll)).await else {

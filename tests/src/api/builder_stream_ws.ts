@@ -1,5 +1,9 @@
 import { DEFAULT_USER_AGENT, joinURL } from '$lib/utils';
+import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { IncomingMessage } from 'node:http';
+import path from 'node:path';
+import { createClient } from 'redis';
 import { WebSocket } from 'ws';
 
 // The builder's stream protocol (see docs/services/builder/hub.md): JSON text frames tagged by `type`.
@@ -63,11 +67,19 @@ export class StreamSocket {
     private readonly frames: ServerFrame[] = [];
     private readonly waiters: Array<() => void> = [];
     private closedResult: { code: number; reason: string } | undefined;
+    private socketError: Error | undefined;
     public readonly closed: Promise<{ code: number; reason: string }>;
 
     private constructor(private readonly ws: WebSocket) {
         ws.on('message', (data: Buffer) => {
             this.frames.push(JSON.parse(data.toString()) as ServerFrame);
+            this.waiters.splice(0).forEach((wake) => wake());
+        });
+        // A persistent listener: without one, a socket-level error after `open()` (whose own
+        // `once('error', ...)` has already fired and detached) is an unhandled EventEmitter error,
+        // which crashes the whole test process instead of failing just the pending wait.
+        ws.on('error', (err: Error) => {
+            this.socketError = err;
             this.waiters.splice(0).forEach((wake) => wake());
         });
         this.closed = new Promise((resolve) => {
@@ -117,6 +129,10 @@ export class StreamSocket {
 
     public sendRaw(frame: string): void {
         this.ws.send(frame);
+    }
+
+    public sendBinary(data: Buffer): void {
+        this.ws.send(data);
     }
 
     public close(): void {
@@ -214,4 +230,26 @@ export async function fetchSnapshot(
     return response.ok
         ? { status: response.status, cacheControl, frame: (await response.json()) as StreamSyncFrame }
         : { status: response.status, cacheControl };
+}
+
+async function builderRedisCns(): Promise<string> {
+    const configPath = path.join(__dirname, '../../../services/server_config_test.json');
+    const content = await readFile(configPath, 'utf-8');
+    const config = JSON.parse(content) as { service: { sessionRedisCns: string } };
+    return config.service.sessionRedisCns;
+}
+
+// Simulates another instance taking the user's hub registry row over: SET a foreign connection id for the
+// key the hub owns, then PUBLISH the change notice its listener reacts to (today's registry key format
+// and channel; see HUB-12 for the versioned one).
+export async function simulateRegistryTakeover(userId: string): Promise<void> {
+    const redis = createClient({ url: await builderRedisCns() });
+    await redis.connect();
+    try {
+        const key = `hub-connection:${userId.replace(/-/g, '')}`;
+        await redis.set(key, randomUUID(), { EX: 60 });
+        await redis.publish('hub-registry-changed', `${randomUUID()}:${userId}`);
+    } finally {
+        await redis.disconnect();
+    }
 }

@@ -2,13 +2,16 @@ use super::scripts::{HYDRATE, IDLE_STREAMS, INGEST, MARK_PERSISTED, REQUEUE_ACTI
 use redis::streams::{StreamId as RedisStreamId, StreamRangeReply};
 use shine_infra::db::{
     command_log::{StoredCommand, StreamId},
-    redis::{RedisConnectionPool, RedisError, RedisPooledConnection},
+    redis::{RedisConnectionError, RedisConnectionPool, RedisError, RedisPooledConnection},
 };
 use std::{sync::Arc, time::Duration};
 use tracing::instrument;
 use uuid::Uuid;
 
 const HYDRATION_LOCK_MS: u64 = 5000;
+/// Checkout deadline for the command-stream pool: well under the pool's own `pool_timeout` (30 s by
+/// default), so a down Redis fails a request fast instead of parking it for half a minute (RDS-16).
+const CLIENT_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Clone, Debug)]
 pub struct RedisStreamConfig {
@@ -150,7 +153,10 @@ impl RedisCommandStreamDb {
     }
 
     async fn client(&self) -> Result<RedisPooledConnection<'_>, RedisError> {
-        self.0.pool.get().await.map_err(RedisError::PoolError)
+        match tokio::time::timeout(CLIENT_TIMEOUT, self.0.pool.get()).await {
+            Ok(result) => result.map_err(RedisError::PoolError),
+            Err(_) => Err(RedisError::PoolError(RedisConnectionError::TimedOut)),
+        }
     }
 
     /// Appends a command; the hot path, a single script.

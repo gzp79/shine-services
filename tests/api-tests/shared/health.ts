@@ -20,6 +20,16 @@ const optionalProviderValidators: Record<string, (value: unknown) => void> = {
                 idleConnections: expect.any(Number)
             })
         );
+    },
+    hub: (value) => {
+        expect(value).toEqual(
+            expect.objectContaining({
+                connections: expect.any(Number),
+                subscribers: expect.any(Number),
+                heartbeatTicks: expect.any(Number),
+                sessionCheckTicks: expect.any(Number)
+            })
+        );
     }
 };
 

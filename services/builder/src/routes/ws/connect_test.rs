@@ -199,33 +199,6 @@ fn connection_of(events: &[HubEvent], user_id: Uuid) -> Uuid {
 }
 
 #[test(serial = "hub-service")]
-async fn a_replaced_socket_is_closed_with_the_reason() {
-    let Some(mut test) = socket_hub().await else {
-        return;
-    };
-    let user = Uuid::new_v4();
-
-    let first = Client::open(&mut test, user).await;
-    let mut second = Client::open(&mut test, user).await;
-
-    assert_eq!(first.finished().await, [close(CLOSE_CODE_DROPPED, "replaced")]);
-    test.hub
-        .send_to_connection(second.connection_id, payload("1-0"))
-        .await
-        .unwrap();
-    assert_eq!(payload_frame(&second.next_frame().await), "1-0");
-
-    second.leave();
-    let second_id = second.connection_id;
-    assert_eq!(second.finished().await, [WsMessage::Close(None)]);
-    let seen = barrier(&test.hub, &mut test.events).await;
-    assert_eq!(lifecycle_of(&seen, user), [Lifecycle::Disconnected(second_id)]);
-}
-
-// The request_drop → close round trip is covered by `lifecycle::forced_drop_tells_the_socket_why`
-// (hub side) and the API test "WS connection shall be dropped when session is deleted" (socket
-// side); this test keeps only the shutdown and hub-stopped behaviour.
-#[test(serial = "hub-service")]
 async fn a_shutdown_closes_every_socket_and_stops_new_connections() {
     let Some(mut test) = socket_hub().await else {
         return;
@@ -401,7 +374,6 @@ async fn a_subscriber_gets_a_sync_and_sees_its_own_command() {
     assert_eq!(versions(&commands), [1]);
     assert_eq!(commands["commands"][0]["commandId"], command_id.to_string());
     assert_eq!(commands["commands"][0]["userId"], user.to_string());
-    assert_eq!(commands["commands"][0]["command"], r#"{"type":"add","text":"hello"}"#);
 
     // The same command id again is refused, not applied twice.
     client.write(&stream_id, command_id, "hello");
@@ -414,24 +386,6 @@ async fn a_subscriber_gets_a_sync_and_sees_its_own_command() {
 }
 
 #[test(serial = "hub-service")]
-async fn a_command_for_an_unsubscribed_stream_gets_not_subscribed() {
-    let Some((mut test, streams)) = stream_hub().await else {
-        return;
-    };
-    let (user, stream_id) = (Uuid::new_v4(), unique_id());
-    let mut client = Client::open_with(&mut test, user, Some(streams.service.clone())).await;
-
-    client.write(&stream_id, Uuid::new_v4(), "nobody listens");
-    assert_eq!(client.next_of("streamNack").await["reason"], "notSubscribed");
-
-    client.subscribe(&stream_id, "chat", None);
-    client.next_of("streamSync").await;
-    client.send(&json!({ "type": "streamUnsubscribe", "streamId": stream_id.as_str() }).to_string());
-    client.write(&stream_id, Uuid::new_v4(), "after the unsubscribe");
-    assert_eq!(client.next_of("streamNack").await["reason"], "notSubscribed");
-}
-
-#[test(serial = "hub-service")]
 async fn invalid_and_oversized_commands_get_invalid() {
     let Some((mut test, streams)) = stream_hub().await else {
         return;
@@ -441,8 +395,6 @@ async fn invalid_and_oversized_commands_get_invalid() {
     client.subscribe(&stream_id, "chat", None);
     client.next_of("streamSync").await;
 
-    client.write(&stream_id, Uuid::new_v4(), &"x".repeat(300));
-    assert_eq!(client.next_of("streamNack").await["reason"], "invalid");
     client.send(
         &json!({ "type": "streamCommand", "streamId": stream_id.as_str(), "commandId": Uuid::new_v4(), "command": "nope" })
             .to_string(),
@@ -508,61 +460,4 @@ async fn resume_inside_the_window_sends_only_the_tail() {
     let frame = second.next_frame_of_stream().await;
     assert_eq!(frame["type"], "streamCommands");
     assert_eq!(versions(&frame), [3]);
-
-    // Resuming at the head is answered with an empty list, then the live commands follow.
-    second.subscribe(&stream_id, "chat", Some((generation, 3)));
-    let frame = second.next_frame_of_stream().await;
-    assert_eq!(
-        (frame["type"].as_str(), versions(&frame)),
-        (Some("streamCommands"), vec![])
-    );
-    second.write(&stream_id, Uuid::new_v4(), "m4");
-    let frame = second.next_frame_of_stream().await;
-    assert_eq!(frame["type"], "streamCommands");
-    assert_eq!(versions(&frame), [4]);
-}
-
-#[test(serial = "hub-service")]
-async fn resume_with_a_changed_generation_sends_a_full_sync() {
-    let Some((mut test, streams)) = stream_hub().await else {
-        return;
-    };
-    let (stream_id, _first, generation) = resident_stream(&mut test, streams.service.clone(), 3).await;
-
-    let mut second = Client::open_with(&mut test, Uuid::new_v4(), Some(streams.service.clone())).await;
-    second.subscribe(&stream_id, "chat", Some((generation + 1, 2)));
-    let sync = second.next_frame_of_stream().await;
-    assert_eq!(sync["type"], "streamSync");
-    assert_eq!(versions(&sync), [1, 2, 3]);
-}
-
-#[test(serial = "hub-service")]
-async fn resume_above_the_head_sends_a_full_sync() {
-    let Some((mut test, streams)) = stream_hub().await else {
-        return;
-    };
-    let (stream_id, _first, generation) = resident_stream(&mut test, streams.service.clone(), 3).await;
-
-    let mut second = Client::open_with(&mut test, Uuid::new_v4(), Some(streams.service.clone())).await;
-    second.subscribe(&stream_id, "chat", Some((generation, 99)));
-    let sync = second.next_frame_of_stream().await;
-    assert_eq!(sync["type"], "streamSync");
-    assert_eq!(versions(&sync), [1, 2, 3]);
-}
-
-#[test(serial = "hub-service")]
-async fn resume_older_than_the_base_version_sends_a_full_sync() {
-    let Some((mut test, streams)) = stream_hub().await else {
-        return;
-    };
-    // Six commands with a snapshot every five: the base of the worker is version 5 once the checkpoint is out.
-    let (stream_id, mut first, generation) = resident_stream(&mut test, streams.service.clone(), 6).await;
-    assert_eq!(first.next_of("streamCheckpoint").await["version"], 5);
-
-    let mut second = Client::open_with(&mut test, Uuid::new_v4(), Some(streams.service.clone())).await;
-    second.subscribe(&stream_id, "chat", Some((generation, 2)));
-    let sync = second.next_frame_of_stream().await;
-    assert_eq!(sync["type"], "streamSync");
-    assert_eq!(sync["snapshot"]["version"], 5);
-    assert_eq!(versions(&sync), [6]);
 }

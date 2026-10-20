@@ -3,14 +3,14 @@
 
 use crate::{
     app_config::KindRetentionConfig,
-    models::messages::{StreamMessage, StreamResume},
+    models::messages::StreamMessage,
     repositories::command_stream::redis::RedisStreamEntry,
     services::command_stream::{
         test_utils::{
             add, eventually, fast_cadence, ingest, redis_versions, setup_for_outage, setup_with, start_worker,
             unique_id, Running, Test,
         },
-        AllowAll, IngestOutcome, WorkerCommand,
+        AllowAll, IngestOutcome,
     },
 };
 use shine_game::replay::{encode_snapshot, stable_hash_of, ChatState};
@@ -409,38 +409,6 @@ async fn hydration_after_pruning_starts_at_the_oldest_snapshot() {
     assert_eq!(snapshot.map(|s| s.version), Some(15));
     assert!(commands.is_empty());
     again.stop().await;
-}
-
-#[test]
-async fn a_resume_below_the_oldest_snapshot_gets_a_full_sync() {
-    let Some(test) = setup_with(Arc::new(AllowAll), fast_cadence).await else {
-        return;
-    };
-    let (stream_id, running) = pruned_stream(&test).await;
-    eventually("the newest checkpoint", || async {
-        running
-            .egress
-            .checkpoints(running.connection_id)
-            .last()
-            .map(|(v, _)| *v)
-            == Some(15)
-    })
-    .await;
-    let generation = test.redis.meta(&stream_id).await.unwrap().unwrap().generation;
-
-    let other = Uuid::new_v4();
-    let resume = StreamResume { generation, version: 3 };
-    running
-        .handle
-        .tx
-        .send(WorkerCommand::AddSubscriber(other, Some(resume)))
-        .unwrap();
-    eventually("the answer", || async { !running.egress.sent_to(other).is_empty() }).await;
-    let StreamMessage::Sync { snapshot, .. } = running.egress.sent_to(other).remove(0) else {
-        panic!("a position below the history is answered with a sync");
-    };
-    assert_eq!(snapshot.map(|s| s.version), Some(15));
-    running.stop().await;
 }
 
 #[test]

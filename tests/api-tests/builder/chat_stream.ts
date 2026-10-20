@@ -125,6 +125,25 @@ test.describe('Builder chat stream', { tag: ['@regression'] }, () => {
         }
     });
 
+    test('Chat shall store and deliver a command in its canonical form', async ({ homeUrl, builderWSUrl }) => {
+        const a = await joinChat(homeUrl, builderWSUrl, alice);
+        const commandId = randomUUID();
+        const text = `canon ${randomUUID()}`;
+        // Extra whitespace, a reordered key and an unknown field: none of it should survive storage.
+        a.socket.sendRaw(
+            JSON.stringify({
+                type: 'streamCommand',
+                streamId: CHAT,
+                commandId,
+                command: `{ "extra": 1, "text": "${text}", "type":   "add" }`
+            })
+        );
+        const frame = await a.socket.next('streamCommands', ownsCommand(commandId));
+        const delivered = frame.commands.find((c) => c.commandId === commandId)!;
+        // Exact bytes, not `JSON.parse`: it must equal the canonical form byte for byte.
+        expect(delivered.command).toBe(`{"type":"add","text":"${text}"}`);
+    });
+
     test('Chat shall refuse a retried command id once', async ({ homeUrl, builderWSUrl }) => {
         const a = await joinChat(homeUrl, builderWSUrl, alice);
 
@@ -137,6 +156,20 @@ test.describe('Builder chat stream', { tag: ['@regression'] }, () => {
         const duplicate = await a.socket.next('streamNack', (frame) => frame.commandId === commandId);
         expect(duplicate).toMatchObject({ streamId: CHAT, reason: 'duplicate' });
         await a.socket.expectNone('streamCommands', 500, ownsCommand(commandId));
+    });
+
+    test('Chat shall refuse a command id reused by another user as duplicate', async ({ homeUrl, builderWSUrl }) => {
+        const a = await joinChat(homeUrl, builderWSUrl, alice);
+        const b = await joinChat(homeUrl, builderWSUrl, bob);
+
+        const commandId = randomUUID();
+        a.socket.command(CHAT, commandId, { type: 'add', text: `first ${randomUUID()}` });
+        await a.socket.next('streamCommands', ownsCommand(commandId));
+
+        // Dedupe is keyed by command id alone; a different author reusing it is still a duplicate.
+        b.socket.command(CHAT, commandId, { type: 'add', text: 'stolen id' });
+        const duplicate = await b.socket.next('streamNack', (frame) => frame.commandId === commandId);
+        expect(duplicate).toMatchObject({ streamId: CHAT, reason: 'duplicate' });
     });
 
     test('Chat shall refuse invalid chat commands', async ({ homeUrl, builderWSUrl }) => {
@@ -159,6 +192,51 @@ test.describe('Builder chat stream', { tag: ['@regression'] }, () => {
             const nack = await a.socket.next('streamNack', (frame) => frame.commandId === id);
             expect(nack.reason, title).toBe('invalid');
         }
+    });
+
+    // The byte-length check runs before canonicalization, so garbage past maxCommandBytes (16 KiB
+    // deployed) is refused on size alone. Kept here until WS-1 lowers the frame limit below it, after
+    // which this becomes a Rust unit check.
+    test('Chat shall refuse a command longer than maxCommandBytes as invalid', async ({ homeUrl, builderWSUrl }) => {
+        const a = await joinChat(homeUrl, builderWSUrl, alice);
+        const commandId = randomUUID();
+        const oversized = 'x'.repeat(17 * 1024);
+        a.socket.sendRaw(JSON.stringify({ type: 'streamCommand', streamId: CHAT, commandId, command: oversized }));
+        expect((await a.socket.next('streamNack', (frame) => frame.commandId === commandId)).reason).toBe('invalid');
+    });
+
+    // Pins today's silence (no reply) for malformed input the socket cannot act on; WS-8 flips these
+    // to an `error{invalid}` frame.
+    test('Chat shall silently ignore a binary frame, a non-UUID command id and an invalid stream id', async ({
+        homeUrl,
+        builderWSUrl
+    }) => {
+        const socket = await StreamSocket.open(builderWSUrl, wsOptions(homeUrl, builderWSUrl, alice.sessionCookie));
+        sockets.push(socket);
+        socket.subscribe(CHAT, 'chat');
+        await socket.next('streamSync');
+
+        socket.sendBinary(Buffer.from('binary frame'));
+        socket.sendRaw(JSON.stringify({ type: 'streamSubscribe', streamId: 'not a stream id!', kind: 'chat' }));
+        socket.sendRaw(JSON.stringify({ type: 'streamUnsubscribe', streamId: 'not a stream id!' }));
+        socket.sendRaw(
+            JSON.stringify({
+                type: 'streamCommand',
+                streamId: 'not a stream id!',
+                commandId: randomUUID(),
+                command: '{}'
+            })
+        );
+        socket.sendRaw(
+            JSON.stringify({ type: 'streamCommand', streamId: CHAT, commandId: 'not-a-uuid', command: '{}' })
+        );
+        await socket.expectNone('streamSubscribeFailed', 500);
+        await socket.expectNone('streamNack', 500);
+
+        // The socket is still usable after all of the above.
+        const commandId = randomUUID();
+        socket.command(CHAT, commandId, { type: 'add', text: `still alive ${randomUUID()}` });
+        await socket.next('streamCommands', ownsCommand(commandId));
     });
 
     test('Chat socket shall ignore malformed frames without dropping the connection', async ({
@@ -189,6 +267,38 @@ test.describe('Builder chat stream', { tag: ['@regression'] }, () => {
             streamId: CHAT,
             reason: 'notSubscribed'
         });
+    });
+
+    test('Chat shall refuse commands for a stream whose subscribe failed', async ({ homeUrl, builderWSUrl }) => {
+        const socket = await StreamSocket.open(builderWSUrl, wsOptions(homeUrl, builderWSUrl, alice.sessionCookie));
+        sockets.push(socket);
+
+        socket.subscribe('chat-private', 'chat');
+        await socket.next('streamSubscribeFailed');
+
+        const commandId = randomUUID();
+        socket.command('chat-private', commandId, { type: 'add', text: 'nobody listens either' });
+        expect(await socket.next('streamNack', (frame) => frame.commandId === commandId)).toMatchObject({
+            streamId: 'chat-private',
+            reason: 'notSubscribed'
+        });
+    });
+
+    test('Chat shall accept a command sent right after the subscribe, before the sync', async ({
+        homeUrl,
+        builderWSUrl
+    }) => {
+        const socket = await StreamSocket.open(builderWSUrl, wsOptions(homeUrl, builderWSUrl, alice.sessionCookie));
+        sockets.push(socket);
+
+        // The subscribe is followed locally before the hub is asked, so a command sent right behind it,
+        // with no wait for the sync, must still be accepted.
+        socket.subscribe(CHAT, 'chat');
+        const commandId = randomUUID();
+        socket.command(CHAT, commandId, { type: 'add', text: `fast ${randomUUID()}` });
+
+        await socket.next('streamSync');
+        await socket.next('streamCommands', ownsCommand(commandId));
     });
 
     // The failure reasons of a subscribe, as a table.
@@ -226,6 +336,18 @@ test.describe('Builder chat stream', { tag: ['@regression'] }, () => {
         expect(sync.commands.length + (sync.snapshot ? 1 : 0)).toBeGreaterThan(0);
     });
 
+    test('Chat shall refuse commands after the socket unsubscribed', async ({ homeUrl, builderWSUrl }) => {
+        const a = await joinChat(homeUrl, builderWSUrl, alice);
+        a.socket.unsubscribe(CHAT);
+
+        const commandId = randomUUID();
+        a.socket.command(CHAT, commandId, { type: 'add', text: 'after the unsubscribe' });
+        expect(await a.socket.next('streamNack', (frame) => frame.commandId === commandId)).toMatchObject({
+            streamId: CHAT,
+            reason: 'notSubscribed'
+        });
+    });
+
     test('Chat snapshot shall be readable over HTTP and resume with only the tail', async ({
         homeUrl,
         builderUrl,
@@ -243,6 +365,13 @@ test.describe('Builder chat stream', { tag: ['@regression'] }, () => {
         if (frame.snapshot) {
             expect(frame.snapshot.hash).toMatch(/^[0-9a-f]{16}$/);
             expect(Buffer.from(frame.snapshot.data, 'base64').length).toBeGreaterThan(0);
+            // The commands start right after the snapshot: no gap, no overlap.
+            if (frame.commands.length > 0) {
+                expect(frame.commands[0].version).toBe(frame.snapshot.version + 1);
+            }
+        }
+        for (let i = 1; i < frame.commands.length; i++) {
+            expect(frame.commands[i].version).toBe(frame.commands[i - 1].version + 1);
         }
 
         let commandId = randomUUID();
@@ -272,6 +401,30 @@ test.describe('Builder chat stream', { tag: ['@regression'] }, () => {
         await socket.expectNone('streamSync', 500);
     });
 
+    test('Chat checkpoint hash shall equal the snapshot route hash', async ({ homeUrl, builderUrl, builderWSUrl }) => {
+        const a = await joinChat(homeUrl, builderWSUrl, alice);
+
+        // snapshotEvery is 5 in the test config; a checkpoint lands on one of the next few commands,
+        // whatever the current tip already is.
+        let checkpoint: { version: number; hash: string } | undefined;
+        for (let i = 0; i < 6 && !checkpoint; i++) {
+            const commandId = randomUUID();
+            a.socket.command(CHAT, commandId, { type: 'add', text: `cp ${randomUUID()}` });
+            await a.socket.next('streamCommands', ownsCommand(commandId));
+            try {
+                checkpoint = await a.socket.next('streamCheckpoint', () => true, 200);
+            } catch {
+                // No checkpoint landed on this command; keep sending.
+            }
+        }
+        expect(checkpoint).toBeDefined();
+
+        const snapshot = await fetchSnapshot(builderUrl, CHAT, alice.sessionCookie);
+        expect(snapshot.status).toBe(200);
+        expect(snapshot.frame!.snapshot?.version).toBe(checkpoint!.version);
+        expect(snapshot.frame!.snapshot?.hash).toBe(checkpoint!.hash);
+    });
+
     test('Chat resume from another generation shall be answered with a full sync that includes prior history', async ({
         homeUrl,
         builderWSUrl
@@ -293,6 +446,65 @@ test.describe('Builder chat stream', { tag: ['@regression'] }, () => {
         expect(covered).toBe(true);
     });
 
+    test('Chat resume at the head shall be answered with an empty streamCommands and then follow live', async ({
+        homeUrl,
+        builderUrl,
+        builderWSUrl
+    }) => {
+        const b = await joinChat(homeUrl, builderWSUrl, bob);
+
+        const snapshot = await fetchSnapshot(builderUrl, CHAT, alice.sessionCookie);
+        const tip = Math.max(snapshot.frame!.snapshot?.version ?? 0, ...snapshot.frame!.commands.map((c) => c.version));
+
+        const socket = await StreamSocket.open(builderWSUrl, wsOptions(homeUrl, builderWSUrl, alice.sessionCookie));
+        sockets.push(socket);
+        socket.subscribe(CHAT, 'chat', { generation: snapshot.frame!.generation, version: tip });
+        const empty = await socket.next('streamCommands');
+        expect(empty.commands).toEqual([]);
+
+        const commandId = randomUUID();
+        b.socket.command(CHAT, commandId, { type: 'add', text: `live ${randomUUID()}` });
+        const live = await socket.next('streamCommands', ownsCommand(commandId));
+        expect(live.commands.map((c) => c.commandId)).toContain(commandId);
+    });
+
+    test('Chat resume above the head shall be answered with a full sync', async ({ homeUrl, builderWSUrl }) => {
+        const b = await joinChat(homeUrl, builderWSUrl, bob);
+
+        const socket = await StreamSocket.open(builderWSUrl, wsOptions(homeUrl, builderWSUrl, alice.sessionCookie));
+        sockets.push(socket);
+        socket.subscribe(CHAT, 'chat', { generation: b.generation, version: Number.MAX_SAFE_INTEGER });
+        const sync = await socket.next('streamSync');
+        expect(sync.generation).toBe(b.generation);
+    });
+
+    test('Chat resume older than the newest snapshot shall be answered with a full sync', async ({
+        homeUrl,
+        builderWSUrl
+    }) => {
+        const b = await joinChat(homeUrl, builderWSUrl, bob);
+
+        let checkpoint: { version: number; hash: string } | undefined;
+        for (let i = 0; i < 6 && !checkpoint; i++) {
+            const commandId = randomUUID();
+            b.socket.command(CHAT, commandId, { type: 'add', text: `old ${randomUUID()}` });
+            await b.socket.next('streamCommands', ownsCommand(commandId));
+            try {
+                checkpoint = await b.socket.next('streamCheckpoint', () => true, 200);
+            } catch {
+                // No checkpoint landed on this command; keep sending.
+            }
+        }
+        expect(checkpoint).toBeDefined();
+
+        const socket = await StreamSocket.open(builderWSUrl, wsOptions(homeUrl, builderWSUrl, alice.sessionCookie));
+        sockets.push(socket);
+        socket.subscribe(CHAT, 'chat', { generation: b.generation, version: checkpoint!.version - 1 });
+        const sync = await socket.next('streamSync');
+        expect(sync.generation).toBe(b.generation);
+        expect(sync.snapshot?.version).toBe(checkpoint!.version);
+    });
+
     test('Chat snapshot route shall reject a missing session and any other stream', async ({ builderUrl }) => {
         for (const rejectCase of [
             { title: 'missing session cookie', sid: undefined, streamId: CHAT, status: 401 },
@@ -308,7 +520,4 @@ test.describe('Builder chat stream', { tag: ['@regression'] }, () => {
         const ok = await fetchSnapshot(builderUrl, CHAT, alice.sessionCookie);
         expect(ok.cacheControl).toBe('no-store');
     });
-
-    // A deleted session closing the socket is covered generically by ws_connect.ts's
-    // "WS connection shall be dropped when session is deleted".
 });
