@@ -694,7 +694,7 @@ Each finding states where the defect is, what goes wrong, the fix, and the tests
   - The chat limit of 2000 characters masks `maxCommandBytes` unless a frame exceeds 16 KiB. After WS-1, `maxCommandBytes` stays a Rust unit check.
 - **Out of reach:** `slow_consumer`/`dead_channel` (racy), shutdown, registration failure and a Redis flush (shared state).
 
-### TST-1. A flaky API test (High, S, phase 0)
+### TST-1. A flaky API test (High, S, phase 0) — Done
 
 `chat_stream.ts:242` ("snapshot shall be readable over HTTP and resume with only the tail") fails whenever bob's command lands on a snapshot boundary (`(tip+1) % 5 == 0`). The snapshot at tip+1 is stored 20-40 ms after bob's echo, which usually beats the new TLS socket's subscribe. That snapshot becomes the base version, and the resume at `tip` gets a full Sync. `chat-global` persists across runs, so about one run in five is at risk.
 
@@ -827,12 +827,12 @@ If one of these exposes a new defect, report it instead of fixing it in the same
 - a same-generation copy behind Postgres, and a rebase on a missing or unreadable snapshot;
 - a wake for every stream (`WakeMap::wake(None)`), and respawn or unload of a dead or unavailable stream.
 
-### TST-7. Test helper hygiene (Low, S, phase 0)
+### TST-7. Test helper hygiene (Low, S, phase 0) — Partially done
 
-- `ws_connect.ts:32-99` duplicates `tests/src/api/builder_stream_ws.ts`.
-- The 4000 close code is a constant in `ws_connect.ts:9` but a literal in `chat_stream.ts:309`; both change with WS-10.
-- `StreamSocket.next` does not fail early on a closed socket, so a drop shows up as a 5 s timeout.
-- `hub/tests/test_utils.rs:351` hardcodes the registry key prefix (see HUB-12).
+- `ws_connect.ts:32-99` duplicates `tests/src/api/builder_stream_ws.ts`. **Done**: `ws_connect.ts` now imports `wsConnectUrl` from `builder_stream_ws.ts` instead of redefining it.
+- The 4000 close code is a constant in `ws_connect.ts:9` but a literal in `chat_stream.ts:309`; both change with WS-10. Deferred to WS-10.
+- `StreamSocket.next` does not fail early on a closed socket, so a drop shows up as a 5 s timeout. **Done**: `take()` now throws immediately once the socket's close event has fired, instead of waiting out the full timeout.
+- `hub/tests/test_utils.rs:351` hardcodes the registry key prefix (see HUB-12). Deferred to HUB-12.
 
 ### TST-8. Test seams (with the first test that needs them, `#[cfg(test)]` only)
 

@@ -62,6 +62,7 @@ export function wsOptions(homeUrl: string, builderWSUrl: string, sid?: string): 
 export class StreamSocket {
     private readonly frames: ServerFrame[] = [];
     private readonly waiters: Array<() => void> = [];
+    private closedResult: { code: number; reason: string } | undefined;
     public readonly closed: Promise<{ code: number; reason: string }>;
 
     private constructor(private readonly ws: WebSocket) {
@@ -71,8 +72,9 @@ export class StreamSocket {
         });
         this.closed = new Promise((resolve) => {
             ws.once('close', (code: number, reason: Buffer) => {
+                this.closedResult = { code, reason: reason.toString() };
                 this.waiters.splice(0).forEach((wake) => wake());
-                resolve({ code, reason: reason.toString() });
+                resolve(this.closedResult);
             });
         });
     }
@@ -155,6 +157,11 @@ export class StreamSocket {
             const index = this.frames.findIndex(match);
             if (index >= 0) {
                 return this.frames.splice(index, 1)[0];
+            }
+            if (this.closedResult) {
+                throw new Error(
+                    `no ${what} frame: socket closed (code ${this.closedResult.code}, reason ${this.closedResult.reason})`
+                );
             }
             const left = deadline - Date.now();
             if (left <= 0) {

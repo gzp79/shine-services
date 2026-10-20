@@ -1,6 +1,7 @@
 import { expect, test } from '$fixtures/setup';
+import { wsConnectUrl } from '$lib/api/builder_stream_ws';
 import { MintedSession, SessionMint } from '$lib/mocks/session_mint';
-import { DEFAULT_USER_AGENT, joinURL } from '$lib/utils';
+import { DEFAULT_USER_AGENT } from '$lib/utils';
 import { randomUUID } from 'node:crypto';
 import { IncomingMessage } from 'node:http';
 import { WebSocket } from 'ws';
@@ -80,13 +81,6 @@ async function connectWs(url: string, options: WsConnectOptions): Promise<WsOutc
             finish({ kind: 'error', message: error.message });
         });
     });
-}
-
-function wsConnectUrl(builderUrl: string): string {
-    const httpUrl = joinURL(builderUrl, '/api/connect');
-    const wsUrl = new URL(httpUrl);
-    wsUrl.protocol = wsUrl.protocol === 'https:' ? 'wss:' : 'ws:';
-    return wsUrl.toString();
 }
 
 // x-forwarded-host mirrors the endpoint authority so the builder resolves the same host whether it
