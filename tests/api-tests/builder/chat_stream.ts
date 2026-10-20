@@ -258,17 +258,30 @@ test.describe('Builder chat stream', { tag: ['@regression'] }, () => {
             expect(Buffer.from(frame.snapshot.data, 'base64').length).toBeGreaterThan(0);
         }
 
-        const commandId = randomUUID();
+        let commandId = randomUUID();
         b.socket.command(CHAT, commandId, { type: 'add', text: `tail ${randomUUID()}` });
-        await b.socket.next('streamCommands', ownsCommand(commandId));
+        let tailFrame = await b.socket.next('streamCommands', ownsCommand(commandId));
+        let resumeFrom = tip;
+
+        // A snapshot is stored asynchronously right after the command that lands on a snapshot
+        // boundary. Resuming from before that boundary races the snapshot write: if it wins, the
+        // resume looks "older than the newest snapshot" and gets a full sync instead of the tail.
+        // Resuming from the boundary version itself is race-free (it is always still ≤ the newest
+        // snapshot once that snapshot exists), so push past it and resume from there instead.
+        if (tailFrame.commands.find((c) => c.commandId === commandId)!.version % frame.snapshotEvery === 0) {
+            resumeFrom = tailFrame.commands.find((c) => c.commandId === commandId)!.version;
+            commandId = randomUUID();
+            b.socket.command(CHAT, commandId, { type: 'add', text: `tail ${randomUUID()}` });
+            tailFrame = await b.socket.next('streamCommands', ownsCommand(commandId));
+        }
 
         const socket = await StreamSocket.open(builderWSUrl, wsOptions(homeUrl, builderWSUrl, alice.sessionCookie));
         sockets.push(socket);
-        socket.subscribe(CHAT, 'chat', { generation: frame.generation, version: tip });
+        socket.subscribe(CHAT, 'chat', { generation: frame.generation, version: resumeFrom });
         const tail = await socket.next('streamCommands');
         expect(tail.generation).toBe(frame.generation);
         expect(tail.commands.map((c) => c.commandId)).toContain(commandId);
-        expect(tail.commands[0].version).toBe(tip + 1);
+        expect(tail.commands[0].version).toBe(resumeFrom + 1);
         await socket.expectNone('streamSync', 500);
     });
 
