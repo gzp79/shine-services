@@ -19,7 +19,7 @@ const MIGRATION_V1: &str = include_str!("sql/V1__command_log.sql");
 const APPEND_TIMEOUTS: &str = "SET LOCAL lock_timeout = '5s'; SET LOCAL idle_in_transaction_session_timeout = '30s'";
 
 /// Checkout deadline, well under the pool's own `pool_timeout` (30 s by default): a down Postgres
-/// fails a request fast instead of parking it for half a minute (PG-1).
+/// fails a request fast instead of parking it for half a minute.
 const CLIENT_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(FromRow)]

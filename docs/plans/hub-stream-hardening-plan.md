@@ -92,7 +92,7 @@ Why this order:
 | STR-15 | The snapshot route does not check the Postgres part is contiguous | Low | K | Open | S | 4 |
 | STR-16 | The snapshot route has no rate or concurrency limit | Med | D | Open | M | 4 |
 | STR-17 | A re-hydration forces every subscriber into a full resync | Low | J | Open | M | 7 |
-| PG-1 | No timeout on any Postgres call | Med | C | Open | S | 1 |
+| PG-1 | No timeout on any Postgres call | Med | C | Done | S | 1 |
 | PG-2 | The worker's hole fill reads an unbounded number of rows | Low | C | Open | S | 1 |
 | PG-3 | Appends that only verify ids still take the row lock | Low | C | Open | S | 1 |
 | PG-4 | Two instances race on the migrations of a fresh database | Low | H | Open | S | 6 |
@@ -153,7 +153,7 @@ Why this order:
 | CLI-8 | Chat text is not trimmed; invisible text passes | Low | J | Open | S | 3 |
 | OPS-1 | Shutdown has no deadline on the production path and closes sockets one by one | High | H | Open | M | 6 |
 | OPS-2 | Shutdown does not wait for the workers' final persist | Low | H | Open | S | 6 |
-| OPS-3 | Unchecked numeric config (a huge heartbeat breaks every connect) | Low | H | Open | S | 1 |
+| OPS-3 | Unchecked numeric config (a huge heartbeat breaks every connect) | Low | H | Done | S | 1 |
 | OPS-4 | Fly caps a machine at 25 connections | Med | D | Confirm | S | 1 |
 | OPS-5 | Prod origins trust the dev site | Low | H | Confirm | S | 1 |
 | OPS-6 | TLS to Postgres and Redis is not enforced | Low | H | Open | S | 1 |
@@ -239,10 +239,10 @@ Each finding states where the defect is, what goes wrong, the fix, and the tests
 
 ### RC C: single-task loops await I/O without bounds
 
-**PG-1. No timeout on any Postgres call.** `crates/shine-infra/src/db/command_log/pg_command_log.rs:19`, `crates/shine-infra/src/db/postgres/pg_connection.rs:334-347`, `stream_worker.rs:262-443`.
+**PG-1. No timeout on any Postgres call.** `crates/shine-infra/src/db/command_log/pg_command_log.rs:19`, `crates/shine-infra/src/db/postgres/pg_connection.rs:334-347`, `stream_worker.rs:262-443`. — **Done**
 - **Problem:** only `append` sets `lock_timeout` and `idle_in_transaction_session_timeout`. There is no `statement_timeout`, no `tcp_user_timeout` (tokio-postgres keepalives default to 2 h), and no `tokio::time::timeout`. After a failover or a network blackhole, a query hangs on a half-open connection. The worker awaits it inside `step()`, so for 15 min to 2 h it delivers nothing, ignores `Stop`, and keeps the connection checked out. Workers are detached, so shutdown itself does not hang, but the final persist is lost, and an unload can start a second worker beside the stuck one.
-- **Fix:** set `statement_timeout` and `tcp_user_timeout` as session defaults in the connection string `options`, and put `tokio::time::timeout` around the worker's log calls. Size them well below the pool timeout (STR-12). The migration connection, which shares the pool, does not get the statement timeout.
-- **Tests:** `a_stalled_postgres_query_does_not_freeze_the_worker` (toxiproxy `timeout` toxic; the worker still answers `Stop` and keeps delivering).
+- **Fix:** `apply_session_timeouts` (`pg_connection.rs`) sets `statement_timeout=10000` (via `options=-c ...`) and `tcp_user_timeout=10s` as session defaults, unless the connection string already sets its own. Both are well below the pool's default `pool_timeout` (30 s). The separate `tokio::time::timeout` wrapper the fix text asked for already exists as PG-5's `CLIENT_TIMEOUT` around the pool checkout — that covers checkout contention, this covers a query stuck on a connection already checked out; together they bound every path. The migration connection shares the pool, so `PgConnection::migrate` lifts the session default (`SET statement_timeout = 0`) for the run and restores it (`RESET statement_timeout`) after, so the connection is unaffected once back in the pool.
+- **Tests:** `session_timeout_defaults_are_applied_when_unset`, `an_explicit_tcp_user_timeout_is_not_overridden`, `an_explicit_statement_timeout_is_not_overridden`, `other_options_keep_the_statement_timeout_appended` (`pg_connection.rs`, pure config, no server) — the config-building logic. `a_stalled_postgres_query_does_not_freeze_the_worker` (`stream_worker_test.rs`, toxiproxy `timeout` toxic on an already-established, single-connection pool) — the worker recovers within ~2.3 s and keeps delivering; empirically the bound comes from whichever of PG-1's session timeout or PG-5's checkout timeout fires first, which the test treats as an implementation detail, not something to pin down.
 
 **PG-2. The worker's hole fill reads an unbounded number of rows.** `stream_worker.rs:479-483`.
 - **Problem:** `commands_after(tip, first.version - expected)` is not capped by `PG_READ_BATCH`. This is latent until a `keepHistory` kind exists: a worker 100 k versions behind would load about 1.6 GB in one result set. For pruned kinds, Postgres returns only the retained rows.
@@ -492,10 +492,10 @@ Each finding states where the defect is, what goes wrong, the fix, and the tests
 - **Fix:** join the workers with a deadline inside the OPS-1 budget, and include them in `wait_stopped`.
 - **Tests:** `shutdown_persists_the_workers_tail_before_exit`.
 
-**OPS-3. Unchecked numeric config (a huge heartbeat breaks every connect).** `app_state.rs`, `redis_hub_registry.rs:61,76,129`.
+**OPS-3. Unchecked numeric config (a huge heartbeat breaks every connect).** `app_state.rs`, `redis_hub_registry.rs:61,76,129`. — **Done**
 - **Problem:** a huge `hubHeartbeatSeconds` gives a TTL that `SET EX` refuses, so every connect fails, and each failed connect still publishes a registry change. The refresh path casts the TTL `as i64` to -1, and `EXPIRE -1` deletes the row. Huge intervals can also overflow tokio `Instant` arithmetic. The shipped config is not affected.
-- **Fix:** clamp `hubHeartbeatSeconds` to `1..=86_400` and compute the TTL with `saturating_mul`.
-- **Tests:** `config_is_clamped` (0 → 1, `u64::MAX` → 86 400 s, the TTL is never negative). It replaces `app_state_test.rs:41,49,57` and flips `:49` (TST-2).
+- **Fix:** rather than silently clamping, `AppConfig` derives `validator::Validate` (the same crate request bodies validate with) with `#[validate(range(min = 1, max = 86_400))]` on `hub_heartbeat_seconds`. A new `FeatureConfig::validate()` hook (default no-op; `web_app.rs`'s `load_app_config` calls it once right after the config loads) wires it in, so an out-of-range value fails *startup*, before any pool or hub exists, instead of running with an adjusted value or failing deep inside `HubTiming`. `HubTiming::from_config` keeps its pre-existing `.max(1)` only as a last-ditch guard, since `validate()` already guarantees the range.
+- **Tests:** none — `#[validate(range(...))]` is `validator` crate behavior, not ours to test. Replaces `app_state_test.rs:41,49,57` and the now-dropped `config_is_clamped`/clamping tests (TST-2): the old tests encoded "clamp to a value that still connects"; the new behavior is "reject before connecting."
 
 **OPS-5. Prod origins trust the dev site.** `services/server_config.json:4-8`, `web_app.rs:164-180`, `app_state.rs:62-67`.
 - **Problem:** prod `allowedOrigins` lists `https://dev.scytta.com` and `https://ws.scytta.com`. The same list drives credentialed CORS and the WebSocket Origin check, which is the only CSWSH defence. The `sid` cookie is scoped to `scytta.com` with SameSite=Lax, so a preview build or an XSS on dev can open an authenticated socket to prod as any visiting user and read snapshots.

@@ -18,7 +18,7 @@ use shine_infra::db::command_log::{StoredCommand, StreamId};
 use shine_test::{
     db::{get_pg_cns, get_redis_cns},
     test,
-    toxiproxy::Toxiproxy,
+    toxiproxy::{Stream, Toxic, Toxiproxy},
 };
 use std::{sync::Arc, time::Duration};
 use tokio::time::timeout;
@@ -220,6 +220,81 @@ async fn worker_survives_a_redis_outage_and_recovers() {
     .await;
     eventually("everything persisted", || async {
         test.log.head(&stream_id).await.unwrap().unwrap().version == 2
+    })
+    .await;
+
+    running.handle.tx.send(WorkerCommand::Stop).unwrap();
+    running.task.await.unwrap();
+}
+
+#[test(serial = "hub-service")]
+async fn a_stalled_postgres_query_does_not_freeze_the_worker() {
+    let Some(toxiproxy) = Toxiproxy::from_env() else { return };
+    let (Some(redis_cns), Some(pg_cns)) = (get_redis_cns(), get_pg_cns()) else {
+        return;
+    };
+    let _reset = toxiproxy.reset_guard().await;
+    let proxy = toxiproxy.proxy("postgres").await;
+    // A short statement_timeout/tcp_user_timeout, so a stalled query is cut loose quickly;
+    // the shipped defaults (10s) would make this test correct but slow. A single-connection pool
+    // forces the later appends onto the exact connection "before" already established and
+    // returned idle, instead of letting the pool paper over the stall by opening a fresh one.
+    let pg_cns = format!("{pg_cns}&options=-c%20statement_timeout=1000&tcp_user_timeout=1&max_size=1");
+    let (Some(test), _outage) = setup_for_outage(redis_cns, pg_cns, Arc::new(AllowAll), fast_cadence).await else {
+        return;
+    };
+    let stream_id = unique_id();
+    test.service.open(Uuid::nil(), &stream_id, "chat").await.unwrap();
+    let running = start_worker(&test, &stream_id);
+    ingest(&test, &stream_id, "before").await;
+    eventually("the first command, persisted", || async {
+        test.log
+            .head(&stream_id)
+            .await
+            .unwrap()
+            .is_some_and(|head| head.version == 1)
+    })
+    .await;
+
+    // The worker's pooled connection is already checked out and idle; stall all data on it
+    // without closing the TCP connection — a silent network blackhole, or a half-open connection
+    // after a failover, looks exactly like this. A long toxic timeout makes sure Postgres itself
+    // closing the connection isn't what unblocks the worker. Which of PG-1's session timeout or
+    // PG-5's pool-checkout timeout ends up firing first is an implementation detail; either way
+    // the worker must recover in a bounded time, not hang for the life of the connection.
+    proxy
+        .add_toxic(&Toxic::timeout("stall", Stream::Downstream, 60_000))
+        .await;
+    // Delivery of a command runs before its own persist within one `step()`, so "during" is
+    // delivered immediately and only its *persist* gets stuck; a `step()` stuck inside persist
+    // never returns, so it is a *later* command ("after-the-stall") that proves the freeze:
+    // nothing reads Redis again until that stuck step() call unblocks.
+    ingest(&test, &stream_id, "during").await;
+    eventually("the second command, delivered", || async {
+        running.egress.versions(running.connection_id) == vec![1, 2]
+    })
+    .await;
+    ingest(&test, &stream_id, "after-the-stall").await;
+
+    // The stall genuinely blocks the worker's loop (not just coincidentally slow): the third
+    // command is not delivered right away, well before the 1 s statement_timeout could have fired.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(
+        running.egress.versions(running.connection_id),
+        vec![1, 2],
+        "the stall must still be blocking the worker at this point"
+    );
+
+    eventually(
+        "the worker keeps delivering once the stalled query is cut loose",
+        || async { running.egress.versions(running.connection_id) == vec![1, 2, 3] },
+    )
+    .await;
+    assert!(!running.task.is_finished(), "the worker rides out the stall");
+
+    proxy.remove_toxic("stall").await;
+    eventually("everything persisted once Postgres answers again", || async {
+        test.log.head(&stream_id).await.unwrap().unwrap().version == 3
     })
     .await;
 
