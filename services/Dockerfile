@@ -58,7 +58,8 @@ ENV SHINE_TEST_TOXIPROXY_URL="http://toxiproxy.mockbox.foo:8474"
 # build the final project  
 RUN for proj in $SERVICE_PROJECTS; do PROJECTS="$PROJECTS -p $proj"; done \
   && cargo build --release $PROJECTS
-# running tests
+# running tests; on CI the Redis based tests must not be skipped silently
+ENV CI=true
 RUN for proj in $SERVICE_PROJECTS; do PROJECTS="$PROJECTS -p $proj"; done \
   && cargo test --release $PROJECTS 
 

@@ -1,8 +1,10 @@
 import { expect, test } from '$fixtures/setup';
+import { StreamSocket, simulateRegistryTakeover, wsConnectUrl, wsOptions } from '$lib/api/builder_stream_ws';
 import { MintedSession, SessionMint } from '$lib/mocks/session_mint';
-import { DEFAULT_USER_AGENT, joinURL } from '$lib/utils';
+import { DEFAULT_USER_AGENT } from '$lib/utils';
 import { randomUUID } from 'node:crypto';
 import { IncomingMessage } from 'node:http';
+import { Toxiproxy } from 'toxiproxy-node-client';
 import { WebSocket } from 'ws';
 
 // Close code of a socket the hub dropped; the close reason carries the drop reason.
@@ -28,12 +30,6 @@ type WsConnectOptions = {
     extraHeaders?: Record<string, string>;
     timeoutMs?: number;
 };
-
-// The wire protocol mirrors WSMessageRequest/WSMessageResponse in the service (internally tagged,
-// camelCased): client sends {type:'chat', text}; the server persists it to the room stream and the
-// chat dispatcher later pushes a batch {type:'chat', messages:[{id, from, text}]}.
-type WsChatComment = { id: string; from: string; text: string };
-type WsChatBatch = { type: 'chat'; messages: WsChatComment[] };
 
 function buildHeaders(options: WsConnectOptions): Record<string, string> {
     const headers: Record<string, string> = {
@@ -86,13 +82,6 @@ async function connectWs(url: string, options: WsConnectOptions): Promise<WsOutc
             finish({ kind: 'error', message: error.message });
         });
     });
-}
-
-function wsConnectUrl(builderUrl: string): string {
-    const httpUrl = joinURL(builderUrl, '/api/connect');
-    const wsUrl = new URL(httpUrl);
-    wsUrl.protocol = wsUrl.protocol === 'https:' ? 'wss:' : 'ws:';
-    return wsUrl.toString();
 }
 
 // x-forwarded-host mirrors the endpoint authority so the builder resolves the same host whether it
@@ -173,95 +162,6 @@ function openAndWaitClose(url: string, options: WsHoldOptions): WsHoldResult {
     return { opened, settled };
 }
 
-type WsChatSession = {
-    // Resolves with the next chat comment whose predicate matches, or rejects on timeout/close.
-    waitComment: (predicate: (comment: WsChatComment) => boolean, timeoutMs?: number) => Promise<WsChatComment>;
-    // Resolves once `count` comments matching the predicate have arrived, in arrival order.
-    waitComments: (
-        predicate: (comment: WsChatComment) => boolean,
-        count: number,
-        timeoutMs?: number
-    ) => Promise<WsChatComment[]>;
-    send: (text: string) => void;
-    sendRaw: (frame: string) => void;
-    close: () => void;
-};
-
-// Opens an authenticated socket and keeps it live. The server pushes chat as batches; we flatten
-// each batch into its comments so a caller can send a frame and await the specific comment the chat
-// dispatcher later fans back in. Used by the message round-trip test.
-async function openChatSession(url: string, options: WsConnectOptions): Promise<WsChatSession> {
-    const ws = new WebSocket(url, {
-        origin: options.origin,
-        headers: buildHeaders(options),
-        rejectUnauthorized: false
-    });
-
-    const buffered: WsChatComment[] = [];
-    const waiters: Array<{
-        predicate: (comment: WsChatComment) => boolean;
-        resolve: (comment: WsChatComment) => void;
-    }> = [];
-
-    const offer = (comment: WsChatComment) => {
-        const idx = waiters.findIndex((w) => w.predicate(comment));
-        if (idx >= 0) {
-            waiters.splice(idx, 1)[0].resolve(comment);
-        } else {
-            buffered.push(comment);
-        }
-    };
-
-    ws.on('message', (data: Buffer) => {
-        const batch = JSON.parse(data.toString()) as WsChatBatch;
-        for (const comment of batch.messages) {
-            offer(comment);
-        }
-    });
-
-    await new Promise<void>((resolve, reject) => {
-        ws.once('open', () => resolve());
-        ws.once('unexpected-response', (_req: unknown, res: IncomingMessage) =>
-            reject(new Error(`unexpected upgrade response: ${res.statusCode}`))
-        );
-        ws.once('error', (err: Error) => reject(err));
-    });
-
-    const waitComment = (predicate: (comment: WsChatComment) => boolean, timeoutMs = 5000) =>
-        new Promise<WsChatComment>((resolve, reject) => {
-            const idx = buffered.findIndex(predicate);
-            if (idx >= 0) {
-                resolve(buffered.splice(idx, 1)[0]);
-                return;
-            }
-            const timer = setTimeout(
-                () => reject(new Error(`no matching chat comment after ${timeoutMs}ms`)),
-                timeoutMs
-            );
-            waiters.push({
-                predicate,
-                resolve: (comment) => {
-                    clearTimeout(timer);
-                    resolve(comment);
-                }
-            });
-        });
-
-    return {
-        waitComment,
-        waitComments: async (predicate, count, timeoutMs = 5000) => {
-            const collected: WsChatComment[] = [];
-            for (let i = 0; i < count; i++) {
-                collected.push(await waitComment(predicate, timeoutMs));
-            }
-            return collected;
-        },
-        send: (text: string) => ws.send(JSON.stringify({ type: 'chat', text })),
-        sendRaw: (frame: string) => ws.send(frame),
-        close: () => ws.close()
-    };
-}
-
 test.describe('Builder websocket', { tag: ['@regression'] }, () => {
     let mint: SessionMint;
     let user: MintedSession;
@@ -275,225 +175,121 @@ test.describe('Builder websocket', { tag: ['@regression'] }, () => {
         await mint.teardownCreatedSessions();
     });
 
-    test('WS connect shall reject missing Origin header', async ({ builderWSUrl }) => {
-        const result = await connectWs(wsConnectUrl(builderWSUrl), {
-            sid: user.sessionCookie,
-            extraHeaders: { 'x-forwarded-host': new URL(builderWSUrl).host }
-        });
-
-        expect(result).toEqual({ kind: 'http_error', status: 400 });
+    test('WS connect shall reject a malformed or unauthenticated request before opening a socket', async ({
+        homeUrl,
+        builderUrl,
+        builderWSUrl
+    }) => {
+        for (const rejectCase of [
+            {
+                title: 'missing Origin header',
+                status: 400,
+                url: wsConnectUrl(builderWSUrl),
+                options: {
+                    sid: user.sessionCookie,
+                    extraHeaders: { 'x-forwarded-host': new URL(builderWSUrl).host }
+                }
+            },
+            {
+                title: 'disallowed Origin header',
+                status: 403,
+                url: wsConnectUrl(builderWSUrl),
+                options: {
+                    sid: user.sessionCookie,
+                    origin: 'https://example.com',
+                    extraHeaders: { 'x-forwarded-host': new URL(builderWSUrl).host }
+                }
+            },
+            {
+                title: 'non-ws host even with an allowed origin',
+                status: 403,
+                url: wsConnectUrl(builderUrl),
+                options: { sid: user.sessionCookie, ...wsHeaders(homeUrl, builderUrl) }
+            },
+            {
+                title: 'missing session cookie',
+                status: 401,
+                url: wsConnectUrl(builderWSUrl),
+                options: wsHeaders(homeUrl, builderWSUrl)
+            },
+            {
+                title: 'tampered session cookie',
+                status: 401,
+                url: wsConnectUrl(builderWSUrl),
+                options: { sid: 'not-a-valid-signed-sid', ...wsHeaders(homeUrl, builderWSUrl) }
+            }
+        ]) {
+            const result = await connectWs(rejectCase.url, rejectCase.options);
+            expect(result, rejectCase.title).toEqual({ kind: 'http_error', status: rejectCase.status });
+        }
     });
 
-    test('WS connect shall reject disallowed Origin header', async ({ builderWSUrl }) => {
-        const result = await connectWs(wsConnectUrl(builderWSUrl), {
-            sid: user.sessionCookie,
-            origin: 'https://example.com',
-            extraHeaders: { 'x-forwarded-host': new URL(builderWSUrl).host }
-        });
-
-        expect(result).toEqual({ kind: 'http_error', status: 403 });
+    // The global chat is the only stream open to users; subscribing to it and getting a sync proves
+    // the socket is usable, not just that the upgrade was accepted. (A `hello` frame joins this once WS-11 lands.)
+    test('WS connect shall allow a configured Origin header and let the socket subscribe and sync', async ({
+        homeUrl,
+        builderWSUrl
+    }) => {
+        const socket = await StreamSocket.open(builderWSUrl, wsOptions(homeUrl, builderWSUrl, user.sessionCookie));
+        socket.subscribe('chat-global', 'chat');
+        const sync = await socket.next('streamSync');
+        expect(sync.streamId).toBe('chat-global');
+        socket.close();
     });
 
-    test('WS connect shall reject non-ws host even with allowed origin', async ({ homeUrl, builderUrl }) => {
-        const result = await connectWs(wsConnectUrl(builderUrl), {
-            sid: user.sessionCookie,
-            ...wsHeaders(homeUrl, builderUrl)
-        });
-
-        expect(result).toEqual({ kind: 'http_error', status: 403 });
-    });
-
-    test('WS connect shall allow configured Origin header', async ({ homeUrl, builderWSUrl }) => {
-        const result = await connectWs(wsConnectUrl(builderWSUrl), {
-            sid: user.sessionCookie,
-            ...wsHeaders(homeUrl, builderWSUrl)
-        });
-
-        expect(result).toEqual({ kind: 'open' });
-    });
-
-    // Auth is the primary gate: with a valid origin/host, a missing or tampered session must still
-    // be rejected with 401 before any socket opens.
-    for (const authCase of [
-        { title: 'missing session cookie', sid: undefined },
-        { title: 'tampered session cookie', sid: 'not-a-valid-signed-sid' }
+    // Invariant 2: a user has at most one connection; a new one kills the previous, whether it is the
+    // same session reconnecting or another session of the same user. This is driven by the
+    // ConnectUser command, so no interval wait is needed.
+    for (const secondSessionCase of [
+        { title: 'the same session', secondSession: () => user },
+        {
+            title: 'another session of the same user',
+            secondSession: () => mint.createUserSession({ userId: user.userId })
+        }
     ]) {
-        test(`WS connect with ${authCase.title} shall be rejected`, async ({ homeUrl, builderWSUrl }) => {
-            const result = await connectWs(wsConnectUrl(builderWSUrl), {
-                sid: authCase.sid,
-                ...wsHeaders(homeUrl, builderWSUrl)
-            });
+        test(`WS second connection for a user shall close the first with replaced and keep serving the second (${secondSessionCase.title})`, async ({
+            homeUrl,
+            builderWSUrl
+        }) => {
+            const first = await StreamSocket.open(builderWSUrl, wsOptions(homeUrl, builderWSUrl, user.sessionCookie));
+            const secondSession = await secondSessionCase.secondSession();
+            const second = await StreamSocket.open(
+                builderWSUrl,
+                wsOptions(homeUrl, builderWSUrl, secondSession.sessionCookie)
+            );
 
-            expect(result).toEqual({ kind: 'http_error', status: 401 });
+            expect(await first.closed).toEqual({ code: HUB_DROPPED_CLOSE_CODE, reason: 'replaced' });
+
+            // The second socket keeps serving: it can still subscribe and get a command delivered.
+            second.subscribe('chat-global', 'chat');
+            await second.next('streamSync');
+            const commandId = randomUUID();
+            second.command('chat-global', commandId, { type: 'add', text: `still here ${randomUUID()}` });
+            await second.next('streamCommands', (frame) => frame.commands.some((c) => c.commandId === commandId));
+
+            second.close();
         });
     }
 
-    test('WS chat message shall be persisted and fanned back to the sender', async ({ homeUrl, builderWSUrl }) => {
-        const session = await openChatSession(wsConnectUrl(builderWSUrl), {
-            sid: user.sessionCookie,
-            ...wsHeaders(homeUrl, builderWSUrl)
-        });
-
-        try {
-            // A sent chat is persisted to the room stream and then delivered by the chat dispatcher
-            // on its next tick (syncIntervalSeconds=1 in test config), not echoed synchronously. The
-            // unique text distinguishes our comment from any retained room history the dispatcher
-            // replays to a freshly connected client.
-            const text = `hello ${randomUUID()}`;
-            session.send(text);
-
-            const comment = await session.waitComment((c) => c.text === text);
-            expect(comment).toMatchObject({ from: user.userId, text });
-            // The dispatcher tags each comment with its ordered Redis stream id (`<ms>-<seq>`) so the
-            // client can order and deduplicate under at-least-once delivery.
-            expect(comment.id).toMatch(/^\d+-\d+$/);
-        } finally {
-            session.close();
-        }
-    });
-
-    test('WS chat messages shall be delivered in order without duplicates', async ({ homeUrl, builderWSUrl }) => {
-        const session = await openChatSession(wsConnectUrl(builderWSUrl), {
-            sid: user.sessionCookie,
-            ...wsHeaders(homeUrl, builderWSUrl)
-        });
-
-        try {
-            // A single tag isolates this test's comments from retained room history. Several messages
-            // sent back to back must come back in send order and each exactly once — the dispatcher
-            // advances a per-connection stream cursor so a comment is never redelivered.
-            const tag = randomUUID();
-            const texts = [0, 1, 2, 3, 4].map((n) => `${tag} msg-${n}`);
-            for (const text of texts) {
-                session.send(text);
-            }
-
-            const received = await session.waitComments((c) => c.text.startsWith(tag), texts.length);
-            expect(received.map((c) => c.text)).toEqual(texts);
-            // Stream ids are strictly increasing, matching send order.
-            const ids = received.map((c) => c.id);
-            expect([...ids].sort()).toEqual(ids);
-            expect(new Set(ids).size).toBe(ids.length);
-
-            // Nothing more with this tag should arrive after the expected batch (no duplicate fan-out).
-            await expect(session.waitComment((c) => c.text.startsWith(tag), 1500)).rejects.toThrow();
-        } finally {
-            session.close();
-        }
-    });
-
-    test('WS chat shall fan out between two connected users in both directions', async ({ homeUrl, builderWSUrl }) => {
-        const url = wsConnectUrl(builderWSUrl);
-        const headers = wsHeaders(homeUrl, builderWSUrl);
-        const other = await mint.createUserSession({ userId: randomUUID() });
-
-        const alice = await openChatSession(url, { sid: user.sessionCookie, ...headers });
-        const bob = await openChatSession(url, { sid: other.sessionCookie, ...headers });
-
-        try {
-            // Chat is a single global room: each user's comment is fanned out by the dispatcher to
-            // every connected user (sender included), tagged with the author's id.
-            const fromAlice = `alice ${randomUUID()}`;
-            const fromBob = `bob ${randomUUID()}`;
-            alice.send(fromAlice);
-            bob.send(fromBob);
-
-            // Bob receives Alice's message and vice versa, each attributed to its author.
-            expect(await bob.waitComment((c) => c.text === fromAlice)).toMatchObject({ from: user.userId });
-            expect(await alice.waitComment((c) => c.text === fromBob)).toMatchObject({ from: other.userId });
-            // Each author also sees their own message fanned back.
-            expect(await alice.waitComment((c) => c.text === fromAlice)).toMatchObject({ from: user.userId });
-            expect(await bob.waitComment((c) => c.text === fromBob)).toMatchObject({ from: other.userId });
-        } finally {
-            alice.close();
-            bob.close();
-        }
-    });
-
-    test('WS chat shall replay recent history to a newly connected user', async ({ homeUrl, builderWSUrl }) => {
-        const url = wsConnectUrl(builderWSUrl);
-        const headers = wsHeaders(homeUrl, builderWSUrl);
-
-        // A user sends messages, then a second user connects fresh. Because a new connection starts
-        // from cursor "0", the dispatcher replays the retained room history to it.
-        const tag = randomUUID();
-        const texts = [`${tag} past-0`, `${tag} past-1`];
-
-        const author = await openChatSession(url, { sid: user.sessionCookie, ...headers });
-        try {
-            for (const text of texts) {
-                author.send(text);
-            }
-            // Ensure the messages are persisted (author sees them) before the latecomer connects.
-            await author.waitComments((c) => c.text.startsWith(tag), texts.length);
-
-            const latecomer = await mint.createUserSession({ userId: randomUUID() });
-            const late = await openChatSession(url, { sid: latecomer.sessionCookie, ...headers });
-            try {
-                const replayed = await late.waitComments((c) => c.text.startsWith(tag), texts.length);
-                expect(replayed.map((c) => c.text)).toEqual(texts);
-                expect(replayed.every((c) => c.from === user.userId)).toBe(true);
-            } finally {
-                late.close();
-            }
-        } finally {
-            author.close();
-        }
-    });
-
-    test('WS malformed chat frame shall be ignored without dropping the connection', async ({
-        homeUrl,
-        builderWSUrl
-    }) => {
-        const session = await openChatSession(wsConnectUrl(builderWSUrl), {
-            sid: user.sessionCookie,
-            ...wsHeaders(homeUrl, builderWSUrl)
-        });
-
-        try {
-            // The service logs and skips frames it cannot parse (bad JSON, unknown type, missing
-            // field) rather than tearing down the socket. A valid chat sent afterwards must still
-            // round-trip, proving the connection survived.
-            session.sendRaw('this is not json');
-            session.sendRaw(JSON.stringify({ type: 'unknown', text: 'x' }));
-            session.sendRaw(JSON.stringify({ type: 'chat' }));
-
-            const text = `after-garbage ${randomUUID()}`;
-            session.send(text);
-
-            const comment = await session.waitComment((c) => c.text === text);
-            expect(comment).toMatchObject({ from: user.userId, text });
-        } finally {
-            session.close();
-        }
-    });
-
-    test('WS second connection for a user shall drop the first (last connection wins)', async ({
+    test('WS connection taken over through the registry shall close with registry_inactive', async ({
         homeUrl,
         builderWSUrl
     }) => {
         const url = wsConnectUrl(builderWSUrl);
-        const headers = wsHeaders(homeUrl, builderWSUrl);
 
-        // Invariant 2: a user has at most one connection; a new one kills the previous. This is
-        // driven by the ConnectUser command, so no interval wait is needed.
-        const first = openAndWaitClose(url, {
+        const closeCtx = openAndWaitClose(url, {
             sid: user.sessionCookie,
-            ...headers,
+            ...wsHeaders(homeUrl, builderWSUrl),
             holdTimeoutMs: 10_000
         });
-        expect(await first.opened).toBe(true);
+        expect(await closeCtx.opened).toBe(true);
 
-        const second = openAndWaitClose(url, {
-            sid: user.sessionCookie,
-            ...headers,
-            holdTimeoutMs: 10_000
-        });
-        expect(await second.opened).toBe(true);
+        // Simulate another instance taking this user's row over directly in Redis (no second
+        // instance needed): the hub's registry listener reacts to the change notice.
+        await simulateRegistryTakeover(user.userId);
 
-        // The first socket must be force-closed by the hub, telling the client why; the second stays open.
-        const firstResult = await first.settled;
-        expect(firstResult).toEqual({ kind: 'closed', code: HUB_DROPPED_CLOSE_CODE, reason: 'replaced' });
+        const result = await closeCtx.settled;
+        expect(result).toEqual({ kind: 'closed', code: HUB_DROPPED_CLOSE_CODE, reason: 'registry_inactive' });
     });
 
     test('WS connection shall be dropped when session is deleted', async ({ homeUrl, builderWSUrl }) => {
@@ -513,5 +309,61 @@ test.describe('Builder websocket', { tag: ['@regression'] }, () => {
 
         const result = await closeCtx.settled;
         expect(result).toEqual({ kind: 'closed', code: HUB_DROPPED_CLOSE_CODE, reason: 'session_invalid' });
+    });
+});
+
+test.describe('Builder websocket failures', { tag: ['@infrastructure'] }, () => {
+    // Shares the redis proxy with the other @infrastructure files; keep this file's own
+    // infra tests serial too, so a failure here can't leave the proxy disabled for a later file.
+    test.describe.configure({ mode: 'serial' });
+
+    let toxiproxy: Toxiproxy;
+    let mint: SessionMint;
+    let user: MintedSession;
+
+    async function enableAllProxies(): Promise<void> {
+        for (const name of ['redis', 'postgres']) {
+            const proxy = await toxiproxy.get(name);
+            await proxy.update({ enabled: true, listen: proxy.listen, upstream: proxy.upstream });
+        }
+    }
+
+    test.beforeAll(async () => {
+        toxiproxy = new Toxiproxy('http://localhost:8474');
+        await enableAllProxies();
+    });
+
+    test.beforeEach(async () => {
+        // SessionMint writes straight into Redis, so mint before the test disables the proxy.
+        mint = await SessionMint.fromServerConfig();
+        user = await mint.createUserSession({ userId: randomUUID() });
+    });
+
+    test.afterEach(async () => {
+        await toxiproxy.reset();
+        await enableAllProxies();
+        await mint.teardownCreatedSessions();
+    });
+
+    test('WS connect shall be refused while Redis is down and accepted after recovery', async ({
+        homeUrl,
+        builderWSUrl
+    }) => {
+        const url = wsConnectUrl(builderWSUrl);
+        const options = { sid: user.sessionCookie, ...wsHeaders(homeUrl, builderWSUrl) };
+
+        const redisProxy = await toxiproxy.get('redis');
+        await redisProxy.update({ enabled: false, listen: redisProxy.listen, upstream: redisProxy.upstream });
+
+        // The session check needs Redis, so the upgrade is refused before it opens a socket. The
+        // session pool's own pool_timeout (5s in the test config) is the slow path here, so give
+        // the client a longer timeout than that rather than racing it.
+        const down = await connectWs(url, { ...options, timeoutMs: 8_000 });
+        expect(down).toEqual({ kind: 'http_error', status: 503 });
+
+        await redisProxy.update({ enabled: true, listen: redisProxy.listen, upstream: redisProxy.upstream });
+
+        const recovered = await connectWs(url, options);
+        expect(recovered).toEqual({ kind: 'open' });
     });
 });

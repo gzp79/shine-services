@@ -17,6 +17,10 @@ use redis::{
 };
 use std::{
     ops::{Deref, DerefMut},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     time::Duration,
 };
 
@@ -31,6 +35,9 @@ pub use shine_infra_macros::RedisJsonValue;
 pub struct RedisConnection {
     listener: RedisListener,
     client: MultiplexedConnection,
+    /// Set once a command sees a dropped connection or another unrecoverable error, so `has_broken`
+    /// can report it without an addition PING on every get from the pool.
+    broken: Arc<AtomicBool>,
 }
 
 impl RedisConnection {
@@ -53,6 +60,16 @@ impl RedisConnection {
     }
 }
 
+/// Marks `broken` when `result` shows the connection is no longer usable, so a later `has_broken`
+/// check can evict it without probing every checkout with a PING.
+fn mark_if_broken<T>(broken: &Arc<AtomicBool>, result: &Result<T, RedisRawError>) {
+    if let Err(err) = result {
+        if err.is_connection_dropped() || err.is_unrecoverable_error() {
+            broken.store(true, Ordering::Relaxed);
+        }
+    }
+}
+
 impl ConnectionLike for RedisConnection {
     fn req_packed_command<'a>(&'a mut self, cmd: &'a Cmd) -> RedisFuture<'a, Value> {
         let name = redis_command_name(cmd);
@@ -65,11 +82,13 @@ impl ConnectionLike for RedisConnection {
             db.operation.name = name,
             db.query.text = name,
         );
-        Box::pin(time_db_operation(
-            "redis",
-            name,
-            self.client.req_packed_command(cmd).instrument(span),
-        ))
+        let broken = self.broken.clone();
+        let client = &mut self.client;
+        Box::pin(async move {
+            let result = time_db_operation("redis", name, client.req_packed_command(cmd).instrument(span)).await;
+            mark_if_broken(&broken, &result);
+            result
+        })
     }
 
     fn req_packed_commands<'a>(
@@ -96,11 +115,18 @@ impl ConnectionLike for RedisConnection {
             span.record("db.operation.batch.size", names.len());
             span.record("db.query.text", names.join("; "));
         }
-        Box::pin(time_db_operation(
-            "redis",
-            "PIPELINE",
-            self.client.req_packed_commands(cmd, offset, count).instrument(span),
-        ))
+        let broken = self.broken.clone();
+        let client = &mut self.client;
+        Box::pin(async move {
+            let result = time_db_operation(
+                "redis",
+                "PIPELINE",
+                client.req_packed_commands(cmd, offset, count).instrument(span),
+            )
+            .await;
+            mark_if_broken(&broken, &result);
+            result
+        })
     }
 
     fn get_db(&self) -> i64 {
@@ -157,6 +183,7 @@ impl ManageConnection for RedisConnectionManager {
         Ok(RedisConnection {
             listener: self.listener.clone(),
             client,
+            broken: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -168,8 +195,8 @@ impl ManageConnection for RedisConnectionManager {
         }
     }
 
-    fn has_broken(&self, _: &mut Self::Connection) -> bool {
-        false
+    fn has_broken(&self, conn: &mut Self::Connection) -> bool {
+        conn.broken.load(Ordering::Relaxed)
     }
 }
 
@@ -265,6 +292,7 @@ pub async fn create_redis_pool(cns: &str) -> Result<RedisConnectionPool, RedisCo
         .max_size(max_size)
         .connection_timeout(pool_timeout)
         .error_sink(Box::new(PoolErrorLogger("redis")))
+        .test_on_check_out(false) // replaced with the `has_broken` (`broken` flag) so we save a PING on every checkout.
         .build(redis_manager)
         .await?;
 
@@ -286,28 +314,68 @@ mod test {
         }
     }
 
-    #[tokio::test]
+    #[shine_test::test]
     async fn max_size_zero_is_rejected_not_panicked() {
         let err = create_redis_pool("redis://localhost?max_size=0").await.unwrap_err();
         assert_eq!(err_kind(err), ErrorKind::InvalidClientConfig);
     }
 
-    #[tokio::test]
+    #[shine_test::test]
     async fn max_size_overflowing_u32_is_rejected() {
         let cns = format!("redis://localhost?max_size={}", u32::MAX as u64 + 1);
         let err = create_redis_pool(&cns).await.unwrap_err();
         assert_eq!(err_kind(err), ErrorKind::InvalidClientConfig);
     }
 
-    #[tokio::test]
+    #[shine_test::test]
     async fn pool_timeout_zero_is_rejected() {
         let err = create_redis_pool("redis://localhost?pool_timeout=0").await.unwrap_err();
         assert_eq!(err_kind(err), ErrorKind::InvalidClientConfig);
     }
 
-    #[tokio::test]
+    #[shine_test::test]
     async fn timeout_zero_is_rejected() {
         let err = create_redis_pool("redis://localhost?timeout=0").await.unwrap_err();
         assert_eq!(err_kind(err), ErrorKind::InvalidClientConfig);
+    }
+
+    /// `cmdstat_ping`'s call count from `INFO commandstats`, or 0 if redis has never seen a PING.
+    async fn ping_calls(conn: &mut RedisConnection) -> u64 {
+        let info: String = redis::cmd("INFO").arg("commandstats").query_async(conn).await.unwrap();
+        info.lines()
+            .find_map(|line| line.strip_prefix("cmdstat_ping:calls="))
+            .and_then(|rest| rest.split(',').next())
+            .and_then(|calls| calls.parse().ok())
+            .unwrap_or(0)
+    }
+
+    #[shine_test::test]
+    async fn a_pool_checkout_sends_no_ping() {
+        let Some(cns) = shine_test::db::get_redis_cns() else {
+            return;
+        };
+        // A single-connection pool forces the second checkout below to reuse the first connection
+        // instead of possibly establishing a fresh one.
+        let sep = if cns.contains('?') { '&' } else { '?' };
+        let redis = create_redis_pool(&format!("{cns}{sep}max_size=1")).await.unwrap();
+
+        // A fresh connection (the pool is empty) establishes a new one; reset after that, not
+        // before, so a server-side PING sent during connection setup elsewhere doesn't count.
+        let mut first = redis.get().await.unwrap();
+        let _: () = redis::cmd("CONFIG")
+            .arg("RESETSTAT")
+            .query_async(&mut *first)
+            .await
+            .unwrap();
+        drop(first);
+
+        // A second checkout reuses the pooled connection. With `test_on_check_out(false)`, bb8
+        // calls neither `is_valid` nor sends a PING to validate it.
+        let mut second = redis.get().await.unwrap();
+        assert_eq!(
+            ping_calls(&mut second).await,
+            0,
+            "checkout must not PING the connection"
+        );
     }
 }

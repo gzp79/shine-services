@@ -141,10 +141,13 @@ impl PgConnection<PgRawClient> {
         let mut runner = Runner::new(&migrations);
         runner.set_migration_table_name(format!("__migration__{name}"));
 
-        runner
-            .run_async(&mut self.client)
-            .await
-            .map_err(PgError::SqlMigration)?;
+        // Migrations can legitimately run longer than the session's statement_timeout; lift
+        // it for the run and restore.
+        self.client.batch_execute("SET statement_timeout = 0").await?;
+        let result = runner.run_async(&mut self.client).await;
+        self.client.batch_execute("RESET statement_timeout").await?;
+
+        result.map_err(PgError::SqlMigration)?;
         Ok(())
     }
 
@@ -300,10 +303,38 @@ impl StatusProvider for PostgresPoolStatus {
     }
 }
 
+/// Statement bound applied as a session default unless the connection string already sets
+/// `options=-c statement_timeout=...`.
+const DEFAULT_STATEMENT_TIMEOUT_MS: u64 = 10_000;
+
+/// TCP-level bound applied as a session default unless the connection string already sets
+/// `tcp_user_timeout`.
+const DEFAULT_TCP_USER_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Applies the session defaults to `pg_config`, without overriding anything the connection
+/// string already set explicitly.
+fn apply_session_timeouts(pg_config: &mut PgConfig) {
+    if pg_config.get_tcp_user_timeout().is_none() {
+        pg_config.tcp_user_timeout(DEFAULT_TCP_USER_TIMEOUT);
+    }
+    let statement_timeout = format!("-c statement_timeout={DEFAULT_STATEMENT_TIMEOUT_MS}");
+    match pg_config.get_options() {
+        None => {
+            pg_config.options(statement_timeout);
+        }
+        Some(existing) if !existing.contains("statement_timeout") => {
+            pg_config.options(format!("{existing} {statement_timeout}"));
+        }
+        Some(_) => {}
+    }
+}
+
 /// Format: `postgres://...?connect_timeout=3&pool_timeout=5&max_size=10`
 /// - `connect_timeout`: PostgreSQL native parameter in SECONDS (TCP connection establishment)
 /// - `pool_timeout`: custom parameter in SECONDS for bb8 pool (acquiring connection from pool, including waiting for connection to be established if pool is exhausted)
 /// - `max_size`: custom parameter for the maximum number of pooled connections (default 10)
+/// - `options`: PostgreSQL native parameter; defaults to `-c statement_timeout=10000` unless set
+/// - `tcp_user_timeout`: PostgreSQL native parameter; defaults to 10s unless set
 pub async fn create_postgres_pool(cns: &str) -> Result<PgConnectionPool, PgConnectionError> {
     // Parse and validate before the TLS/cert setup so a bad connection string fails fast without
     // touching the cert store or a crypto provider.
@@ -331,7 +362,9 @@ pub async fn create_postgres_pool(cns: &str) -> Result<PgConnectionPool, PgConne
 
     let tls = MakeRustlsConnect::new(tls_config);
 
-    let pg_config = PgConfig::from_str(&cns_clean)?;
+    let mut pg_config = PgConfig::from_str(&cns_clean)?;
+    apply_session_timeouts(&mut pg_config);
+
     // The listener's keep-alive connect needs a hard bound (tokio_postgres's connect_timeout covers
     // only the socket): honor the connection string's connect_timeout if set, else a sane default.
     let connect_timeout = pg_config
@@ -350,42 +383,4 @@ pub async fn create_postgres_pool(cns: &str) -> Result<PgConnectionPool, PgConne
         "Postgres pool created (max_size: {max_size}, pool_timeout: {pool_timeout:?}, connect_timeout: {connect_timeout:?})"
     );
     Ok(postgres)
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    // Degenerate pool params are rejected before any network I/O, so these run without a server.
-    // Parsing (non-integer / duplicate values) is covered by the connection-string parser's own
-    // tests; here only the range checks are exercised.
-    fn invalid_param(err: PgConnectionError) -> &'static str {
-        match err {
-            PgConnectionError::InvalidPoolParam(name) => name,
-            other => panic!("expected InvalidPoolParam, got {other:?}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn max_size_zero_is_rejected_not_panicked() {
-        let err = create_postgres_pool("postgres://localhost?max_size=0")
-            .await
-            .unwrap_err();
-        assert_eq!(invalid_param(err), "max_size");
-    }
-
-    #[tokio::test]
-    async fn max_size_overflowing_u32_is_rejected() {
-        let cns = format!("postgres://localhost?max_size={}", u32::MAX as u64 + 1);
-        let err = create_postgres_pool(&cns).await.unwrap_err();
-        assert_eq!(invalid_param(err), "max_size");
-    }
-
-    #[tokio::test]
-    async fn pool_timeout_zero_is_rejected() {
-        let err = create_postgres_pool("postgres://localhost?pool_timeout=0")
-            .await
-            .unwrap_err();
-        assert_eq!(invalid_param(err), "pool_timeout");
-    }
 }

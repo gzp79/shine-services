@@ -1,3 +1,4 @@
+mod flapping;
 mod log_metrics;
 mod metric_label;
 mod otel_http;
@@ -9,6 +10,7 @@ mod telemetry_router;
 mod telemetry_service;
 
 pub use self::{
+    flapping::{flap_trace_failed, flap_trace_recovered, Flap, FlappingTrace},
     metric_label::{label, SECONDS_BUCKETS},
     otel_http::{current_span_context, link_span, make_console_span, record_user_id, RequestSpan, TRACE_ID_HEADER},
     otel_layer::*,

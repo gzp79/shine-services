@@ -1,4 +1,8 @@
+mod command_stream;
+
 use regex::bytes::Regex;
+
+pub use self::command_stream::{CommandStreamSettings, KindSettings};
 
 pub struct WsSettings {
     pub allowed_origins: Vec<Regex>,
@@ -17,4 +21,5 @@ impl WsSettings {
 
 pub struct BuilderSettings {
     pub ws: WsSettings,
+    pub command_stream: CommandStreamSettings,
 }

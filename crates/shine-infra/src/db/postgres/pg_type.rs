@@ -49,6 +49,12 @@ impl PgValue for PgValueTypeVarchar {
 }
 
 #[derive(Debug)]
+pub struct PgValueTypeBytea;
+impl PgValue for PgValueTypeBytea {
+    const PG_TYPE: PgType = PgType::BYTEA;
+}
+
+#[derive(Debug)]
 #[allow(non_camel_case_types)]
 pub struct PgValueTypeVarcharArray;
 impl PgValue for PgValueTypeVarcharArray {
@@ -105,6 +111,10 @@ impl ToPgType for Uuid {
 
 impl ToPgType for &str {
     type PgValueType = PgValueTypeVarchar;
+}
+
+impl ToPgType for Vec<u8> {
+    type PgValueType = PgValueTypeBytea;
 }
 
 impl<T> ToPgType for &[T]

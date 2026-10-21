@@ -1,7 +1,7 @@
 use crate::services::hub::hub_metrics::hub_metrics;
 use crate::{
     models::{
-        messages::{DisconnectReason, HubEvent, HubMessage, TopicKey},
+        messages::{DisconnectReason, HubEvent, HubMessage, StreamEvent, StreamResume, TopicKey},
         HubError,
     },
     repositories::hub_registry::{redis::RedisHubConnectionDb, HubConnection, HubConnectionDb, HubRegistry},
@@ -10,15 +10,17 @@ use crate::{
             hub_command::ControlCommand,
             hub_connections::{Connections, DeadConnection, RemovedConnection},
             hub_subscribers::Subscribers,
-            tasks::{ChatDispatcher, Heartbeat, SessionChecker},
+            tasks::{Heartbeat, SessionChecker, StreamDispatcher},
         },
-        ChatService,
+        CommandStreamService,
     },
 };
 use opentelemetry::trace::SpanContext;
+use shine_infra::db::command_log::StreamId;
 use shine_infra::session::{CurrentUserService, SessionKey};
 use shine_infra::telemetry::{current_span_context, label, link_span};
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 use std::{sync::Arc, time::Duration};
 use tokio::{sync::mpsc, task::JoinHandle};
@@ -26,10 +28,34 @@ use tracing::{info_span, Instrument};
 use uuid::Uuid;
 
 /// Cadence configuration for the hub's periodic connection consumers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HubIntervals {
     pub heartbeat: Duration,
     pub session_check: Duration,
-    pub chat: Duration,
+}
+
+/// The periodic consumers of the connection view.
+#[derive(Clone, Copy, Debug)]
+pub enum Consumer {
+    Heartbeat,
+    SessionCheck,
+}
+
+/// Completed ticks of the periodic consumers: a stuck loop shows as a counter that stops, and a test can
+/// wait for ticks instead of sleeping.
+#[derive(Default)]
+struct Ticks {
+    heartbeat: AtomicU64,
+    session_check: AtomicU64,
+}
+
+/// Counts a tick of a consumer when dropped, so every way out of the tick is counted.
+pub struct TickGuard<'a>(&'a AtomicU64);
+
+impl Drop for TickGuard<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_add(1, Ordering::Relaxed);
+    }
 }
 
 /// Point-in-time counts of hub state, for status reporting.
@@ -37,6 +63,8 @@ pub struct HubIntervals {
 pub struct HubStats {
     pub connections: usize,
     pub subscribers: usize,
+    pub heartbeat_ticks: u64,
+    pub session_check_ticks: u64,
 }
 
 struct Inner {
@@ -44,6 +72,7 @@ struct Inner {
     connections: Connections,
     subscribers: Subscribers,
     hub_registry: RedisHubConnectionDb,
+    ticks: Ticks,
 }
 
 /// Messaging service for connected users.
@@ -56,8 +85,8 @@ impl HubService {
     pub async fn new(
         hub_registry: RedisHubConnectionDb,
         session_service: Arc<CurrentUserService>,
-        chat_service: ChatService,
         intervals: HubIntervals,
+        command_streams: Option<CommandStreamService>,
     ) -> Self {
         let (control_tx, control_rx) = mpsc::unbounded_channel();
 
@@ -67,6 +96,7 @@ impl HubService {
                 connections: Connections::new(),
                 subscribers: Subscribers::new(),
                 hub_registry,
+                ticks: Ticks::default(),
             }),
         };
 
@@ -75,12 +105,14 @@ impl HubService {
         // lost to them forever. The start_* calls subscribe synchronously (awaited), and the
         // dispatcher is started last so nothing drains the channels until every subscription is in
         // place.
-        let background_tasks = vec![
+        let mut background_tasks = vec![
             Self::start_registry_listener(service.clone()),
             Heartbeat::start(service.clone(), intervals.heartbeat).await,
             SessionChecker::start(service.clone(), session_service, intervals.session_check).await,
-            ChatDispatcher::start(service.clone(), chat_service, intervals.chat).await,
         ];
+        if let Some(command_streams) = command_streams {
+            background_tasks.push(StreamDispatcher::start(service.clone(), command_streams).await);
+        }
         Self::start_dispatcher(service.clone(), control_rx, background_tasks);
         service
     }
@@ -155,6 +187,38 @@ impl HubService {
         self.send_control(ControlCommand::HubRegistryChanged { user_id })
     }
 
+    /// Requests a stream subscription for a connection; ignored if the connection is gone by then.
+    pub fn request_subscribe_stream(
+        &self,
+        user_id: Uuid,
+        connection_id: Uuid,
+        stream_id: StreamId,
+        kind: &'static str,
+        resume: Option<StreamResume>,
+    ) -> Result<(), HubError> {
+        self.send_control(ControlCommand::SubscribeStream {
+            user_id,
+            connection_id,
+            stream_id,
+            kind,
+            resume,
+        })
+    }
+
+    /// Ends a stream subscription of a connection; the connection itself stays.
+    pub fn request_unsubscribe_stream(
+        &self,
+        user_id: Uuid,
+        connection_id: Uuid,
+        stream_id: StreamId,
+    ) -> Result<(), HubError> {
+        self.send_control(ControlCommand::UnsubscribeStream {
+            user_id,
+            connection_id,
+            stream_id,
+        })
+    }
+
     /// Sends an egress message to a specific connection. Returns whether the message was queued for delivery.
     #[tracing::instrument(level = "debug", skip_all, fields(ws.connection_id = %connection_id))]
     pub async fn send_to_connection(&self, connection_id: Uuid, message: HubMessage) -> Result<bool, HubError> {
@@ -196,7 +260,29 @@ impl HubService {
     pub async fn stats(&self) -> HubStats {
         let connections = self.inner.connections.len().await;
         let subscribers = self.inner.subscribers.len().await;
-        HubStats { connections, subscribers }
+        HubStats {
+            connections,
+            subscribers,
+            heartbeat_ticks: self.ticks(Consumer::Heartbeat),
+            session_check_ticks: self.ticks(Consumer::SessionCheck),
+        }
+    }
+
+    fn tick_counter(&self, consumer: Consumer) -> &AtomicU64 {
+        match consumer {
+            Consumer::Heartbeat => &self.inner.ticks.heartbeat,
+            Consumer::SessionCheck => &self.inner.ticks.session_check,
+        }
+    }
+
+    /// Ticks of the consumer completed so far.
+    pub fn ticks(&self, consumer: Consumer) -> u64 {
+        self.tick_counter(consumer).load(Ordering::Relaxed)
+    }
+
+    /// Held for the length of a tick of the consumer.
+    pub(crate) fn tick_guard(&self, consumer: Consumer) -> TickGuard<'_> {
+        TickGuard(self.tick_counter(consumer))
     }
 
     /// Starts the command loop, the sole writer of connection state.
@@ -277,7 +363,7 @@ impl HubService {
                     // failed (e.g. a lost response). Then the registry already names the new
                     // connection, and keeping the old one would only get it dropped as inactive.
                     if !self.is_registry_connection(user_id, connection_id).await {
-                        tracing::error!("[{user_id}] Failed to create hub connection: {err:#?}");
+                        tracing::warn!("[{user_id}] Failed to create hub connection: {err:#?}");
                         return true;
                     }
                     tracing::warn!("[{user_id}] Hub connection registered despite an error: {err:#?}");
@@ -338,7 +424,7 @@ impl HubService {
                 if let Err(err) = self.remove_registry_connection(user_id, removed_connection_id).await {
                     // Best-effort: publish UserDisconnected regardless so the socket and trackers
                     // never wedge, and let the registry TTL clean up the stale row.
-                    tracing::error!("[{user_id}] Failed to remove hub connection (relying on TTL cleanup): {err:#?}");
+                    tracing::warn!("[{user_id}] Failed to remove hub connection (relying on TTL cleanup): {err:#?}");
                 }
 
                 self.publish(HubEvent::UserDisconnected {
@@ -356,7 +442,7 @@ impl HubService {
                 if let Some(removed) = self.inner.connections.remove_connection_by_id(connection_id).await {
                     let (user_id, connection_id) = self.record_drop(removed, reason);
                     if let Err(err) = self.remove_registry_connection(user_id, connection_id).await {
-                        tracing::error!("[{user_id}] Failed to remove dropped connection from registry (TTL will clean up): {err:#?}");
+                        tracing::warn!("[{user_id}] Failed to remove dropped connection from registry (TTL will clean up): {err:#?}");
                     }
                     self.publish(HubEvent::UserDisconnected { user_id, connection_id, reason })
                         .await;
@@ -365,6 +451,34 @@ impl HubService {
             }
             ControlCommand::HubRegistryChanged { user_id } => {
                 self.process_registry_change(user_id).await;
+                true
+            }
+            ControlCommand::SubscribeStream {
+                user_id,
+                connection_id,
+                stream_id,
+                kind,
+                resume,
+            } => {
+                // A subscribe racing a replaced or dropped connection must not pin a stream worker.
+                if self.inner.connections.contains(connection_id).await {
+                    self.publish_stream_event(StreamEvent::Subscribed {
+                        connection_id,
+                        stream_id,
+                        kind,
+                        resume,
+                    })
+                    .await;
+                } else {
+                    tracing::debug!("[{user_id}] [{connection_id}] Stream subscribe for an unknown connection ignored");
+                }
+                true
+            }
+            ControlCommand::UnsubscribeStream { connection_id, stream_id, .. } => {
+                if self.inner.connections.contains(connection_id).await {
+                    self.publish_stream_event(StreamEvent::Unsubscribed { connection_id, stream_id })
+                        .await;
+                }
                 true
             }
             ControlCommand::Shutdown => {
@@ -427,7 +541,7 @@ impl HubService {
         let is_active = match self.heartbeat_registry_connection(user_id, connection_id).await {
             Ok(is_active) => is_active,
             Err(err) => {
-                tracing::error!("[{user_id}] Failed to heartbeat hub connection: {err:#?}");
+                tracing::warn!("[{user_id}] Failed to heartbeat hub connection: {err:#?}");
                 return;
             }
         };
@@ -478,6 +592,13 @@ impl HubService {
         }
     }
 
+    /// Delivers a stream subscription change to the internal subscribers; no socket subscribes to its topic.
+    /// A disconnect needs no such event: the stream dispatcher drops the streams of a connection when it
+    /// sees `UserDisconnected`.
+    async fn publish_stream_event(&self, event: StreamEvent) {
+        self.inner.subscribers.publish(HubMessage::StreamEvent(event)).await;
+    }
+
     /// Delivers a lifecycle `HubEvent` to every internal subscriber and every topic-matching
     /// connection, pruning any connection found dead.
     async fn publish(&self, event: HubEvent) {
@@ -492,7 +613,7 @@ impl HubService {
                     if let Some(removed) = self.inner.connections.remove_connection_by_id(connection_id).await {
                         let (user_id, connection_id) = self.record_drop(removed, reason);
                         if let Err(err) = self.remove_registry_connection(user_id, connection_id).await {
-                            tracing::error!(
+                            tracing::warn!(
                                 "[{user_id}] Failed to remove dead connection from registry (TTL will clean up): {err:#?}"
                             );
                         }

@@ -212,6 +212,7 @@ async fn load_app_config<A: WebApplication>() -> Result<WebAppConfig<A::AppConfi
     tracing::error!("init-error - tracing: ok");
 
     let config = WebAppConfig::<A::AppConfig>::load(&stage, None).await?;
+    config.feature.validate()?;
     tracing::info!("pre-init completed");
 
     Ok(config)

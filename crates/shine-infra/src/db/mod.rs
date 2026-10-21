@@ -3,7 +3,7 @@ mod cns_param;
 mod db_metrics;
 mod pool_error_logger;
 
-pub mod event_source;
+pub mod command_log;
 pub mod postgres;
 pub mod redis;
 

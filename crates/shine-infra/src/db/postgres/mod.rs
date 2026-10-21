@@ -15,8 +15,9 @@ pub use self::{
     pg_error::PgError,
     pg_listener::{PgListener, PgNotification},
     pg_type::{
-        PgValue, PgValueTypeBool, PgValueTypeInt2, PgValueTypeInt2Array, PgValueTypeInt4, PgValueTypeInt8,
-        PgValueTypeTimestamptz, PgValueTypeUuid, PgValueTypeVarchar, PgValueTypeVarcharArray, ToPgType,
+        PgValue, PgValueTypeBool, PgValueTypeBytea, PgValueTypeInt2, PgValueTypeInt2Array, PgValueTypeInt4,
+        PgValueTypeInt8, PgValueTypeTimestamptz, PgValueTypeUuid, PgValueTypeVarchar, PgValueTypeVarcharArray,
+        ToPgType,
     },
     query_builder::{AndWhere, QueryBuilder},
 };

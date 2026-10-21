@@ -4,15 +4,17 @@
 //! (`services/docker-compose.yml`); skipped otherwise. The assertions read the test Redis (which may be
 //! behind the same proxy) only while no fault is active.
 
+use crate::services::{hub::Consumer, hub_test_utils::wait_ticks};
 use crate::{
     models::messages::{DisconnectReason, HubEvent, HubMessage},
     services::hub_test_utils::{
         assert_consistent, barrier, closed_with, connect, connect_with_key, create_test_hub, delete_key,
         direct_registry, dropped, drops, egress_state, find_registry_connection, key, lifecycle_of, open, registry_key,
-        seed_session, test_redis_cns, wait_event, Lifecycle, TestHub, TestHubOptions, BARRIER_TIMEOUT,
+        seed_session, wait_event, Lifecycle, TestHub, TestHubOptions, BARRIER_TIMEOUT,
     },
 };
 use shine_test::{
+    db::get_redis_cns,
     test,
     toxiproxy::{Stream, Toxic, Toxiproxy},
 };
@@ -27,7 +29,7 @@ const CUT_IN_SET: u64 = 60;
 
 /// A hub whose Redis goes through the proxy, with short timeouts so an outage fails fast.
 async fn proxied_hub(toxiproxy: &Toxiproxy, options: TestHubOptions) -> Option<TestHub> {
-    test_redis_cns()?;
+    get_redis_cns()?;
     let (host, port) = (toxiproxy.host(), toxiproxy.proxy("redis").await.listen_port());
     create_test_hub(TestHubOptions {
         redis_cns: Some(format!("redis://{host}:{port}?timeout=1000&pool_timeout=500")),
@@ -221,7 +223,8 @@ async fn an_outage_keeps_live_connections_and_rejects_new_ones() {
     proxy.set_enabled(true).await;
 
     // After the outage the ticks succeed again and the live connection is still there.
-    tokio::time::sleep(tick * 5).await;
+    wait_ticks(&test.hub, Consumer::Heartbeat, 3).await;
+    wait_ticks(&test.hub, Consumer::SessionCheck, 3).await;
     let seen = barrier(&test.hub, &mut test.events).await;
     assert_eq!(lifecycle_of(&seen, user), []);
     assert_eq!(egress_state(&mut rx), open());

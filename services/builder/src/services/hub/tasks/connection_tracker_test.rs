@@ -97,3 +97,52 @@ async fn steady_wakes_do_not_starve_lifecycle_events() {
         "lifecycle events must be applied even while the wake is always ready"
     );
 }
+
+/// Always takes longer than the interval, so under `MissedTickBehavior::Delay` the ticker is
+/// already due again the instant it returns.
+struct SlowTick {
+    sleep: Duration,
+    tx: mpsc::UnboundedSender<usize>,
+}
+
+impl ConnectionConsumer for SlowTick {
+    async fn on_tick(&mut self, tracker: &ConnectionTracker) {
+        let _ = self.tx.send(tracker.connections().len());
+        tokio::time::sleep(self.sleep).await;
+    }
+}
+
+#[test]
+async fn ticks_longer_than_the_interval_still_apply_lifecycle_events() {
+    let (sub_tx, sub_rx) = mpsc::unbounded_channel();
+    let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
+    let interval = Duration::from_millis(20);
+    tokio::spawn(run_connection_loop(
+        sub_rx,
+        interval,
+        None,
+        SlowTick {
+            sleep: interval * 3,
+            tx: probe_tx,
+        },
+    ));
+
+    // Wait for the first (empty) tick to start, so the message below is sent while that tick is
+    // still sleeping, not before the loop's first deadline — otherwise `subscription.recv()` would
+    // just win the very first select by having been ready before the ticker was ever due.
+    assert_eq!(probe_rx.recv().await, Some(0));
+    sub_tx.send(connected(Uuid::new_v4(), Uuid::new_v4())).unwrap();
+
+    // From here on, every tick sleeps three times its own interval, so `ticker.tick()` is already
+    // due again the instant it returns. A loop biased towards the ticker alone would keep firing
+    // it forever without ever polling the subscription again; the fix must drain pending lifecycle
+    // events before each due tick regardless.
+    let saw_one = tokio::time::timeout(Duration::from_secs(2), async {
+        while probe_rx.recv().await != Some(1) {}
+    })
+    .await;
+    assert!(
+        saw_one.is_ok(),
+        "a tick that always runs over its interval must not starve lifecycle events"
+    );
+}

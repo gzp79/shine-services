@@ -69,6 +69,33 @@ impl CurrentUserService {
         Extension(Arc::new(self))
     }
 
+    fn session_keys(&self, user_id: Uuid, session_key: SessionKey) -> (String, String) {
+        let key_hash = session_key.key_hash();
+        let prefix = format!("{}session:{}:{}", self.key_prefix, user_id.as_simple(), key_hash);
+        (format!("{prefix}:sentinel"), format!("{prefix}:data"))
+    }
+
+    /// Check whether the sessions are still alive without extending their lifetime. All the sessions
+    /// are queried in a single round trip; the result has the same order as the input.
+    pub async fn are_sessions_active(&self, sessions: &[(Uuid, SessionKey)]) -> Result<Vec<bool>, UserSessionError> {
+        if sessions.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut pipe = redis::pipe();
+        for &(user_id, session_key) in sessions {
+            let (sentinel_key, key) = self.session_keys(user_id, session_key);
+            pipe.exists(&[sentinel_key, key]);
+        }
+
+        let mut client = self.redis.get().await.map_err(UserSessionError::RedisPoolError)?;
+        let found: Vec<usize> = pipe
+            .query_async(&mut *client)
+            .await
+            .map_err(UserSessionError::RedisError)?;
+        Ok(found.into_iter().map(|count| count == 2).collect())
+    }
+
     /// Refresh the session data in the cache. It should be in sync with the identity service
     /// and introduce any breaking change with great care as that can break authentication in all the service.
     pub async fn get_current_user(
@@ -92,14 +119,7 @@ impl CurrentUserService {
             pub roles: Vec<String>,
         }
 
-        let (sentinel_key, key) = {
-            let key_hash = session_key.key_hash();
-
-            let prefix = format!("{}session:{}:{}", self.key_prefix, user_id.as_simple(), key_hash);
-            let sentinel_key = format!("{prefix}:sentinel");
-            let key = format!("{prefix}:data");
-            (sentinel_key, key)
-        };
+        let (sentinel_key, key) = self.session_keys(user_id, session_key);
 
         let mut client = self.redis.get().await.map_err(UserSessionError::RedisPoolError)?;
 

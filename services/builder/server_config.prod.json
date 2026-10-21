@@ -12,6 +12,12 @@
   "builder": {
     "hubHeartbeatSeconds": 300,
     "authCheckInterval": 60,
+    "commandStream": {
+      "enabled": true,
+      "kinds": {
+        "chat": { "snapshotEvery": 50, "keepSnapshots": 5 }
+      }
+    },
     "ws": {
       "allowedHosts": ["^ws\\.scytta\\.com(:443)?$"]
     }

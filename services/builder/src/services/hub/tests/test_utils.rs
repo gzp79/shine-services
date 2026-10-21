@@ -1,20 +1,19 @@
-use crate::services::{HubIntervals, HubService};
+use crate::services::{hub::Consumer, CommandStreamService, HubIntervals, HubService};
 use crate::{
-    models::messages::{ChatBatch, ChatComment, DisconnectReason, HubEvent, HubMessage, TopicKey},
-    repositories::{
-        chat_comments::redis::RedisChatCommentsDb,
-        hub_registry::{redis::RedisHubConnectionDb, HubConnectionDb, HubRegistry},
-    },
-    services::ChatService,
+    models::messages::{DisconnectReason, HubEvent, HubMessage, StreamMessage, TopicKey},
+    repositories::hub_registry::{redis::RedisHubConnectionDb, HubConnectionDb, HubRegistry},
 };
 use ring::rand::SystemRandom;
 use shine_infra::{
-    db::redis::{create_redis_pool, RedisConnectionPool},
+    db::{
+        command_log::StreamId,
+        redis::{create_redis_pool, RedisConnectionPool},
+    },
     session::{CurrentUserService, SessionKey},
 };
+use shine_test::db::get_redis_cns;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
-    env,
     sync::Arc,
     time::Duration,
 };
@@ -30,25 +29,14 @@ const IDLE: Duration = Duration::from_secs(3600);
 pub type Events = mpsc::UnboundedReceiver<HubMessage>;
 pub type Egress = mpsc::Receiver<HubMessage>;
 
-pub fn test_redis_cns() -> Option<String> {
-    let cns = env::var("SHINE_TEST_REDIS_CNS")
-        .or_else(|_| env::var("SHINE_REDIS_CNS"))
-        .ok();
-    if cns.is_none() {
-        tracing::warn!("Missing SHINE_TEST_REDIS_CNS/SHINE_REDIS_CNS, skipping test");
-    }
-    cns
-}
-
-/// Hub configuration of a test. The background consumers idle unless a test shortens their interval, and
-/// every hub chats in its own room so no other test's appends wake it.
+/// Hub configuration of a test. The background consumers idle unless a test shortens their interval.
 pub struct TestHubOptions {
     pub heartbeat: Duration,
     pub session_check: Duration,
-    pub chat: Duration,
-    pub chat_room: String,
     /// Redis of the hub; the test Redis when not given.
     pub redis_cns: Option<String>,
+    /// The command streams of the hub; none when not given.
+    pub command_streams: Option<CommandStreamService>,
 }
 
 impl Default for TestHubOptions {
@@ -56,9 +44,8 @@ impl Default for TestHubOptions {
         Self {
             heartbeat: IDLE,
             session_check: IDLE,
-            chat: IDLE,
-            chat_room: format!("test-{}", Uuid::new_v4()),
             redis_cns: None,
+            command_streams: None,
         }
     }
 }
@@ -67,7 +54,6 @@ pub struct TestHub {
     pub hub: HubService,
     pub registry: RedisHubConnectionDb,
     pub redis: RedisConnectionPool,
-    pub chat_room: String,
     /// Subscribed before any command, so it sees every event of the hub.
     pub events: Events,
 }
@@ -77,12 +63,10 @@ pub struct TestHub {
 pub async fn create_test_hub(options: TestHubOptions) -> Option<TestHub> {
     let redis_cns = match options.redis_cns {
         Some(cns) => cns,
-        None => test_redis_cns()?,
+        None => get_redis_cns()?,
     };
     let redis = create_redis_pool(redis_cns.as_str()).await.unwrap();
     let registry = RedisHubConnectionDb::new(&redis, 120).await.unwrap();
-    let chat_db = RedisChatCommentsDb::new(&redis, 200, 3600).await.unwrap();
-    let chat_service = ChatService::with_room(chat_db, options.chat_room.clone());
 
     // URL_SAFE_NO_PAD: 86 'A' chars decode to 64 zero bytes, a valid cookie key for tests.
     let cookie_secret = "A".repeat(86);
@@ -91,36 +75,26 @@ pub async fn create_test_hub(options: TestHubOptions) -> Option<TestHub> {
     let intervals = HubIntervals {
         heartbeat: options.heartbeat,
         session_check: options.session_check,
-        chat: options.chat,
     };
-    let hub = HubService::new(registry.clone(), session_service, chat_service, intervals).await;
+    let hub = HubService::new(registry.clone(), session_service, intervals, options.command_streams).await;
     let events = hub.subscribe(vec![TopicKey::Hub]).await;
-    Some(TestHub {
-        hub,
-        registry,
-        redis,
-        chat_room: options.chat_room,
-        events,
-    })
+    Some(TestHub { hub, registry, redis, events })
 }
 
 pub fn key() -> SessionKey {
     SessionKey::new_random(&SystemRandom::new()).unwrap()
 }
 
-pub fn chat(id: impl Into<String>) -> HubMessage {
-    HubMessage::Chat(ChatBatch {
-        comments: vec![ChatComment {
-            id: id.into(),
-            user_id: Uuid::nil(),
-            text: String::new(),
-        }],
+/// A message of the Stream topic, told apart by its stream id.
+pub fn payload(id: impl Into<String>) -> HubMessage {
+    HubMessage::Stream(StreamMessage::Reset {
+        stream_id: StreamId::parse(&id.into()).unwrap(),
     })
 }
 
-/// Requests a connection on the Chat topic, as the ws sockets do.
+/// Requests a connection on the Stream topic.
 pub fn connect(hub: &HubService, user_id: Uuid, capacity: usize) -> (Uuid, Egress) {
-    connect_on(hub, user_id, capacity, vec![TopicKey::Chat])
+    connect_on(hub, user_id, capacity, vec![TopicKey::Stream])
 }
 
 pub fn connect_on(hub: &HubService, user_id: Uuid, capacity: usize, topics: Vec<TopicKey>) -> (Uuid, Egress) {
@@ -172,6 +146,20 @@ pub async fn wait_event(
     .await
     .unwrap_or(false)
     .then_some(collected)
+}
+
+/// Waits until the consumer completed `count` ticks that started after the call, so a test can assert that
+/// something did not happen over a number of ticks without guessing how long they take.
+pub async fn wait_ticks(hub: &HubService, consumer: Consumer, count: u64) {
+    // The tick in flight may have started before the call.
+    let target = hub.ticks(consumer) + count + 1;
+    timeout(BARRIER_TIMEOUT, async {
+        while hub.ticks(consumer) < target {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("the consumer did not tick");
 }
 
 /// Waits until the command loop has exited, which drops the control channel.
@@ -255,7 +243,7 @@ pub fn replay(events: &[HubEvent]) -> HashMap<Uuid, Uuid> {
 /// What a connection's egress channel holds once the hub is idle.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct EgressState {
-    pub chats: Vec<String>,
+    pub payloads: Vec<String>,
     pub notices: Vec<DisconnectReason>,
     pub closed: bool,
 }
@@ -268,13 +256,13 @@ impl EgressState {
     /// Records a message; a connection on the Hub topic passes its id to skip the drops of others.
     pub fn record_for(&mut self, own: Option<Uuid>, message: HubMessage) {
         match message {
-            HubMessage::Chat(batch) => self.chats.extend(batch.comments.into_iter().map(|c| c.id)),
+            HubMessage::Stream(StreamMessage::Reset { stream_id }) => self.payloads.push(stream_id.to_string()),
             HubMessage::Hub(HubEvent::UserDisconnected { connection_id, reason, .. })
                 if reason.is_drop() && own.is_none_or(|own| own == connection_id) =>
             {
                 self.notices.push(reason)
             }
-            HubMessage::Hub(_) => {}
+            HubMessage::Hub(_) | HubMessage::Stream(_) | HubMessage::StreamEvent(_) => {}
         }
     }
 }
@@ -311,7 +299,7 @@ pub fn open() -> EgressState {
 
 pub fn closed_with(notice: Option<DisconnectReason>) -> EgressState {
     EgressState {
-        chats: vec![],
+        payloads: vec![],
         notices: notice.into_iter().collect(),
         closed: true,
     }
@@ -335,12 +323,22 @@ pub fn dropped(entries: &[(DisconnectReason, u64)]) -> BTreeMap<DisconnectReason
 }
 
 pub async fn find_registry_connection(registry: &RedisHubConnectionDb, user_id: Uuid) -> Option<Uuid> {
-    let mut context = registry.create_context().await.unwrap();
-    context
-        .find_connection_by_user(user_id)
-        .await
-        .unwrap()
-        .map(|connection| connection.connection_id)
+    // `registry` keeps its own pool, independent of the hub under test. A connection idle through
+    // a proxy outage can fail once on its first reuse after recovery (RDS-3 trades the double round
+    // trip of a PING-every-checkout for exactly this one-shot failure); retry instead of asserting
+    // a guarantee the pool no longer makes.
+    let mut last_err = None;
+    for attempt in 0..5 {
+        if attempt > 0 {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        let mut context = registry.create_context().await.unwrap();
+        match context.find_connection_by_user(user_id).await {
+            Ok(found) => return found.map(|connection| connection.connection_id),
+            Err(err) => last_err = Some(err),
+        }
+    }
+    panic!("find_connection_by_user kept failing: {last_err:?}");
 }
 
 /// The hub's local view, its registry and the events all agree on the active connection of each user.
@@ -366,7 +364,7 @@ pub fn registry_key(user_id: Uuid) -> String {
 
 /// A registry on the test Redis, bypassing any proxy of the hub under test.
 pub async fn direct_registry() -> RedisHubConnectionDb {
-    let redis = create_redis_pool(test_redis_cns().unwrap().as_str()).await.unwrap();
+    let redis = create_redis_pool(get_redis_cns().unwrap().as_str()).await.unwrap();
     RedisHubConnectionDb::new(&redis, 120).await.unwrap()
 }
 
@@ -385,15 +383,27 @@ pub async fn seed_session(redis: &RedisConnectionPool, user_id: Uuid, session_ke
 }
 
 pub async fn delete_key(redis: &RedisConnectionPool, key: &str) {
-    let mut conn = redis.get().await.unwrap();
-    let _: () = redis::cmd("DEL").arg(key).query_async(&mut *conn).await.unwrap();
+    // See the comment on `find_registry_connection`: a connection idle through a proxy outage can
+    // fail once on its first reuse after recovery.
+    let mut last_err = None;
+    for attempt in 0..5 {
+        if attempt > 0 {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        let mut conn = redis.get().await.unwrap();
+        match redis::cmd("DEL").arg(key).query_async::<()>(&mut *conn).await {
+            Ok(()) => return,
+            Err(err) => last_err = Some(err),
+        }
+    }
+    panic!("DEL kept failing: {last_err:?}");
 }
 
-/// Requests a connection with a given session key, on the Chat topic.
+/// Requests a connection with a given session key, on the Stream topic.
 pub fn connect_with_key(hub: &HubService, user_id: Uuid, session_key: SessionKey, capacity: usize) -> (Uuid, Egress) {
     let (tx, rx) = mpsc::channel(capacity);
     let connection_id = hub
-        .request_connection(user_id, session_key, tx, vec![TopicKey::Chat])
+        .request_connection(user_id, session_key, tx, vec![TopicKey::Stream])
         .unwrap();
     (connection_id, rx)
 }

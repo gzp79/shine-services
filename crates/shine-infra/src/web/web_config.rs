@@ -14,6 +14,11 @@ use super::{CoreConfig, ServiceConfig};
 
 pub trait FeatureConfig: Debug {
     const NAME: &'static str;
+
+    /// Checked once right after the config loads, before the service starts.
+    fn validate(&self) -> Result<(), AnyError> {
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone)]

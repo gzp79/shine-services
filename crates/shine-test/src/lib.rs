@@ -2,7 +2,8 @@ pub use shine_test_macros::test;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use serial_test;
-
+#[cfg(not(target_arch = "wasm32"))]
+pub mod db;
 #[cfg(all(feature = "toxiproxy", not(target_arch = "wasm32")))]
 pub mod toxiproxy;
 

@@ -4,11 +4,12 @@ mod hub_metrics;
 mod hub_service;
 mod hub_status;
 mod hub_subscribers;
+mod stream_egress;
 mod tasks;
 
 pub use self::{
     hub_metrics::hub_metrics,
-    hub_service::{HubIntervals, HubService},
+    hub_service::{Consumer, HubIntervals, HubService},
     hub_status::HubStatus,
 };
 

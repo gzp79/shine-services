@@ -10,24 +10,16 @@ use shine_infra::{
     session::SessionKey,
     web::extracts::{ClientFingerprint, SiteInfo},
 };
-use shine_test::test;
-use std::env;
+use shine_test::{db::get_redis_cns, test};
 use uuid::Uuid;
 
 async fn create_db(scope: &str) -> Option<impl SessionDb> {
-    match env::var("SHINE_TEST_REDIS_CNS") {
-        Ok(cns) => {
-            let redis = db::redis::create_redis_pool(cns.as_str()).await.unwrap();
-            let db = RedisSessionDb::new(&redis, format!("{scope}_"), Duration::seconds(1000))
-                .await
-                .unwrap();
-            Some(db)
-        }
-        _ => {
-            tracing::warn!("Missing SHINE_TEST_REDIS_CNS, skipping test");
-            None
-        }
-    }
+    let cns = get_redis_cns()?;
+    let redis = db::redis::create_redis_pool(cns.as_str()).await.unwrap();
+    let db = RedisSessionDb::new(&redis, format!("{scope}_"), Duration::seconds(1000))
+        .await
+        .unwrap();
+    Some(db)
 }
 
 #[test]
