@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use shine_infra::web::FeatureConfig;
 use std::collections::{HashMap, HashSet};
 use url::Url;
+use validator::Validate;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -134,7 +135,7 @@ pub enum MailerConfig {
 }
 
 /// The application configuration
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
     pub db: DBConfig,
@@ -145,6 +146,10 @@ pub struct AppConfig {
 
 impl FeatureConfig for AppConfig {
     const NAME: &'static str = "identity";
+
+    fn validate(&self) -> Result<(), anyhow::Error> {
+        Validate::validate(self).map_err(anyhow::Error::from)
+    }
 }
 
 #[cfg(test)]
