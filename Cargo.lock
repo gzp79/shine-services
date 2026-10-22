@@ -3952,6 +3952,7 @@ dependencies = [
  "refinery",
  "regex",
  "ring",
+ "rustls",
  "serde",
  "serde_json",
  "shine-core",

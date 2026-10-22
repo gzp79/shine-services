@@ -54,4 +54,5 @@ shine-game = { workspace = true }
 shine-infra = { workspace = true }
 
 [dev-dependencies]
+rustls = { workspace = true, features = ["ring"] }
 shine-test = { workspace = true, features = ["toxiproxy"] }
