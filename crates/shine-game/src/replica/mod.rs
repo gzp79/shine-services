@@ -5,6 +5,7 @@ mod codec;
 mod replica;
 mod stable_hash;
 mod state;
+mod stream_id;
 
 pub use self::{
     chat::{ChatCommand, ChatMessage, ChatState, CHAT_MAX_TEXT_BYTES, CHAT_WINDOW},
@@ -12,4 +13,5 @@ pub use self::{
     replica::{ApplyError, ApplyOutcome, Checkpoint, CommandEnvelope, CommandHeader, Replica},
     stable_hash::{fold_chain_hash, stable_hash_of, StableHash, StableHasher},
     state::{Command, ReplayState},
+    stream_id::{StreamId, StreamIdError},
 };

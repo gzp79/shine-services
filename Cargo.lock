@@ -1621,6 +1621,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "heck"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
+
+[[package]]
 name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2902,6 +2908,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "postgres-derive"
+version = "0.4.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4d9d9089bb0ce62f4b5d52a0be0f4acfb35738b979380670d3dea85fe38d6ddd"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "postgres-from-row"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2950,6 +2968,7 @@ dependencies = [
  "bytes",
  "chrono",
  "fallible-iterator",
+ "postgres-derive",
  "postgres-protocol",
  "uuid",
 ]
@@ -3927,6 +3946,7 @@ dependencies = [
  "futures-channel",
  "opentelemetry",
  "postgres-from-row",
+ "postgres-types",
  "rand 0.10.3",
  "redis",
  "refinery",
@@ -3935,6 +3955,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shine-core",
+ "shine-game",
  "shine-infra",
  "shine-test",
  "thiserror 2.0.21",
@@ -4078,6 +4099,7 @@ dependencies = [
  "opentelemetry_sdk",
  "pin-project",
  "postgres-from-row",
+ "postgres-types",
  "primal-check",
  "rand 0.10.3",
  "redis",

@@ -39,8 +39,9 @@ tokio-postgres = { workspace = true, features = [
     "runtime",
 ] }
 tokio-postgres-rustls = { workspace = true }
+postgres-types = { workspace = true, features = ["derive"] }
 postgres-from-row = { workspace = true }
-refinery = { workspace = true }
+refinery = { workspace = true, features = ["tokio-postgres"] }
 
 ############################# WEB #############################
 axum = { workspace = true, features = ["ws"] }
@@ -48,8 +49,9 @@ utoipa = { workspace = true }
 utoipa-axum = { workspace = true }
 validator = { workspace = true }
 
-shine-infra = { workspace = true }
 shine-core = { workspace = true }
+shine-game = { workspace = true }
+shine-infra = { workspace = true }
 
 [dev-dependencies]
 shine-test = { workspace = true, features = ["toxiproxy"] }

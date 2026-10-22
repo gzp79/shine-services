@@ -4,7 +4,6 @@ mod db_metrics;
 mod pool_error_logger;
 mod tls_policy;
 
-pub mod event_source;
 pub mod postgres;
 pub mod redis;
 

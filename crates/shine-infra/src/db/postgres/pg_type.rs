@@ -49,6 +49,12 @@ impl PgValue for PgValueTypeVarchar {
 }
 
 #[derive(Debug)]
+pub struct PgValueTypeBytea;
+impl PgValue for PgValueTypeBytea {
+    const PG_TYPE: PgType = PgType::BYTEA;
+}
+
+#[derive(Debug)]
 #[allow(non_camel_case_types)]
 pub struct PgValueTypeVarcharArray;
 impl PgValue for PgValueTypeVarcharArray {
@@ -65,6 +71,37 @@ impl PgValue for PgValueTypeInt2Array {
 }
 impl PgValue for &'static [PgValueTypeInt2] {
     const PG_TYPE: PgType = PgType::INT2_ARRAY;
+}
+
+#[allow(non_camel_case_types)]
+pub struct PgValueTypeInt8Array;
+impl PgValue for PgValueTypeInt8Array {
+    const PG_TYPE: PgType = PgType::INT8_ARRAY;
+}
+impl PgValue for &'static [PgValueTypeInt8] {
+    const PG_TYPE: PgType = PgType::INT8_ARRAY;
+}
+
+#[allow(non_camel_case_types)]
+pub struct PgValueTypeUuidArray;
+impl PgValue for PgValueTypeUuidArray {
+    const PG_TYPE: PgType = PgType::UUID_ARRAY;
+}
+impl PgValue for &'static [PgValueTypeUuid] {
+    const PG_TYPE: PgType = PgType::UUID_ARRAY;
+}
+
+/// Marks a type whose Postgres OID is not a fixed builtin constant — a composite (`CREATE TYPE ...
+/// AS (...)`) is the main case, since its OID is assigned per-database at creation time, not known
+/// at compile time. `Type::UNKNOWN` tells Postgres to infer the real type itself.
+#[derive(Debug)]
+#[allow(non_camel_case_types)]
+pub struct PgValueTypeUnknown;
+impl PgValue for PgValueTypeUnknown {
+    const PG_TYPE: PgType = PgType::UNKNOWN;
+}
+impl PgValue for &'static [PgValueTypeUnknown] {
+    const PG_TYPE: PgType = PgType::UNKNOWN;
 }
 
 pub trait ToPgType {
@@ -105,6 +142,10 @@ impl ToPgType for Uuid {
 
 impl ToPgType for &str {
     type PgValueType = PgValueTypeVarchar;
+}
+
+impl ToPgType for Vec<u8> {
+    type PgValueType = PgValueTypeBytea;
 }
 
 impl<T> ToPgType for &[T]

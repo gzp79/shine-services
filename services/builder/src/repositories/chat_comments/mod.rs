@@ -1,5 +1,3 @@
-#![allow(clippy::module_inception)]
-
 mod chat_comment_db;
 mod chat_comment_store;
 

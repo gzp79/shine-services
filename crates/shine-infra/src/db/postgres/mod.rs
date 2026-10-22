@@ -16,7 +16,8 @@ pub use self::{
     pg_listener::{PgListener, PgNotification},
     pg_type::{
         PgValue, PgValueTypeBool, PgValueTypeInt2, PgValueTypeInt2Array, PgValueTypeInt4, PgValueTypeInt8,
-        PgValueTypeTimestamptz, PgValueTypeUuid, PgValueTypeVarchar, PgValueTypeVarcharArray, ToPgType,
+        PgValueTypeInt8Array, PgValueTypeTimestamptz, PgValueTypeUnknown, PgValueTypeUuid, PgValueTypeUuidArray,
+        PgValueTypeVarchar, PgValueTypeVarcharArray, ToPgType,
     },
     query_builder::{AndWhere, QueryBuilder},
 };
@@ -63,10 +64,10 @@ macro_rules! __pg_traced {
 /// Create a prepared SQL statements
 #[macro_export]
 macro_rules! pg_prepared_statement {
-    ($id:ident => $stmt:expr, [$($pid:ident:$pty:ty),*]) => {
+    ($vis:vis $id:ident => $stmt:expr, [$($pid:ident:$pty:ty),*]) => {
 
         #[derive(Clone, Copy, Debug)]
-        struct $id($crate::db::postgres::PgStatementId);
+        $vis struct $id($crate::db::postgres::PgStatementId);
 
         impl $id {
             #[allow(dead_code)]
@@ -164,31 +165,31 @@ macro_rules! pg_query {
         }
     };
 
-    ($id:ident =>
+    ($vis:vis $id:ident =>
         in = $($pid:ident: $pty:ty),*;
         out = $rid:ident: $rty:ty;
         sql = $stmt:expr ) => {
 
-        $crate::pg_prepared_statement!($id => $stmt, [$($pid:$pty),*]);
+        $crate::pg_prepared_statement!($vis $id => $stmt, [$($pid:$pty),*]);
         $crate::pg_query!(@row_queries $id, $stmt, [$($pid: $pty),*], $rty,
             row => row.try_get(&stringify!($rid)));
     };
 
-    ($id:ident =>
+    ($vis:vis $id:ident =>
         in = $($pid:ident: $pty:ty),*;
         out = $oty:ty;
         sql = $stmt:expr ) => {
 
-        $crate::pg_prepared_statement!($id => $stmt, [$($pid:$pty),*]);
+        $crate::pg_prepared_statement!($vis $id => $stmt, [$($pid:$pty),*]);
         $crate::pg_query!(@row_queries $id, $stmt, [$($pid: $pty),*], $oty,
             row => <$oty as postgres_from_row::FromRow>::try_from_row(&row));
     };
 
-    ($id:ident =>
+    ($vis:vis $id:ident =>
         in = $($pid:ident: $pty:ty),*;
         sql = $stmt:expr ) => {
 
-        $crate::pg_prepared_statement!($id => $stmt, [$($pid:$pty),*]);
+        $crate::pg_prepared_statement!($vis $id => $stmt, [$($pid:$pty),*]);
 
         impl $id {
             #[allow(clippy::too_many_arguments)]

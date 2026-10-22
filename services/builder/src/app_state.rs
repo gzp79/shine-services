@@ -1,13 +1,14 @@
 use crate::{
     app_config::AppConfig,
     repositories::chat_comments::redis::RedisChatCommentsDb,
+    repositories::command_log::pg::PgCommandLogDb,
     repositories::hub_registry::redis::RedisHubConnectionDb,
     services::{ChatService, HubIntervals, HubService},
     settings::{BuilderSettings, WsSettings},
 };
 use anyhow::{anyhow, Error as AnyError};
 use shine_infra::{
-    db::redis::RedisConnectionPool,
+    db::{postgres::PgConnectionPool, redis::RedisConnectionPool},
     web::{compile_anchored_bytes, CoreServices, WebAppConfig},
 };
 use std::{sync::Arc, time::Duration};
@@ -15,6 +16,8 @@ use std::{sync::Arc, time::Duration};
 struct Inner {
     hub_service: HubService,
     chat_service: ChatService,
+    #[allow(dead_code)]
+    command_log_db: PgCommandLogDb,
     settings: BuilderSettings,
 }
 
@@ -25,6 +28,7 @@ impl AppState {
     pub async fn new(
         config: &WebAppConfig<AppConfig>,
         redis_pool: &RedisConnectionPool,
+        postgres_pool: &PgConnectionPool,
         core_services: &CoreServices,
     ) -> Result<Self, AnyError> {
         let config_ws = &config.feature.ws;
@@ -59,6 +63,7 @@ impl AppState {
         )
         .await?;
         let chat_service = ChatService::new(chat_comment_db);
+        let command_log_db = PgCommandLogDb::new(postgres_pool).await?;
 
         // The hub owns its periodic connection consumers (heartbeat + session checker), each on
         // its own loop event-sourced from a Hub subscription.
@@ -78,6 +83,7 @@ impl AppState {
         Ok(Self(Arc::new(Inner {
             hub_service,
             chat_service,
+            command_log_db,
             settings,
         })))
     }
@@ -88,6 +94,11 @@ impl AppState {
 
     pub fn chat_service(&self) -> &ChatService {
         &self.0.chat_service
+    }
+
+    #[allow(dead_code)]
+    pub fn command_log_db(&self) -> &PgCommandLogDb {
+        &self.0.command_log_db
     }
 
     pub fn settings(&self) -> &BuilderSettings {
