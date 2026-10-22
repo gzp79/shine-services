@@ -10,7 +10,10 @@ use self::{app_config::AppConfig, app_state::AppState, services::HubStatus};
 use anyhow::Error as AnyError;
 use repositories::create_redis_pool;
 use routes::ws::ws_routes;
-use shine_infra::web::{AppBuildContext, FeatureConfig, WebAppConfig, WebApplication};
+use shine_infra::{
+    db::{check_redis_tls, redis::check_redis},
+    web::{AppBuildContext, FeatureConfig, WebAppConfig, WebApplication},
+};
 use utoipa_axum::router::OpenApiRouter;
 
 struct Application;
@@ -25,7 +28,9 @@ impl WebApplication for Application {
         context: &mut AppBuildContext<'_>,
         router: &mut OpenApiRouter<Self::AppState>,
     ) -> Result<Self::AppState, AnyError> {
+        check_redis_tls(&config.core.stage, &config.feature.db.redis_cns)?;
         let redis_pool = create_redis_pool(&config.feature.db).await?;
+        check_redis(&redis_pool).await?;
         let state = AppState::new(config, &redis_pool, context.core_services()).await?;
 
         context.add_health_provider(HubStatus::new(state.hub_service().clone()));

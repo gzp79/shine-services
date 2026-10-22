@@ -141,10 +141,13 @@ impl PgConnection<PgRawClient> {
         let mut runner = Runner::new(&migrations);
         runner.set_migration_table_name(format!("__migration__{name}"));
 
-        runner
-            .run_async(&mut self.client)
-            .await
-            .map_err(PgError::SqlMigration)?;
+        // Migrations can legitimately run longer than the session's statement_timeout; lift
+        // it for the run and restore.
+        self.client.batch_execute("SET statement_timeout = 0").await?;
+        let result = runner.run_async(&mut self.client).await;
+        self.client.batch_execute("RESET statement_timeout").await?;
+
+        result.map_err(PgError::SqlMigration)?;
         Ok(())
     }
 
@@ -300,10 +303,38 @@ impl StatusProvider for PostgresPoolStatus {
     }
 }
 
+/// Statement bound applied as a session default unless the connection string already sets
+/// `options=-c statement_timeout=...`.
+const DEFAULT_STATEMENT_TIMEOUT_MS: u64 = 10_000;
+
+/// TCP-level bound applied as a session default unless the connection string already sets
+/// `tcp_user_timeout`.
+const DEFAULT_TCP_USER_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Applies the session defaults to `pg_config`, without overriding anything the connection
+/// string already set explicitly.
+fn apply_session_timeouts(pg_config: &mut PgConfig) {
+    if pg_config.get_tcp_user_timeout().is_none() {
+        pg_config.tcp_user_timeout(DEFAULT_TCP_USER_TIMEOUT);
+    }
+    let statement_timeout = format!("-c statement_timeout={DEFAULT_STATEMENT_TIMEOUT_MS}");
+    match pg_config.get_options() {
+        None => {
+            pg_config.options(statement_timeout);
+        }
+        Some(existing) if !existing.contains("statement_timeout") => {
+            pg_config.options(format!("{existing} {statement_timeout}"));
+        }
+        Some(_) => {}
+    }
+}
+
 /// Format: `postgres://...?connect_timeout=3&pool_timeout=5&max_size=10`
 /// - `connect_timeout`: PostgreSQL native parameter in SECONDS (TCP connection establishment)
 /// - `pool_timeout`: custom parameter in SECONDS for bb8 pool (acquiring connection from pool, including waiting for connection to be established if pool is exhausted)
 /// - `max_size`: custom parameter for the maximum number of pooled connections (default 10)
+/// - `options`: PostgreSQL native parameter; defaults to `-c statement_timeout=10000` unless set
+/// - `tcp_user_timeout`: PostgreSQL native parameter; defaults to 10s unless set
 pub async fn create_postgres_pool(cns: &str) -> Result<PgConnectionPool, PgConnectionError> {
     // Parse and validate before the TLS/cert setup so a bad connection string fails fast without
     // touching the cert store or a crypto provider.
@@ -331,7 +362,9 @@ pub async fn create_postgres_pool(cns: &str) -> Result<PgConnectionPool, PgConne
 
     let tls = MakeRustlsConnect::new(tls_config);
 
-    let pg_config = PgConfig::from_str(&cns_clean)?;
+    let mut pg_config = PgConfig::from_str(&cns_clean)?;
+    apply_session_timeouts(&mut pg_config);
+
     // The listener's keep-alive connect needs a hard bound (tokio_postgres's connect_timeout covers
     // only the socket): honor the connection string's connect_timeout if set, else a sane default.
     let connect_timeout = pg_config
