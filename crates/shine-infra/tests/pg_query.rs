@@ -58,18 +58,18 @@ async fn test_pg_query_struct() {
             //drop(c1);
 
             let c1 = pool.get().await.unwrap();
-            let p1 = stmt1.query_one(&c1, &"data").await.unwrap();
+            let p1 = stmt1.query_one(&c1, "data").await.unwrap();
             assert_eq!(p1.one, 1);
             assert_eq!(p1.two, 2);
             assert_eq!(p1.data, "data");
             assert_eq!(p1.text, "str");
 
-            let p2 = stmt2.query_one(&c1, &"data").await.unwrap();
+            let p2 = stmt2.query_one(&c1, "data").await.unwrap();
             assert_eq!(p2, 1);
 
-            stmt3.execute(&c1, &"data").await.unwrap();
+            stmt3.execute(&c1, "data").await.unwrap();
 
-            let p2b = stmt2b.query_one(&c1, &"data").await;
+            let p2b = stmt2b.query_one(&c1, "data").await;
             assert_eq!(p2b.unwrap_err().to_string(), "invalid column `oneFail`");
         }
 

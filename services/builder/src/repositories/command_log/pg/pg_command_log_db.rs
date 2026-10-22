@@ -159,7 +159,7 @@ pg_query!( CommandChainHashAt =>
 );
 
 pg_query!( InsertSnapshot =>
-    in = stream_id: &str, version: i64, hash: i64, chain_hash: i64, data: Vec<u8>;
+    in = stream_id: &str, version: i64, hash: i64, chain_hash: i64, data: &[u8];
     sql = r#"
         INSERT INTO cl_snapshots (stream_id, version, hash, chain_hash, data)
         SELECT $1, $2, $3, $4, $5
@@ -319,7 +319,7 @@ impl CommandLogDb for PgCommandLogDb {
             .0
             .stmts
             .ensure_stream
-            .query_one(&client, &id, &kind)
+            .query_one(&client, id, kind)
             .await
             .map_err(db)?;
         if head.kind != kind {
@@ -336,7 +336,7 @@ impl CommandLogDb for PgCommandLogDb {
         self.0
             .stmts
             .get_head
-            .query_opt(&client, &stream_id.as_str())
+            .query_opt(&client, stream_id.as_str())
             .await
             .map_err(db)
     }
@@ -371,7 +371,7 @@ impl CommandLogDb for PgCommandLogDb {
             // statements take.
             let head: StreamHead = stmts
                 .get_head
-                .query_opt(&client, &id)
+                .query_opt(&client, id)
                 .await
                 .map_err(db)?
                 .ok_or(CommandLogError::StreamNotFound)?;
@@ -419,7 +419,7 @@ impl CommandLogDb for PgCommandLogDb {
             let commands: Vec<CommandInput<'_>> = new.iter().map(CommandInput::from).collect();
             stmts
                 .insert_commands
-                .execute(&tx, &id, &commands.as_slice())
+                .execute(&tx, id, commands.as_slice())
                 .await
                 .map_err(db)?;
 
@@ -429,11 +429,11 @@ impl CommandLogDb for PgCommandLogDb {
                 .cas_head_version
                 .execute(
                     &tx,
-                    &id,
-                    &head.version,
-                    &(head.chain_hash as i64),
-                    &new_version,
-                    &(new_chain_hash as i64),
+                    id,
+                    head.version,
+                    head.chain_hash as i64,
+                    new_version,
+                    new_chain_hash as i64,
                 )
                 .await
                 .map_err(db)?;
@@ -461,7 +461,7 @@ impl CommandLogDb for PgCommandLogDb {
         self.0
             .stmts
             .commands_after
-            .query(&client, &stream_id.as_str(), &after, &limit)
+            .query(&client, stream_id.as_str(), after, limit)
             .await
             .map_err(db)
     }
@@ -471,7 +471,7 @@ impl CommandLogDb for PgCommandLogDb {
         self.0
             .stmts
             .last_commands
-            .query(&client, &stream_id.as_str(), &count)
+            .query(&client, stream_id.as_str(), count)
             .await
             .map_err(db)
     }
@@ -487,7 +487,7 @@ impl CommandLogDb for PgCommandLogDb {
         // command log at all, since an older snapshot would never be read back anyway.
         let latest_version = stmts
             .latest_snapshot_version
-            .query_one(&client, &id)
+            .query_one(&client, id)
             .await
             .map_err(db)?
             .version;
@@ -499,7 +499,7 @@ impl CommandLogDb for PgCommandLogDb {
 
         let logged_chain_hash = stmts
             .command_chain_hash_at
-            .query_opt(&client, &id, &snapshot.version)
+            .query_opt(&client, id, snapshot.version)
             .await
             .map_err(db)?;
         match logged_chain_hash {
@@ -511,7 +511,7 @@ impl CommandLogDb for PgCommandLogDb {
 
         if let Some(existing) = stmts
             .get_snapshot
-            .query_opt(&client, &id, &snapshot.version)
+            .query_opt(&client, id, snapshot.version)
             .await
             .map_err(db)?
         {
@@ -522,10 +522,10 @@ impl CommandLogDb for PgCommandLogDb {
             .insert_snapshot
             .execute(
                 &client,
-                &id,
-                &snapshot.version,
-                &(snapshot.hash as i64),
-                &(snapshot.chain_hash as i64),
+                id,
+                snapshot.version,
+                snapshot.hash as i64,
+                snapshot.chain_hash as i64,
                 &snapshot.data,
             )
             .await
@@ -536,7 +536,7 @@ impl CommandLogDb for PgCommandLogDb {
         // Lost the insert race, or a newer snapshot exists (the `WHERE NOT EXISTS` guard blocked it).
         match stmts
             .get_snapshot
-            .query_opt(&client, &id, &snapshot.version)
+            .query_opt(&client, id, snapshot.version)
             .await
             .map_err(db)?
         {
@@ -555,7 +555,7 @@ impl CommandLogDb for PgCommandLogDb {
         self.0
             .stmts
             .latest_snapshot
-            .query_opt(&client, &stream_id.as_str(), &at_or_before)
+            .query_opt(&client, stream_id.as_str(), at_or_before)
             .await
             .map_err(db)
     }
@@ -566,7 +566,7 @@ impl CommandLogDb for PgCommandLogDb {
             .0
             .stmts
             .oldest_snapshot
-            .query_one(&client, &stream_id.as_str())
+            .query_one(&client, stream_id.as_str())
             .await
             .map_err(db)?;
         Ok(row.version)
@@ -583,7 +583,7 @@ impl CommandLogDb for PgCommandLogDb {
         self.0
             .stmts
             .prune
-            .query_one(&client, &stream_id.as_str(), &kept_snapshot_count.max(1))
+            .query_one(&client, stream_id.as_str(), kept_snapshot_count.max(1))
             .await
             .map_err(db)
     }
@@ -639,7 +639,7 @@ impl CommandLogDb for PgCommandLogDb {
             .0
             .stmts
             .list_snapshots
-            .query(&client, &stream_id.as_str())
+            .query(&client, stream_id.as_str())
             .await
             .map_err(db)?;
         for snapshot in snapshots {

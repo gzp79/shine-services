@@ -148,6 +148,10 @@ impl ToPgType for Vec<u8> {
     type PgValueType = PgValueTypeBytea;
 }
 
+impl ToPgType for &[u8] {
+    type PgValueType = PgValueTypeBytea;
+}
+
 impl<T> ToPgType for &[T]
 where
     T: ToPgType,

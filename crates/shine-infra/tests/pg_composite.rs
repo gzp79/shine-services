@@ -68,7 +68,7 @@ async fn an_array_of_a_composite_type_binds_and_unnests() {
                 TestPair { label: "b".into(), value: 2 },
                 TestPair { label: "a".into(), value: 1 },
             ];
-            let rows = stmt.query(&client, &pairs.as_slice()).await.unwrap();
+            let rows = stmt.query(&client, pairs.as_slice()).await.unwrap();
 
             assert_eq!(rows.len(), 2);
             assert_eq!((rows[0].label.as_str(), rows[0].value), ("a", 1));

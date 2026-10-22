@@ -118,13 +118,13 @@ macro_rules! pg_query {
             pub async fn query<T>(
                 &self,
                 client: &$crate::db::postgres::PgConnection<T>,
-                $($pid: &$pty,)*
+                $($pid: $pty,)*
             ) -> Result<Vec<$rty>, $crate::db::postgres::PgRawError>
             where
                 T: $crate::db::postgres::PgRawConnection
             {
                 $crate::__pg_traced!($id, "query", $stmt, statement = self.statement(client), async {
-                    let rows = client.query(&statement, &[$($pid,)*]).await?;
+                    let rows = client.query(&statement, &[$(&$pid,)*]).await?;
                     rows.into_iter().map(|$row| $extract).collect::<Result<Vec<_>,_>>()
                 })
             }
@@ -134,13 +134,13 @@ macro_rules! pg_query {
             pub async fn query_one<T>(
                 &self,
                 client: &$crate::db::postgres::PgConnection<T>,
-                $($pid: &$pty,)*
+                $($pid: $pty,)*
             ) -> Result<$rty, $crate::db::postgres::PgRawError>
             where
                 T: $crate::db::postgres::PgRawConnection
             {
                 $crate::__pg_traced!($id, "query_one", $stmt, statement = self.statement(client), async {
-                    let $row = client.query_one(&statement, &[$($pid,)*]).await?;
+                    let $row = client.query_one(&statement, &[$(&$pid,)*]).await?;
                     $extract
                 })
             }
@@ -150,13 +150,13 @@ macro_rules! pg_query {
             pub async fn query_opt<T>(
                 &self,
                 client: &$crate::db::postgres::PgConnection<T>,
-                $($pid: &$pty,)*
+                $($pid: $pty,)*
             ) -> Result<Option<$rty>, $crate::db::postgres::PgRawError>
             where
                 T: $crate::db::postgres::PgRawConnection
             {
                 $crate::__pg_traced!($id, "query_opt", $stmt, statement = self.statement(client), async {
-                    client.query_opt(&statement, &[$($pid,)*])
+                    client.query_opt(&statement, &[$(&$pid,)*])
                         .await?
                         .map(|$row| $extract)
                         .transpose()
@@ -197,13 +197,13 @@ macro_rules! pg_query {
             pub async fn execute<T>(
                 &self,
                 client: &$crate::db::postgres::PgConnection<T>,
-                $($pid: &$pty,)*
+                $($pid: $pty,)*
             ) -> Result<u64, $crate::db::postgres::PgRawError>
             where
                 T: $crate::db::postgres::PgRawConnection
             {
                 $crate::__pg_traced!($id, "execute", $stmt, statement = self.statement(client), async {
-                    client.execute(&statement, &[$($pid,)*]).await
+                    client.execute(&statement, &[$(&$pid,)*]).await
                 })
             }
         }
