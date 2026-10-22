@@ -1,4 +1,4 @@
-use crate::replay::ReplayState;
+use crate::replica::ReplayState;
 use serde::{de::DeserializeOwned, Serialize};
 
 /// A snapshot could not be encoded or decoded.

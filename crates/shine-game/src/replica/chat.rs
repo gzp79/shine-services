@@ -1,4 +1,4 @@
-use crate::replay::{CommandContext, ReplayState, StableHash, StableHasher};
+use crate::replica::{CommandHeader, ReplayState, StableHash, StableHasher};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use uuid::Uuid;
@@ -79,12 +79,12 @@ impl ReplayState for ChatState {
 
     const KIND: &'static str = "chat";
 
-    fn apply(&mut self, ctx: &CommandContext, command: &ChatCommand) {
+    fn apply(&mut self, header: &CommandHeader, command: &ChatCommand) {
         match command {
             ChatCommand::Add { text } => {
                 self.messages.push_back(ChatMessage {
-                    id: ctx.command_id,
-                    user_id: ctx.user_id,
+                    id: header.command_id,
+                    user_id: header.user_id,
                     text: text.clone(),
                     edited: false,
                 });
@@ -93,12 +93,12 @@ impl ReplayState for ChatState {
                 }
             }
             ChatCommand::Remove { id } => {
-                if let Some(index) = self.find_own(*id, ctx.user_id) {
+                if let Some(index) = self.find_own(*id, header.user_id) {
                     self.messages.remove(index);
                 }
             }
             ChatCommand::Replace { id, text } => {
-                if let Some(index) = self.find_own(*id, ctx.user_id) {
+                if let Some(index) = self.find_own(*id, header.user_id) {
                     let message = &mut self.messages[index];
                     message.text = text.clone();
                     message.edited = true;
@@ -107,7 +107,7 @@ impl ReplayState for ChatState {
         }
     }
 
-    fn validate(command: &ChatCommand) -> bool {
+    fn is_well_formed(command: &ChatCommand) -> bool {
         match command {
             ChatCommand::Add { text } | ChatCommand::Replace { text, .. } => {
                 !text.trim().is_empty() && text.len() <= CHAT_MAX_TEXT_BYTES

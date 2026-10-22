@@ -1,4 +1,4 @@
-use shine_game::replay::{
+use shine_game::replica::{
     encode_command, encode_snapshot,
     protocol::{encode_snapshot_data, hash_to_hex, ClientFrame, ServerFrame, WireCommand, WireResume, WireSnapshot},
     ChatCommand, ChatState, ClientEvent, ClientStream, CommandEnvelope, Replica, SyncStatus,
@@ -48,12 +48,13 @@ impl Server {
             command: encode_command::<ChatState>(command).unwrap(),
         };
         self.replica
-            .apply_next(&CommandEnvelope {
-                version: wire.version,
+            .apply_next(&CommandEnvelope::new(
+                wire.version,
                 command_id,
                 user_id,
-                command: command.clone(),
-            })
+                self.replica.chain_hash(),
+                command.clone(),
+            ))
             .unwrap();
         self.log.push(wire.clone());
         wire
@@ -300,13 +301,15 @@ fn a_checkpoint_that_differs_asks_for_a_fresh_sync() {
     // The hash at 5 was taken when the client passed it, though two commands came after it.
     let mut at_five = Replica::<ChatState>::new();
     for wire in &server.log[..5] {
+        let command: ChatCommand = serde_json::from_str(&wire.command).unwrap();
         at_five
-            .apply_next(&CommandEnvelope {
-                version: wire.version,
-                command_id: wire.command_id,
-                user_id: wire.user_id,
-                command: serde_json::from_str(&wire.command).unwrap(),
-            })
+            .apply_next(&CommandEnvelope::new(
+                wire.version,
+                wire.command_id,
+                wire.user_id,
+                at_five.chain_hash(),
+                command,
+            ))
             .unwrap();
     }
     assert_eq!(client.on_frame(checkpoint(5, at_five.hash())).event, ClientEvent::None);

@@ -1,16 +1,17 @@
-use crate::common::{add, command_id, remove, user};
-use shine_game::replay::{
+use crate::common::{command_id, user, Log};
+use shine_game::replica::{
     decode_snapshot, encode_snapshot, stable_hash_of, ChatCommand, ChatState, CommandEnvelope, Replica,
 };
 use shine_test::test;
 
 fn log(len: i64) -> Vec<CommandEnvelope<ChatCommand>> {
+    let mut chain = Log::new();
     (1..=len)
         .map(|v| {
             if v % 5 == 0 {
-                remove(v, user(v as u128 % 3), command_id(v - 2))
+                chain.remove(v, user(v as u128 % 3), command_id(v - 2))
             } else {
-                add(v, user(v as u128 % 3), &format!("message {v} \u{2713}"))
+                chain.add(v, user(v as u128 % 3), &format!("message {v} \u{2713}"))
             }
         })
         .collect()
@@ -35,14 +36,14 @@ fn a_replica_resumed_from_a_state_rejects_older_versions() {
     for e in &log[..3] {
         prefix.apply_next(e).unwrap();
     }
-    let mut resumed = Replica::from_snapshot(3, prefix.state().clone());
+    let mut resumed = Replica::from_snapshot(3, prefix.state().clone(), prefix.chain_hash());
     assert_eq!(
         resumed.apply_next(&log[1]),
-        Ok(shine_game::replay::ApplyOutcome::AlreadyApplied)
+        Ok(shine_game::replica::ApplyOutcome::Skipped)
     );
     assert_eq!(
         resumed.apply_next(&log[3]),
-        Ok(shine_game::replay::ApplyOutcome::Applied)
+        Ok(shine_game::replica::ApplyOutcome::Applied)
     );
 }
 
@@ -70,7 +71,7 @@ fn a_replica_resumed_from_a_decoded_snapshot_equals_replay_from_zero() {
         }
     }
     let bytes = encode_snapshot(prefix.state()).unwrap();
-    let mut resumed = Replica::from_snapshot(10, decode_snapshot::<ChatState>(&bytes).unwrap());
+    let mut resumed = Replica::from_snapshot(10, decode_snapshot::<ChatState>(&bytes).unwrap(), prefix.chain_hash());
     for e in &log[10..] {
         resumed.apply_next(e).unwrap();
     }

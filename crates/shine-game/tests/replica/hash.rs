@@ -1,5 +1,5 @@
-use crate::common::{add, command_id, replace, user};
-use shine_game::replay::{stable_hash_of, ChatState, Replica, StableHasher};
+use crate::common::{command_id, user, Log};
+use shine_game::replica::{stable_hash_of, ChatState, Replica, StableHasher};
 use shine_test::test;
 
 #[test]
@@ -13,7 +13,8 @@ fn fnv_matches_reference_vectors() {
 #[test]
 fn the_state_hash_is_the_count_then_each_message() {
     let mut replica = Replica::<ChatState>::new();
-    replica.apply_next(&add(1, user(7), "hi")).unwrap();
+    let mut log = Log::new();
+    replica.apply_next(&log.add(1, user(7), "hi")).unwrap();
 
     let mut h = StableHasher::new();
     h.write(&1u64.to_le_bytes());
@@ -29,19 +30,20 @@ fn the_state_hash_is_the_count_then_each_message() {
 fn the_hash_covers_the_author() {
     let mut a = Replica::<ChatState>::new();
     let mut b = Replica::<ChatState>::new();
-    a.apply_next(&add(1, user(1), "same")).unwrap();
-    b.apply_next(&add(1, user(2), "same")).unwrap();
+    a.apply_next(&Log::new().add(1, user(1), "same")).unwrap();
+    b.apply_next(&Log::new().add(1, user(2), "same")).unwrap();
     assert_ne!(a.hash(), b.hash());
 }
 
 #[test]
 fn the_same_log_gives_the_same_hash_on_two_replicas() {
-    let log: Vec<_> = (1..=10)
-        .map(|v| add(v, user(v as u128 % 3), &format!("message {v}")))
+    let mut log = Log::new();
+    let entries: Vec<_> = (1..=10)
+        .map(|v| log.add(v, user(v as u128 % 3), &format!("message {v}")))
         .collect();
     let mut a = Replica::<ChatState>::new();
     let mut b = Replica::<ChatState>::new();
-    for e in &log {
+    for e in &entries {
         a.apply_next(e).unwrap();
         b.apply_next(e).unwrap();
     }
@@ -51,10 +53,12 @@ fn the_same_log_gives_the_same_hash_on_two_replicas() {
 #[test]
 fn the_hash_covers_the_edited_flag() {
     let mut a = Replica::<ChatState>::new();
+    a.apply_next(&Log::new().add(1, user(1), "same")).unwrap();
+
     let mut b = Replica::<ChatState>::new();
-    a.apply_next(&add(1, user(1), "same")).unwrap();
-    b.apply_next(&add(1, user(1), "same")).unwrap();
+    let mut log = Log::new();
+    b.apply_next(&log.add(1, user(1), "same")).unwrap();
     // The same text, but replaced: the message is edited now.
-    b.apply_next(&replace(2, user(1), command_id(1), "same")).unwrap();
+    b.apply_next(&log.replace(2, user(1), command_id(1), "same")).unwrap();
     assert_ne!(a.hash(), b.hash());
 }

@@ -1,5 +1,5 @@
 use serde_json::json;
-use shine_game::replay::protocol::{
+use shine_game::replica::protocol::{
     decode_snapshot_data, encode_snapshot_data, hash_from_hex, hash_to_hex, ClientFrame, ServerFrame, WireCommand,
     WireResume, WireSnapshot,
 };
