@@ -1,6 +1,7 @@
 use crate::repositories::DBConfig;
 use serde::{Deserialize, Serialize};
-use shine_infra::web::FeatureConfig;
+use shine_infra::{serde::*, web::FeatureConfig};
+use validator::Validate;
 
 /// Raw WebSocket configuration loaded from config files.
 #[derive(Debug, Serialize, Deserialize)]
@@ -42,7 +43,7 @@ impl ChatConfig {
 }
 
 /// The application configuration
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
     pub db: DBConfig,
@@ -50,21 +51,12 @@ pub struct AppConfig {
     #[serde(default)]
     pub chat: ChatConfig,
     /// Hub heartbeat interval in seconds; Redis TTL is derived from  heartbeat timeout.
-    #[serde(default = "AppConfig::default_hub_heartbeat_seconds")]
+    #[serde(default = "u64::<300>")]
+    #[validate(range(min = 1, max = 86_400))]
     pub hub_heartbeat_seconds: u64,
     /// Interval in seconds between session-liveness re-checks.
-    #[serde(default = "AppConfig::default_auth_check_interval")]
+    #[serde(default = "u64::<60>")]
     pub auth_check_interval: u64,
-}
-
-impl AppConfig {
-    fn default_hub_heartbeat_seconds() -> u64 {
-        5 * 60
-    }
-
-    fn default_auth_check_interval() -> u64 {
-        60
-    }
 }
 
 impl Default for ChatConfig {
@@ -79,4 +71,8 @@ impl Default for ChatConfig {
 
 impl FeatureConfig for AppConfig {
     const NAME: &'static str = "builder";
+
+    fn validate(&self) -> Result<(), anyhow::Error> {
+        Validate::validate(self).map_err(anyhow::Error::from)
+    }
 }
