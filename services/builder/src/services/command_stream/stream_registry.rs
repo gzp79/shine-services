@@ -240,6 +240,13 @@ impl<L: CommandLogDb + 'static> StreamRegistry<L> {
         if tokio::time::timeout(timeout, ended).await.is_err() {
             tracing::warn!("Some stream workers did not end within {timeout:?}");
         }
+        // Do not leave it to the watchers to forget the ended workers: the count is exact when this returns.
+        self.inner
+            .state
+            .lock()
+            .unwrap()
+            .workers
+            .retain(|_, worker| !worker.is_finished());
     }
 
     /// Forgets the worker when it ends, unless a new one has taken its place.

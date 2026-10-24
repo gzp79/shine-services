@@ -3,4 +3,5 @@
 mod chat;
 mod command_log;
 mod hash;
+mod pixel_map;
 mod replica;

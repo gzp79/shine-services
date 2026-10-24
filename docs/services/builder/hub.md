@@ -181,7 +181,7 @@ New files are target state.
 
 | File | Role |
 |---|---|
-| `crates/shine-game/src/replica/` | Pure replay core: `ReplayState`, `Replica`, `CommandEnvelope`, chain hash, snapshot codec. Shared with the client. |
+| `crates/shine-game/src/replica/` | Pure replay core: `ReplayState`, `Replica`, `CommandEnvelope`, chain hash, snapshot codec. Shared with the client. The stream kinds live here too: the chat room (`chat`) and a shared 32 by 32 pixel canvas of 16 colors (`pixel-map`, command `paint`). |
 | `services/builder/src/repositories/command_log/` | Postgres command log: `append`, `commands_after`, snapshots, `prune`, `check_consistency`. Each command stores the inbox position it came from (`inbox_id`), which is server side only and not part of any hash or client message. |
 | `services/builder/src/repositories/command_inbox/redis/` | Inbox write (`XADD` + `EXPIRE` + `PUBLISH`), per-stream poll, trim, wake publish and listen. |
 | `services/builder/src/services/command_stream/command_stream_service.rs` | Stateless service over the log and the inbox: `load` a stream, `sync` it (poll the inbox, version, append, adopt what other instances stored, re-sequence the rest, trim, announce), and `replay` it (apply the confirmed commands to the replica, store the snapshot of the latest checkpoint, prune old snapshots). |

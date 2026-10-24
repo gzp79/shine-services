@@ -1,5 +1,5 @@
 //! The stream registry on a real Postgres and Redis, with a recording sink instead of the hub. Two kinds
-//! of stream are registered: the chat room and a counter. They skip without `SHINE_TEST_PG_CNS` and
+//! of stream are registered: the chat room and the pixel map. They skip without `SHINE_TEST_PG_CNS` and
 //! `SHINE_TEST_REDIS_CNS`.
 
 use crate::{
@@ -16,11 +16,11 @@ use crate::{
         },
     },
     services::command_stream::{
-        stream_test_utils::{kinds, quiet, versions_of, CounterCommand, CounterState, TestEgress, WAIT},
+        stream_test_utils::{kinds, quiet, versions_of, TestEgress, WAIT},
         CommandStreamConfig, CommandStreamService, RegistryError, StreamRegistry, WorkerConfig,
     },
 };
-use shine_game::replica::{encode_command, ChatCommand, ChatState, ReplayState};
+use shine_game::replica::{encode_command, ChatCommand, ChatState, PixelMapCommand, PixelMapState, ReplayState};
 use shine_test::test;
 use std::time::Duration;
 use tokio::time::{sleep, timeout};
@@ -40,7 +40,7 @@ async fn harness(worker: WorkerConfig) -> Option<Harness> {
     let service = || CommandStreamService::new(log.db.clone(), inbox.db.clone(), CommandStreamConfig::default());
     let registry = StreamRegistry::builder(log.db.clone())
         .register::<ChatState, _, _>(service(), egress.clone(), worker.clone())
-        .register::<CounterState, _, _>(service(), egress.clone(), worker)
+        .register::<PixelMapState, _, _>(service(), egress.clone(), worker)
         .build()
         .unwrap();
     Some(Harness { log, inbox, egress, registry })
@@ -56,8 +56,8 @@ impl Harness {
             .unwrap();
     }
 
-    async fn push_counter(&self, stream: &StreamId, amount: i64) {
-        let data = encode_command::<CounterState>(&CounterCommand::Add { amount }).unwrap();
+    async fn push_paint(&self, stream: &StreamId, x: u8, y: u8, color: u8) {
+        let data = encode_command::<PixelMapState>(&PixelMapCommand::Paint { x, y, color }).unwrap();
         self.inbox
             .db
             .push(stream, Uuid::new_v4(), Uuid::new_v4(), &data)
@@ -137,13 +137,13 @@ async fn an_existing_stream_opens_only_as_its_own_kind() {
     h.join(&id, ChatState::KIND).await;
 
     let same = h.registry.open(&id, ChatState::KIND).await;
-    let other = h.registry.open(&id, CounterState::KIND).await;
+    let other = h.registry.open(&id, PixelMapState::KIND).await;
 
     assert_eq!(same.unwrap(), ChatState::KIND);
     assert!(matches!(
         other,
         Err(RegistryError::KindMismatch { stored, requested })
-            if stored == ChatState::KIND && requested == CounterState::KIND
+            if stored == ChatState::KIND && requested == PixelMapState::KIND
     ));
 }
 
@@ -151,13 +151,16 @@ async fn an_existing_stream_opens_only_as_its_own_kind() {
 async fn commands_are_checked_by_the_kind_of_their_stream() {
     let Some(h) = harness(quiet()).await else { return };
     let chat = encode_command::<ChatState>(&ChatCommand::Add { text: "hi".into() }).unwrap();
-    let counter = encode_command::<CounterState>(&CounterCommand::Add { amount: 5 }).unwrap();
-    let too_big = encode_command::<CounterState>(&CounterCommand::Add { amount: 5000 }).unwrap();
+    let paint = encode_command::<PixelMapState>(&PixelMapCommand::Paint { x: 1, y: 2, color: 3 }).unwrap();
+    let off_the_map = encode_command::<PixelMapState>(&PixelMapCommand::Paint { x: 99, y: 2, color: 3 }).unwrap();
 
     assert!(h.registry.validate(ChatState::KIND, &chat));
-    assert!(h.registry.validate(CounterState::KIND, &counter));
-    assert!(!h.registry.validate(CounterState::KIND, &too_big), "not well formed");
-    assert!(!h.registry.validate(ChatState::KIND, &counter), "not a chat command");
+    assert!(h.registry.validate(PixelMapState::KIND, &paint));
+    assert!(
+        !h.registry.validate(PixelMapState::KIND, &off_the_map),
+        "not well formed"
+    );
+    assert!(!h.registry.validate(ChatState::KIND, &paint), "not a chat command");
     assert!(!h.registry.validate("nothing", &chat), "unknown kind");
 }
 
@@ -232,22 +235,22 @@ async fn the_inbox_wakes_the_workers_without_anyone_calling_wake() {
 async fn streams_of_different_kinds_work_side_by_side_for_one_connection() {
     let Some(h) = harness(quiet()).await else { return };
     h.registry.listen(&h.inbox.db).await.unwrap();
-    let (chat, counter) = (stream_id(), stream_id());
+    let (chat, map) = (stream_id(), stream_id());
     let connection = h.join(&chat, ChatState::KIND).await;
-    h.join_as(connection, &counter, CounterState::KIND).await;
+    h.join_as(connection, &map, PixelMapState::KIND).await;
 
     h.push_chat(&chat, "hello").await;
-    h.push_counter(&counter, 5).await;
-    h.push_counter(&counter, 7).await;
+    h.push_paint(&map, 1, 1, 5).await;
+    h.push_paint(&map, 2, 2, 7).await;
 
     h.egress
         .wait(connection, |m| {
-            versions_of(m, &chat) == [1] && versions_of(m, &counter) == [1, 2]
+            versions_of(m, &chat) == [1] && versions_of(m, &map) == [1, 2]
         })
         .await;
-    assert_eq!(all_commands(&h.log.db, &counter).await.len(), 2);
+    assert_eq!(all_commands(&h.log.db, &map).await.len(), 2);
     assert_eq!(h.log.db.head(&chat).await.unwrap().unwrap().kind, ChatState::KIND);
-    assert_eq!(h.log.db.head(&counter).await.unwrap().unwrap().kind, CounterState::KIND);
+    assert_eq!(h.log.db.head(&map).await.unwrap().unwrap().kind, PixelMapState::KIND);
     h.registry.unlisten(&h.inbox.db).await.unwrap();
 }
 
@@ -258,9 +261,9 @@ async fn streams_of_different_kinds_work_side_by_side_for_one_connection() {
 #[test]
 async fn a_disconnect_releases_every_stream_of_the_connection() {
     let Some(h) = harness(short_grace()).await else { return };
-    let (chat, counter) = (stream_id(), stream_id());
+    let (chat, map) = (stream_id(), stream_id());
     let connection = h.join(&chat, ChatState::KIND).await;
-    h.join_as(connection, &counter, CounterState::KIND).await;
+    h.join_as(connection, &map, PixelMapState::KIND).await;
     assert_eq!(h.registry.worker_count(), 2);
 
     h.registry.disconnect(connection);
@@ -291,9 +294,9 @@ async fn a_shutdown_persists_what_is_waiting_and_ends_every_worker() {
     let Some(h) = harness(quiet()).await else { return };
     let (a, b) = (stream_id(), stream_id());
     h.join(&a, ChatState::KIND).await;
-    h.join(&b, CounterState::KIND).await;
+    h.join(&b, PixelMapState::KIND).await;
     h.push_chat(&a, "waiting").await;
-    h.push_counter(&b, 3).await;
+    h.push_paint(&b, 3, 3, 3).await;
 
     h.registry.shutdown(WAIT).await;
 

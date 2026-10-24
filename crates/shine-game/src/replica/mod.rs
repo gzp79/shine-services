@@ -2,6 +2,7 @@
 
 mod chat;
 mod codec;
+mod pixel_map;
 mod replica;
 mod stable_hash;
 mod state;
@@ -10,6 +11,7 @@ mod stream_id;
 pub use self::{
     chat::{ChatCommand, ChatMessage, ChatState, CHAT_MAX_TEXT_BYTES, CHAT_WINDOW},
     codec::{decode_command, decode_snapshot, encode_command, encode_snapshot, CommandCodecError, SnapshotCodecError},
+    pixel_map::{PixelMapCommand, PixelMapState, PIXEL_MAP_COLORS, PIXEL_MAP_HEIGHT, PIXEL_MAP_WIDTH},
     replica::{ApplyError, ApplyOutcome, Checkpoint, CommandEnvelope, CommandHeader, Replica},
     stable_hash::{fold_chain_hash, stable_hash_of, StableHash, StableHasher},
     state::{Command, ReplayState},

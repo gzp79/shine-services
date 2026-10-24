@@ -1,10 +1,8 @@
 //! What the tests of the workers and of the registry share: a sink that records what is sent to each
-//! connection, helpers to read it, and a second kind of stream next to the chat room.
+//! connection and helpers to read it.
 
 use crate::repositories::command_log::StreamId;
 use crate::services::command_stream::{StreamEgress, StreamMessage, WorkerConfig, WorkerHandle};
-use serde::{Deserialize, Serialize};
-use shine_game::replica::{CommandHeader, ReplayState, StableHash, StableHasher};
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
@@ -118,51 +116,4 @@ pub(crate) async fn wait_finished(worker: &WorkerHandle) {
     })
     .await;
     assert!(result.is_ok(), "the worker did not end");
-}
-
-/// A second kind of stream: a running total.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct CounterState {
-    pub total: i64,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
-pub(crate) enum CounterCommand {
-    Add { amount: i64 },
-}
-
-impl StableHash for CounterState {
-    fn stable_hash(&self, hasher: &mut StableHasher) {
-        self.total.stable_hash(hasher);
-    }
-}
-
-impl StableHash for CounterCommand {
-    fn stable_hash(&self, hasher: &mut StableHasher) {
-        match self {
-            CounterCommand::Add { amount } => {
-                0u8.stable_hash(hasher);
-                amount.stable_hash(hasher);
-            }
-        }
-    }
-}
-
-impl ReplayState for CounterState {
-    type Command = CounterCommand;
-
-    const KIND: &'static str = "counter-test";
-
-    fn apply(&mut self, _header: &CommandHeader, command: &Self::Command) {
-        match command {
-            CounterCommand::Add { amount } => self.total = self.total.saturating_add(*amount),
-        }
-    }
-
-    fn is_well_formed(command: &Self::Command) -> bool {
-        match command {
-            CounterCommand::Add { amount } => amount.abs() <= 1000,
-        }
-    }
 }
