@@ -96,11 +96,11 @@ impl<S: ReplayState> StreamState<S> {
         self.confirmed_chain_hash
     }
 
-    /// Applies the confirmed commands the replica has not seen yet. Returns the snapshots of the checkpoint
-    /// versions it passed (multiples of `snapshot_every`), each taken at exactly its version even when
-    /// more commands follow, oldest first.
-    pub fn replay(&mut self, snapshot_every: i64) -> Result<Vec<StoredSnapshot>, CommandStreamError> {
-        let mut snapshots = Vec::new();
+    /// Applies the confirmed commands the replica has not seen yet. Returns the snapshot of the latest
+    /// checkpoint version it passed (a multiple of `snapshot_every`), taken at exactly that version even
+    /// when more commands follow.
+    pub fn replay(&mut self, snapshot_every: i64) -> Result<Option<StoredSnapshot>, CommandStreamError> {
+        let mut snapshot = None;
         let start = self
             .tail
             .iter()
@@ -114,7 +114,7 @@ impl<S: ReplayState> StreamState<S> {
             if snapshot_every > 0 && command.version % snapshot_every == 0 {
                 let data = encode_snapshot(self.replica.state())
                     .map_err(|err| CommandStreamError::Corrupt(format!("snapshot {}: {err}", command.version)))?;
-                snapshots.push(StoredSnapshot {
+                snapshot = Some(StoredSnapshot {
                     version: command.version,
                     hash: self.replica.hash(),
                     chain_hash: self.replica.chain_hash(),
@@ -122,7 +122,7 @@ impl<S: ReplayState> StreamState<S> {
                 });
             }
         }
-        Ok(snapshots)
+        Ok(snapshot)
     }
 
     /// Makes `snapshot` the stream's latest one; the tail goes on after it.

@@ -141,16 +141,18 @@ impl<L: CommandLogDb, I: CommandInboxDb> CommandStreamService<L, I> {
     }
 
     /// Applies the commands confirmed since the last replay to the stream's replica, and stores the
-    /// snapshot of the latest checkpoint version it passed. Replay is off the path of delivering the
-    /// commands: it only feeds snapshots and the state a new subscriber is synced from.
+    /// snapshot of the latest checkpoint version it passed. The commands are in the log already, so a
+    /// snapshot that cannot be stored is only logged: the next checkpoint stores one. Replay is off the
+    /// path of delivering the commands: it only feeds snapshots and the state a new subscriber is synced
+    /// from.
     #[instrument(level = "debug", skip_all, fields(stream_id = %state.stream_id()))]
     pub async fn replay<S: ReplayState>(
         &self,
         state: &mut StreamState<S>,
     ) -> Result<ReplayOutcome, CommandStreamError> {
         let mut outcome = ReplayOutcome::default();
-        // Only the latest is stored: the ones before it add history, not safety.
-        let Some(snapshot) = state.replay(self.config.snapshot_every)?.pop() else {
+        // Only the latest checkpoint is stored: the ones before it add history, not safety.
+        let Some(snapshot) = state.replay(self.config.snapshot_every)? else {
             return Ok(outcome);
         };
         match self.log.try_store_snapshot(state.stream_id(), &snapshot).await {
@@ -161,7 +163,7 @@ impl<L: CommandLogDb, I: CommandInboxDb> CommandStreamService<L, I> {
                     state_hash: snapshot.hash,
                 });
                 state.set_snapshot(snapshot);
-                if let Err(err) = self.log.prune(state.stream_id(), i64::MAX).await {
+                if let Err(err) = self.log.prune(state.stream_id(), self.config.keep_snapshots).await {
                     tracing::warn!("[{}] Failed to prune the log: {err:#?}", state.stream_id());
                 }
             }
@@ -173,7 +175,13 @@ impl<L: CommandLogDb, I: CommandInboxDb> CommandStreamService<L, I> {
                 );
                 outcome.reload = true;
             }
-            Err(err) => return Err(err.into()),
+            Err(err) => {
+                tracing::warn!(
+                    "[{}] Failed to store the snapshot of version {}: {err:#?}",
+                    state.stream_id(),
+                    snapshot.version
+                );
+            }
         }
         Ok(outcome)
     }

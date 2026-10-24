@@ -147,7 +147,7 @@ A subscribe answers from memory: the resident stream's latest snapshot plus ever
 | Write ack | None. The writer sees its own `command_id` in a `streamCommands` batch. Failures are `streamNack`. |
 | Back-pressure | The per-connection rate limit and the inbox TTL bound the inbox. There is no length check. |
 | Redis loss | Unsequenced inbox entries are lost. Clients resubmit their pending commands after a resync; a command that had already landed is applied again, which is the client's to handle. |
-| Checkpoints | `version % snapshot_every == 0` on every instance; the stored snapshot is authoritative and carries `chain_hash` and `state_hash`. |
+| Checkpoints | `version % snapshot_every == 0` on every instance, captured at exactly that version even when more commands follow; the stored snapshot is authoritative and carries `chain_hash` and `state_hash`. A replay stores only the latest checkpoint it passed. An instance whose state differs from the stored snapshot of that version reloads from it. The log keeps the latest `keep_snapshots` snapshots and the commands from the oldest; an instance that needs older commands reloads. |
 | Drift (client) | The client compares its state hash with `streamCheckpoint` at that version and resubscribes on a mismatch. |
 | Drift (server) | `Diverged` inside the confirmed prefix or `SnapshotDrift` from the consistency check: reload from Postgres and send `streamReset`. |
 | Loop driver | Each worker waits on its own wake (from the shared subscription, coalesced with a minimum spacing) or its own jittered backstop tick. An idle stream costs one empty poll per backstop interval, not per second. A pub/sub reconnect wakes every worker, so the backstop only covers a wake lost without a reconnect. |
@@ -184,9 +184,9 @@ New files are target state.
 | `crates/shine-game/src/replica/` | Pure replay core: `ReplayState`, `Replica`, `CommandEnvelope`, chain hash, snapshot codec. Shared with the client. |
 | `services/builder/src/repositories/command_log/` | Postgres command log: `append`, `commands_after`, snapshots, `prune`, `check_consistency`. Each command stores the inbox position it came from (`inbox_id`), which is server side only and not part of any hash or client message. |
 | `services/builder/src/repositories/command_inbox/redis/` | Inbox write (`XADD` + `EXPIRE` + `PUBLISH`), per-stream poll, trim, wake publish and listen. |
-| `services/builder/src/services/command_stream/command_stream_service.rs` | Stateless service over the log and the inbox: `load` a stream, `sync` it (poll the inbox, version, append, adopt what other instances stored, re-sequence the rest, trim, announce). |
+| `services/builder/src/services/command_stream/command_stream_service.rs` | Stateless service over the log and the inbox: `load` a stream, `sync` it (poll the inbox, version, append, adopt what other instances stored, re-sequence the rest, trim, announce), and `replay` it (apply the confirmed commands to the replica, store the snapshot of the latest checkpoint, prune old snapshots). |
 | `services/builder/src/services/command_stream/stream_state.rs` | The per-stream state the service works on: replica, snapshot, tail, confirmed version and chain hash, waiting commands, inbox cursor, latest stored inbox position. |
-| `services/builder/src/services/command_stream/stream_worker.rs` | Per-stream task: wake and tick loop, calls to the service, replay and snapshots, subscriber cursors, fan-out, unload. |
+| `services/builder/src/services/command_stream/stream_worker.rs` | Per-stream task: wake and tick loop, calls to the service, subscriber cursors, fan-out, unload. |
 | `services/builder/src/services/command_stream/stream_registry.rs` | Spawns and routes to workers from the hub's subscription events; owns the shared wake listener. |
 | `services/builder/src/services/hub/hub_command.rs` | `SubscribeStream` and `UnsubscribeStream` control commands. |
 | `services/builder/src/services/hub/hub_connections.rs` | Per-connection stream set, dropped with the connection. |
