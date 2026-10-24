@@ -472,6 +472,24 @@ async fn a_log_contradicting_the_worker_resets_the_subscribers_and_syncs_them_ag
         .await;
 }
 
+#[test]
+async fn a_stream_that_cannot_be_loaded_tells_the_waiting_subscribers_and_ends() {
+    let Some(h) = harness().await else { return };
+    let id = stream_id();
+    let mut room = ChatLog::new("seed", 3);
+    room.commands[1].data = "{not a command".to_string();
+    h.log.db.ensure_stream(&id, KIND).await.unwrap();
+    append_range(&h.log.db, &id, &room, 1, 3).await.unwrap();
+    let worker = h.spawn(&id, 100, quiet());
+    let connection = Uuid::new_v4();
+    assert!(worker.subscribe(connection));
+
+    h.egress.wait(connection, |m| kinds(m) == ["unsynced"]).await;
+
+    wait_finished(&worker).await;
+    assert!(!worker.subscribe(Uuid::new_v4()));
+}
+
 /// An inbox that fails to be read when told to.
 #[derive(Clone)]
 struct FlakyInbox {

@@ -46,7 +46,7 @@ pub async fn push(
         .await
         .map_err(RedisError::RawError)?;
 
-    Ok(InboxId::parse(&id).expect("Redis returns well-formed stream ids"))
+    InboxId::parse(&id).ok_or_else(|| CommandInboxError::Malformed(format!("stream id {id:?}")))
 }
 
 #[instrument(level = "debug", skip_all, fields(stream_id = %stream_id, limit))]

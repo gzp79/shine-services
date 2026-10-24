@@ -340,7 +340,9 @@ where
             commands: confirmed.iter().map(StreamCommand::from).collect(),
         });
         for connection_id in self.subscriber_ids() {
-            let sent_up_to = self.subscribers[&connection_id];
+            let Some(&sent_up_to) = self.subscribers.get(&connection_id) else {
+                continue;
+            };
             let message = if sent_up_to + 1 == first {
                 all.clone()
             } else {
