@@ -24,6 +24,27 @@ impl TestInbox {
         InboxId::parse(&id).unwrap()
     }
 
+    /// Adds a raw entry at a given position, in an inbox that has none above it (see `drop_inbox`).
+    pub async fn raw_add_at(&self, stream_id: &StreamId, at: &InboxId, fields: &[(&str, &str)]) {
+        let mut client = self.redis.get().await.unwrap();
+        let mut cmd = redis::cmd("XADD");
+        cmd.arg(RedisCommandInboxDb::stream_key(stream_id)).arg(at.to_string());
+        for (name, value) in fields {
+            cmd.arg(*name).arg(*value);
+        }
+        let _: String = cmd.query_async(&mut *client).await.unwrap();
+    }
+
+    /// Deletes the whole inbox, with the memory of its last id, as if it had expired.
+    pub async fn drop_inbox(&self, stream_id: &StreamId) {
+        let mut client = self.redis.get().await.unwrap();
+        let _: i64 = redis::cmd("DEL")
+            .arg(RedisCommandInboxDb::stream_key(stream_id))
+            .query_async(&mut *client)
+            .await
+            .unwrap();
+    }
+
     pub async fn len(&self, stream_id: &StreamId) -> usize {
         let mut client = self.redis.get().await.unwrap();
         redis::cmd("XLEN")

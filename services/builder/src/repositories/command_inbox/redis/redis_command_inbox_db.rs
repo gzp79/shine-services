@@ -36,9 +36,7 @@ impl RedisCommandInboxDb {
         self.ttl_seconds
     }
 
-    pub async fn client(
-        &self,
-    ) -> Result<RedisPooledConnection<'_>, CommandInboxError> {
+    pub async fn client(&self) -> Result<RedisPooledConnection<'_>, CommandInboxError> {
         Ok(self.pool.get().await.map_err(RedisError::PoolError)?)
     }
 }

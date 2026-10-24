@@ -137,6 +137,7 @@ impl ChatLog {
         self.commands.push(StoredCommand {
             version,
             command_id: envelope.header.command_id,
+            inbox_id: Some(format!("1-{version}")),
             user_id: envelope.header.user_id,
             data: encode_command::<ChatState>(&envelope.command).unwrap(),
             command_hash: envelope.command_hash,

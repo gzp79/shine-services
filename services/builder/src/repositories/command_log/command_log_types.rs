@@ -17,22 +17,17 @@ pub struct StreamHead {
 pub struct StoredCommand {
     pub version: i64,
     pub command_id: Uuid,
+    pub inbox_id: Option<String>,
     pub user_id: Uuid,
-    /// The canonical command JSON.
     pub data: String,
-    /// Hash of the command's own content, independent of its position in the log.
     pub command_hash: u64,
-    /// The chain hash through this command: the fold of `command_hash` onto the chain hash of the
-    /// command before it.
     pub chain_hash: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StoredSnapshot {
     pub version: i64,
-    /// Hash of the replayed state at `version`.
     pub hash: u64,
-    /// The log's chain hash through `version` (see `StreamHead::chain_hash`).
     pub chain_hash: u64,
     pub data: Vec<u8>,
 }

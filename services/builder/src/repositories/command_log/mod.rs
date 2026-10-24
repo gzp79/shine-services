@@ -10,4 +10,4 @@ pub use self::{
 pub use shine_game::replica::StreamId;
 
 #[cfg(test)]
-mod tests;
+pub mod tests;

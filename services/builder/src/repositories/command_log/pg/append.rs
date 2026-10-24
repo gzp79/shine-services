@@ -28,6 +28,7 @@ const MAX_ATTEMPTS: u32 = 8;
 struct CommandInput<'a> {
     version: i64,
     command_id: Uuid,
+    inbox_id: Option<&'a str>,
     user_id: Uuid,
     data: &'a str,
     command_hash: i64,
@@ -43,6 +44,7 @@ impl<'a> From<&'a StoredCommand> for CommandInput<'a> {
         Self {
             version: command.version,
             command_id: command.command_id,
+            inbox_id: command.inbox_id.as_deref(),
             user_id: command.user_id,
             data: command.data.as_str(),
             command_hash: command.command_hash as i64,
@@ -56,7 +58,7 @@ impl<'a> From<&'a StoredCommand> for CommandInput<'a> {
 pg_query!( pub InsertCommands =>
     in = stream_id: &str, commands: &[CommandInput<'_>];
     sql = r#"
-        INSERT INTO cl_commands (stream_id, version, command_id, user_id, data, command_hash, chain_hash)
+        INSERT INTO cl_commands (stream_id, version, command_id, inbox_id, user_id, data, command_hash, chain_hash)
         SELECT $1, (cmd).* FROM UNNEST($2::cl_command_input[]) AS cmd
         ON CONFLICT (stream_id, version) DO NOTHING
     "#

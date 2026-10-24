@@ -66,7 +66,7 @@ sequenceDiagram
     W->>X: XADD + EXPIRE + PUBLISH wake (one MULTI)
     X-->>S: wake(streamId)
     S->>X: poll entries after the last seen inbox id
-    S->>S: drop known commandIds, assign version, command hash, chain hash
+    S->>S: assign version, command hash, chain hash
     S->>P: append(commands, baseline chain hash)
     P-->>S: head it saw
     alt head not beyond the batch
@@ -101,7 +101,7 @@ sequenceDiagram
     Note over B: confirmed version 6, persisted 9 is ahead
     B->>P: commands_after(6)
     P-->>B: a@7, b@8, c@9
-    B->>B: compare with its speculative tail by commandId
+    B->>B: drop its waiting commands that Postgres already holds
     B->>C: streamCommands(a, b, c)
     Note over B: its own unsent d is re-sequenced as d@10
     B->>P: append(d@10, baseline = chain hash at 9)
@@ -113,7 +113,7 @@ The worker catches up whenever Postgres is ahead of its **confirmed version** (t
 - A wake carries a persisted version above the worker's.
 - The backstop tick reads the head, in case a wake was lost.
 
-A mismatch **past** the confirmed prefix is lag: the worker adopts Postgres's commands, drops its own speculative commands, and re-sequences those whose `command_id` Postgres lacks. A mismatch **inside** the confirmed prefix is drift: the worker reloads the stream and sends `streamReset`.
+A mismatch **past** the confirmed prefix is lag: the worker adopts Postgres's commands, drops the waiting commands Postgres already holds (by inbox position), and re-sequences the rest. A mismatch **inside** the confirmed prefix is drift: the worker reloads the stream and sends `streamReset`.
 
 ### Stream worker states
 
@@ -142,11 +142,11 @@ A subscribe answers from memory: the resident stream's latest snapshot plus ever
 | Truth | Postgres wins every conflict. Memory is a cache of it plus a speculative tail. |
 | Append contract | `Ok(head)` with `head.version` at or below the batch's last version means the batch is in the log as sent. A head beyond the batch means unverified: the worker must catch up. A hash mismatch is `Diverged { head }`. |
 | Notify | Clients are told about a version only after it is confirmed against Postgres. |
-| Duplicates | Position duplicates (two instances, same version) are the repo's job. Client retries put one `command_id` in the inbox twice and are dropped by the worker against the tail's ids. |
+| Duplicates | Every command in the log records the inbox position it came from, and commands are stored in inbox order. An inbox entry at or before the latest stored position is already stored, so it is never taken again; two instances storing the same entry at the same version is the repo's job. Command ids belong to the client and are never checked: a command sent twice is two commands, each with its own version. |
 | Rejected commands | A well-formed command that the state ignores still takes a version. Replay is deterministic, so every party ignores the same ones. |
 | Write ack | None. The writer sees its own `command_id` in a `streamCommands` batch. Failures are `streamNack`. |
 | Back-pressure | The per-connection rate limit and the inbox TTL bound the inbox. There is no length check. |
-| Redis loss | Unsequenced inbox entries are lost. Clients resubmit pending commands with the same `command_id` after a resync. |
+| Redis loss | Unsequenced inbox entries are lost. Clients resubmit their pending commands after a resync; a command that had already landed is applied again, which is the client's to handle. |
 | Checkpoints | `version % snapshot_every == 0` on every instance; the stored snapshot is authoritative and carries `chain_hash` and `state_hash`. |
 | Drift (client) | The client compares its state hash with `streamCheckpoint` at that version and resubscribes on a mismatch. |
 | Drift (server) | `Diverged` inside the confirmed prefix or `SnapshotDrift` from the consistency check: reload from Postgres and send `streamReset`. |
@@ -155,7 +155,7 @@ A subscribe answers from memory: the resident stream's latest snapshot plus ever
 | Fan-out | A frame is serialized once per batch and shared by all subscribers of the stream. |
 | Hub loop | Handles only subscription bookkeeping and never waits on Redis or Postgres for streams. |
 
-Defaults (configuration, `builder` section): backstop tick 10 s with jitter (it polls the inbox and checks the Postgres head), minimum wake spacing 50 ms, `snapshot_every` 100, `command_id` dedupe window 1000 commands (kept at least this long even after a snapshot moves past them), unload grace 60 s, inbox TTL 1 h.
+Defaults (configuration, `builder` section): backstop tick 10 s with jitter (it polls the inbox and checks the Postgres head), minimum wake spacing 50 ms, `snapshot_every` 100, unload grace 60 s, inbox TTL 1 h.
 
 ### Client protocol
 
@@ -173,7 +173,7 @@ JSON text frames, `type` tagged in camelCase, the same envelope as chat. Hashes 
 | server to client | `streamNack` | `streamId`, `commandId`, `reason` (`notSubscribed`, `invalid`, `failed`) |
 | server to client | `streamSubscribeFailed` | `streamId`, `reason` (`kindMismatch`, `forbidden`, `failed`) |
 
-A `streamSync` the client did not ask for is a resync. After any sync, the client resubmits pending commands whose id is not in it, with the same `commandId`.
+A `streamSync` the client did not ask for is a resync. After any sync, the client resubmits the pending commands whose `commandId` it does not find in it.
 
 ## File map
 
@@ -182,10 +182,11 @@ New files are target state.
 | File | Role |
 |---|---|
 | `crates/shine-game/src/replica/` | Pure replay core: `ReplayState`, `Replica`, `CommandEnvelope`, chain hash, snapshot codec. Shared with the client. |
-| `services/builder/src/repositories/command_log/` | Postgres command log: `append`, `commands_after`, snapshots, `prune`, `check_consistency`. |
+| `services/builder/src/repositories/command_log/` | Postgres command log: `append`, `commands_after`, snapshots, `prune`, `check_consistency`. Each command stores the inbox position it came from (`inbox_id`), which is server side only and not part of any hash or client message. |
 | `services/builder/src/repositories/command_inbox/redis/` | Inbox write (`XADD` + `EXPIRE` + `PUBLISH`), per-stream poll, trim, wake publish and listen. |
-| `services/builder/src/services/command_stream/stream_core.rs` | Pure sequencing logic: dedupe, versioning, confirmed prefix, speculative tail, reconcile. No I/O. |
-| `services/builder/src/services/command_stream/stream_worker.rs` | Per-stream task: wake and tick loop, load, persist, snapshot, catch-up, subscriber cursors, fan-out, unload. |
+| `services/builder/src/services/command_stream/command_stream_service.rs` | Stateless service over the log and the inbox: `load` a stream, `sync` it (poll the inbox, version, append, adopt what other instances stored, re-sequence the rest, trim, announce). |
+| `services/builder/src/services/command_stream/stream_state.rs` | The per-stream state the service works on: replica, snapshot, tail, confirmed version and chain hash, waiting commands, inbox cursor, latest stored inbox position. |
+| `services/builder/src/services/command_stream/stream_worker.rs` | Per-stream task: wake and tick loop, calls to the service, replay and snapshots, subscriber cursors, fan-out, unload. |
 | `services/builder/src/services/command_stream/stream_registry.rs` | Spawns and routes to workers from the hub's subscription events; owns the shared wake listener. |
 | `services/builder/src/services/hub/hub_command.rs` | `SubscribeStream` and `UnsubscribeStream` control commands. |
 | `services/builder/src/services/hub/hub_connections.rs` | Per-connection stream set, dropped with the connection. |
@@ -195,15 +196,15 @@ New files are target state.
 <details data-agent="implementation">
 <summary>Why Ok from append is not enough, and what "confirmed" means</summary>
 
-`append` currently verifies overlap only when the Postgres head falls inside the batch or right before it (`pg/append.rs`, `my_hash_at_head`). If the head is beyond the batch's last version there is nothing to compare, `new` is empty, and the call returns `Ok(())` without checking anything. A lagging instance holding `d@7` while Postgres has `a@7..c@9` would be told Ok. The repo therefore returns the head it saw, and the worker treats only a head at or below the batch's last version as verification.
+`append` verifies overlap only when the Postgres head falls inside the batch or right before it (`pg/append.rs`, `my_hash_at_head`). If the head is beyond the batch's last version there is nothing to compare and nothing to store. A lagging instance holding `d@7` while Postgres has `a@7..c@9` must not be told its batch is stored. `append` therefore returns the head, and the service treats a batch as stored only when that head is the batch's last command.
 
-The worker's baseline for each append is always its confirmed prefix: it advances only after a verified append or a catch-up read, and never after an `Ok` with a head beyond the batch. That makes a baseline mismatch real drift, and a mismatch past the baseline lag, with no extra classification in the repo. The chain hash includes the version, so the same command at two different versions never agrees.
+The service's baseline for each append is always the confirmed prefix: it advances only after a verified append or a catch-up read, and never after an `Ok` with a head beyond the batch. That makes a baseline mismatch real drift, and a mismatch past the baseline lag, with no extra classification in the repo. The chain hash includes the version, so the same command at two different versions never agrees.
 </details>
 
 <details data-agent="implementation">
-<summary>Inbox trim, dedupe window and an unloaded stream</summary>
+<summary>Inbox trim and an unloaded stream</summary>
 
-The worker remembers the inbox id of every tail command and trims the inbox up to the last persisted one; trimming is monotonic, so concurrent trims by several instances are harmless. A late or failed trim only means entries are read again, and the `command_id` dedupe window (longer than the tail) drops them. If no instance has the stream resident, unsequenced entries wait in the inbox until the TTL; the next load reads them. A crash of the last resident instance loses nothing that a reconnecting client does not resubmit.
+The service trims the inbox up to the latest inbox position known to be in the log; no waiting command is at or before it. Trimming is monotonic, so concurrent trims by several instances are harmless. A trim that is late or fails leaves entries that are already stored; they are at or before the stored position, so they are skipped, and a stream loaded later starts reading the inbox after it. Positions are Redis stream ids, which only grow within a live inbox. If an inbox is recreated while the clock has gone backwards, new entries can look stored and are lost; that loss is accepted. If no instance has the stream resident, unsequenced entries wait in the inbox until the TTL; the next load reads them. A crash of the last resident instance loses nothing that a reconnecting client does not resubmit.
 </details>
 
 <details data-agent="test">
@@ -212,9 +213,9 @@ The worker remembers the inbox id of every tail command and trims the inbox up t
 | # | Case | Kind |
 |---|---|---|
 | 1 | Two workers on one inbox produce identical versions and hashes; one stores, one verifies | Redis + Postgres |
-| 2 | Lag by one version, with the head inside the batch, and with the head beyond the batch: catch-up, no streamReset, own commands re-sequenced | core unit |
-| 3 | Mismatch inside the confirmed prefix: reload and streamReset | core unit |
-| 4 | Client retry of one `command_id` gets one version | core unit |
+| 2 | Lag by one version, with the head inside the batch, and with the head beyond the batch: catch-up, no streamReset, own commands re-sequenced | service |
+| 3 | Mismatch inside the confirmed prefix: reload and streamReset | service |
+| 4 | A repeated `command_id` is not special: each command gets a version, and stored-but-untrimmed inbox entries are not taken again | service |
 | 5 | Inbox flushed mid-run: pending client commands resubmitted, history intact | Redis + Postgres |
 | 6 | Wake lost without a reconnect: the backstop tick delivers within its interval | Redis + Postgres |
 | 7 | Late subscriber receives snapshot plus tail, then only newer versions | worker |

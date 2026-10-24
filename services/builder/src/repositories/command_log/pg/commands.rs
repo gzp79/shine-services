@@ -20,6 +20,7 @@ impl FromRow for StoredCommand {
         Ok(Self {
             version: row.try_get("version")?,
             command_id: row.try_get("command_id")?,
+            inbox_id: row.try_get("inbox_id")?,
             user_id: row.try_get("user_id")?,
             data: row.try_get("data")?,
             command_hash: row.try_get::<_, i64>("command_hash")? as u64,
@@ -32,7 +33,7 @@ pg_query!( pub CommandsAfter =>
     in = stream_id: &str, after: i64, limit: i64;
     out = StoredCommand;
     sql = r#"
-        SELECT version, command_id, user_id, data, command_hash, chain_hash FROM cl_commands
+        SELECT version, command_id, user_id, data, command_hash, chain_hash, inbox_id FROM cl_commands
         WHERE stream_id = $1 AND version > $2
         ORDER BY version
         LIMIT $3
@@ -44,7 +45,7 @@ pg_query!( pub LastCommands =>
     out = StoredCommand;
     sql = r#"
         SELECT * FROM (
-            SELECT version, command_id, user_id, data, command_hash, chain_hash FROM cl_commands
+            SELECT version, command_id, user_id, data, command_hash, chain_hash, inbox_id FROM cl_commands
             WHERE stream_id = $1
             ORDER BY version DESC
             LIMIT $2

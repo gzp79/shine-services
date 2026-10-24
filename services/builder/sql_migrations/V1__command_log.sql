@@ -1,6 +1,7 @@
 CREATE TYPE cl_command_input AS (
     version BIGINT,
     command_id UUID,
+    inbox_id TEXT,
     user_id UUID,
     data TEXT,
     command_hash BIGINT,
@@ -18,6 +19,7 @@ CREATE TABLE cl_commands (
     stream_id VARCHAR(64) NOT NULL REFERENCES cl_streams (stream_id) ON DELETE CASCADE,
     version BIGINT NOT NULL CHECK (version > 0),
     command_id UUID NOT NULL,
+    inbox_id TEXT,
     user_id UUID NOT NULL,
     data TEXT NOT NULL,
     command_hash BIGINT NOT NULL,

@@ -330,6 +330,21 @@ async fn stored_commands_cannot_be_updated() {
 }
 
 #[test]
+async fn the_inbox_position_of_a_command_is_kept_when_there_is_one_and_is_not_part_of_the_chain() {
+    let Some(log) = create_test_log().await else { return };
+    let id = stream_id();
+    let mut room = ChatLog::new("a", 4);
+    room.commands[2].inbox_id = None;
+    log.db.ensure_stream(&id, KIND).await.unwrap();
+
+    append_range(&log.db, &id, &room, 1, 4).await.unwrap();
+
+    assert_eq!(all_commands(&log.db, &id).await, room.commands);
+    assert_eq!(log.db.last_commands(&id, 2).await.unwrap(), room.commands[2..]);
+    assert_eq!(log.db.check_consistency(&id).await.unwrap().issues, vec![]);
+}
+
+#[test]
 async fn hashes_above_i64_max_survive_the_signed_column() {
     let Some(log) = create_test_log().await else { return };
     let (id, room) = seeded_stream(&log, 3).await;
@@ -340,6 +355,7 @@ async fn hashes_above_i64_max_survive_the_signed_column() {
         data: "{}".to_string(),
         command_hash: u64::MAX,
         chain_hash: u64::MAX - 1,
+        inbox_id: None,
     };
     log.db
         .append(&id, std::slice::from_ref(&command), room.chain_hash_at(3))
