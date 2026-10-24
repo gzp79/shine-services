@@ -117,7 +117,7 @@ pub async fn try_store_snapshot(
         Some(chain_hash) if chain_hash as u64 == snapshot.chain_hash => {}
         // Either no command is stored at this version at all, or it disagrees: either way the
         // claim does not match what is durably persisted.
-        _ => return Err(CommandLogError::Diverged),
+        _ => return Err(CommandLogError::SnapshotDiverged),
     }
 
     if let Some(existing) = stmts
@@ -189,6 +189,6 @@ fn agrees(existing: &SnapshotHashRow, attempted: &StoredSnapshot) -> Result<(), 
     if existing.hash as u64 == attempted.hash && existing.chain_hash as u64 == attempted.chain_hash {
         Ok(())
     } else {
-        Err(CommandLogError::Diverged)
+        Err(CommandLogError::SnapshotDiverged)
     }
 }

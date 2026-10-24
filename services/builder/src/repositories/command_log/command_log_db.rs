@@ -23,14 +23,21 @@ pub trait CommandLogDb: Clone + Send + Sync {
 
     /// Stores the rows above the head and proves the overlap with it by chain hash. `commands` must
     /// be a dense, contiguous run of versions; `baseline_hash` is the chain hash through the version
-    /// right before the first of them. `Ok(())` whether something new was actually stored or the
-    /// batch was already covered; `Err(CommandLogError::Diverged)` if it does not match the log.
+    /// right before the first of them.
+    ///
+    /// #Return
+    /// `Ok(head)` is the stream's head after the call, whether something new was stored or the batch
+    /// was already covered. If `head.version` is not beyond the last command, the batch is in the log
+    /// exactly as sent. If it is beyond, the log is ahead of the batch and nothing of it could be
+    /// compared: the caller has to catch up (`commands_after`) before it trusts the batch.
+    /// `Err(CommandLogError::Diverged { head })` if the batch does not match the log, with the head it
+    /// was compared with.
     fn append(
         &self,
         stream_id: &StreamId,
         commands: &[StoredCommand],
         baseline_hash: u64,
-    ) -> impl Future<Output = Result<(), CommandLogError>> + Send;
+    ) -> impl Future<Output = Result<StreamHead, CommandLogError>> + Send;
 
     /// Returns the commands from the given version onwards, up to `limit` rows.
     fn commands_after(
@@ -47,8 +54,11 @@ pub trait CommandLogDb: Clone + Send + Sync {
         count: i64,
     ) -> impl Future<Output = Result<Vec<StoredCommand>, CommandLogError>> + Send;
 
-    /// Stores a snapshot at `version`. `Ok(())` whether it was newly stored or already covered by
-    /// an agreeing one; `Err(CommandLogError::Diverged)` if its `chain_hash` does not match the
+    /// Stores a snapshot at `version`.
+    ///
+    /// # Return
+    /// `Ok(())` whether it was newly stored or already covered by
+    /// an agreeing one; `Err(CommandLogError::SnapshotDiverged)` if its `chain_hash` does not match the
     /// command already durably stored at that version, or an existing snapshot there disagrees.
     fn try_store_snapshot(
         &self,

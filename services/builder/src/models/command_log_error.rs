@@ -1,3 +1,4 @@
+use crate::repositories::command_log::StreamHead;
 use shine_infra::db::postgres::PgError;
 use thiserror::Error as ThisError;
 
@@ -9,8 +10,10 @@ pub enum CommandLogError {
     Contention,
     #[error("Stream kind mismatch: stored {stored}, requested {requested}")]
     KindMismatch { stored: String, requested: String },
-    #[error("Drifted from the persisted chain")]
-    Diverged,
+    #[error("Drifted from the persisted chain (head at version {})", .head.version)]
+    Diverged { head: StreamHead },
+    #[error("Snapshot drifted from the persisted chain")]
+    SnapshotDiverged,
     #[error(transparent)]
     Db(#[from] PgError),
 }

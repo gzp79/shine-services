@@ -89,7 +89,7 @@ impl CommandLogDb for PgCommandLogDb {
         stream_id: &StreamId,
         commands: &[StoredCommand],
         baseline_hash: u64,
-    ) -> Result<(), CommandLogError> {
+    ) -> Result<StreamHead, CommandLogError> {
         append::append(self, stream_id, commands, baseline_hash).await
     }
 

@@ -70,13 +70,12 @@ pg_query!( pub CasHeadVersion =>
     "#
 );
 
-/// Stores the rows above the head and proves the overlap with it by chain hash.
 pub async fn append(
     db: &PgCommandLogDb,
     stream_id: &StreamId,
     commands: &[StoredCommand],
     baseline_hash: u64,
-) -> Result<(), CommandLogError> {
+) -> Result<StreamHead, CommandLogError> {
     debug_assert!(
         commands.windows(2).all(|w| w[1].version == w[0].version + 1),
         "commands must be a dense, contiguous run of versions"
@@ -85,7 +84,9 @@ pub async fn append(
     let id = stream_id.as_str();
 
     let Some(first) = commands.first() else {
-        return Ok(());
+        return stream::head(db, stream_id)
+            .await?
+            .ok_or(CommandLogError::StreamNotFound);
     };
     let first_version = first.version;
     let last_version = commands.last().map_or(first_version, |c| c.version);
@@ -102,11 +103,11 @@ pub async fn append(
             .ok_or(CommandLogError::StreamNotFound)?;
 
         if head.version < first_version - 1 {
-            return Err(CommandLogError::Diverged);
+            return Err(CommandLogError::Diverged { head });
         }
         // The chain hash I can claim at head.version, if it falls within what I hold. When the head
-        // is already ahead of my own tip, I have nothing of mine to compare yet: deferred to my next
-        // append (the snapshot's chain hash is the backstop bounding how long that can go unchecked).
+        // is already ahead of my own tip, I have nothing of mine to compare: the caller sees it from
+        // the returned head being beyond the batch.
         let my_hash_at_head = if head.version == first_version - 1 {
             Some(baseline_hash)
         } else if head.version <= last_version {
@@ -116,7 +117,7 @@ pub async fn append(
         };
         if let Some(expected) = my_hash_at_head {
             if expected != head.chain_hash {
-                return Err(CommandLogError::Diverged);
+                return Err(CommandLogError::Diverged { head });
             }
         }
 
@@ -125,10 +126,10 @@ pub async fn append(
         let new_start = ((head.version - first_version + 1) as usize).min(commands.len());
         let new = &commands[new_start..];
         let Some(new_first) = new.first() else {
-            return Ok(());
+            return Ok(head);
         };
         if new_first.version != head.version + 1 || new.windows(2).any(|w| w[1].version != w[0].version + 1) {
-            return Err(CommandLogError::Diverged);
+            return Err(CommandLogError::Diverged { head });
         }
 
         let tx = client
@@ -165,7 +166,11 @@ pub async fn append(
 
         if moved == 1 {
             tx.commit().await.map_err(db_error)?;
-            return Ok(());
+            return Ok(StreamHead {
+                version: new_version,
+                chain_hash: new_chain_hash,
+                ..head
+            });
         }
         tx.rollback().await.map_err(db_error)?;
         if attempt == MAX_ATTEMPTS {

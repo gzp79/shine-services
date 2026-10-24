@@ -39,6 +39,32 @@ async fn a_new_stream_is_empty_and_ensuring_it_again_keeps_its_head() {
 }
 
 #[test]
+async fn an_append_returns_the_head_the_stream_is_left_at() {
+    let Some(log) = create_test_log().await else { return };
+    let id = stream_id();
+    let room = ChatLog::new("a", 10);
+    let longer = ChatLog::new("a", 14);
+    log.db.ensure_stream(&id, KIND).await.unwrap();
+    let head_at = |room: &ChatLog, version: i64| StreamHead {
+        kind: KIND.to_string(),
+        version,
+        chain_hash: room.chain_hash_at(version),
+    };
+
+    let stored = append_range(&log.db, &id, &room, 1, 10).await.unwrap();
+    let covered = append_range(&log.db, &id, &room, 1, 10).await.unwrap();
+    let partly_covered = append_range(&log.db, &id, &room, 6, 10).await.unwrap();
+    let extended = append_range(&log.db, &id, &longer, 8, 14).await.unwrap();
+    let nothing = log.db.append(&id, &[], longer.chain_hash_at(14)).await.unwrap();
+
+    assert_eq!(stored, head_at(&room, 10), "newly stored");
+    assert_eq!(covered, head_at(&room, 10), "already covered");
+    assert_eq!(partly_covered, head_at(&room, 10), "partly covered");
+    assert_eq!(extended, head_at(&longer, 14), "partly covered, then extended");
+    assert_eq!(nothing, head_at(&longer, 14), "nothing to append");
+}
+
+#[test]
 async fn appended_batches_continue_the_chain_and_read_back() {
     let Some(log) = create_test_log().await else { return };
     let id = stream_id();
@@ -196,7 +222,10 @@ async fn a_batch_that_leaves_a_gap_after_the_head_is_diverged() {
 
     let result = append_range(&log.db, &id, &longer, 5, 6).await;
 
-    assert!(matches!(result, Err(CommandLogError::Diverged)), "{result:?}");
+    assert!(
+        matches!(&result, Err(CommandLogError::Diverged { head: seen }) if *seen == head),
+        "{result:?}"
+    );
     assert_eq!(log.db.head(&id).await.unwrap().unwrap(), head);
 }
 
@@ -206,11 +235,15 @@ async fn a_batch_continuing_from_a_wrong_baseline_is_diverged() {
     let (id, _) = seeded_stream(&log, 2).await;
     let longer = ChatLog::new("seed", 4);
     let (batch, _) = longer.range(3, 4);
+    let head = log.db.head(&id).await.unwrap().unwrap();
 
     let result = log.db.append(&id, batch, 12345).await;
 
-    assert!(matches!(result, Err(CommandLogError::Diverged)), "{result:?}");
-    assert_eq!(log.db.head(&id).await.unwrap().unwrap().version, 2);
+    assert!(
+        matches!(&result, Err(CommandLogError::Diverged { head: seen }) if *seen == head),
+        "{result:?}"
+    );
+    assert_eq!(log.db.head(&id).await.unwrap().unwrap(), head);
 }
 
 #[test]
@@ -218,12 +251,13 @@ async fn a_different_history_is_diverged_however_it_overlaps_the_head() {
     let Some(log) = create_test_log().await else { return };
     let (id, seed) = seeded_stream(&log, 3).await;
     let other = ChatLog::new("other", 5);
+    let head = log.db.head(&id).await.unwrap().unwrap();
 
     // From the start, ending at the head, and extending the head from a foreign baseline.
     for (first, last) in [(1, 3), (1, 5), (4, 5)] {
         let result = append_range(&log.db, &id, &other, first, last).await;
         assert!(
-            matches!(result, Err(CommandLogError::Diverged)),
+            matches!(&result, Err(CommandLogError::Diverged { head: seen }) if *seen == head),
             "{first}..={last}: {result:?}"
         );
     }
@@ -232,14 +266,16 @@ async fn a_different_history_is_diverged_however_it_overlaps_the_head() {
 }
 
 #[test]
-async fn a_batch_ending_behind_the_head_is_not_verified_until_it_reaches_the_head() {
+async fn a_batch_ending_behind_the_head_is_unverified_and_returns_the_head_beyond_it() {
     let Some(log) = create_test_log().await else { return };
     let (id, seed) = seeded_stream(&log, 5).await;
     let other = ChatLog::new("other", 3);
 
-    // The head is ahead of this batch's tip, so there is nothing of the batch to compare it with yet.
-    append_range(&log.db, &id, &other, 1, 3).await.unwrap();
+    // The head is ahead of this batch's tip, so there is nothing of the batch to compare it with:
+    // the caller learns it from the returned head being beyond the batch.
+    let head = append_range(&log.db, &id, &other, 1, 3).await.unwrap();
 
+    assert_eq!((head.version, head.chain_hash), (5, seed.chain_hash_at(5)));
     assert_eq!(all_commands(&log.db, &id).await, seed.commands);
 }
 
@@ -344,7 +380,7 @@ async fn a_snapshot_not_matching_the_command_at_its_version_is_diverged_and_not_
     for snapshot in [forged, beyond] {
         let result = log.db.try_store_snapshot(&id, &snapshot).await;
         assert!(
-            matches!(result, Err(CommandLogError::Diverged)),
+            matches!(result, Err(CommandLogError::SnapshotDiverged)),
             "version {}: {result:?}",
             snapshot.version
         );
@@ -362,7 +398,7 @@ async fn a_snapshot_of_a_stream_without_commands_is_diverged() {
 
     let result = log.db.try_store_snapshot(&id, &room.snapshot_at(1)).await;
 
-    assert!(matches!(result, Err(CommandLogError::Diverged)), "{result:?}");
+    assert!(matches!(result, Err(CommandLogError::SnapshotDiverged)), "{result:?}");
 }
 
 #[test]
@@ -400,7 +436,7 @@ async fn storing_a_snapshot_twice_is_ok_but_a_disagreeing_one_at_the_same_versio
     log.db.try_store_snapshot(&id, &stored).await.unwrap();
     let result = log.db.try_store_snapshot(&id, &disagreeing).await;
 
-    assert!(matches!(result, Err(CommandLogError::Diverged)), "{result:?}");
+    assert!(matches!(result, Err(CommandLogError::SnapshotDiverged)), "{result:?}");
     assert_eq!(log.db.latest_snapshot(&id, 5).await.unwrap(), Some(stored));
 }
 
@@ -500,7 +536,9 @@ async fn of_concurrent_writers_of_diverging_histories_exactly_one_wins() {
         let winners: Vec<_> = results.iter().enumerate().filter(|(_, r)| r.is_ok()).collect();
         assert_eq!(winners.len(), 1, "round {round}: {results:?}");
         assert!(
-            results.iter().any(|r| matches!(r, Err(CommandLogError::Diverged))),
+            results
+                .iter()
+                .any(|r| matches!(r, Err(CommandLogError::Diverged { .. }))),
             "round {round}: {results:?}"
         );
         let winner = &rooms[winners[0].0];
