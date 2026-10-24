@@ -1,6 +1,7 @@
 mod db;
 
 pub mod chat_comments;
+pub mod command_inbox;
 pub mod command_log;
 pub mod hub_registry;
 
