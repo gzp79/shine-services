@@ -66,6 +66,8 @@ pub struct InboxEntry {
 pub struct InboxBatch {
     pub entries: Vec<InboxEntry>,
     pub cursor: InboxId,
+    /// The poll filled its limit: there may be more entries after the cursor.
+    pub more: bool,
 }
 
 /// A hint that a stream may have something to do. The notifications are not reliable (a reconnect

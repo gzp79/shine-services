@@ -59,6 +59,7 @@ pub async fn poll(
     let mut batch = InboxBatch {
         entries: Vec::new(),
         cursor: after.clone(),
+        more: false,
     };
     if limit == 0 {
         return Ok(batch);
@@ -76,6 +77,7 @@ pub async fn poll(
         .await
         .map_err(RedisError::RawError)?;
 
+    batch.more = reply.ids.len() >= limit;
     for raw in reply.ids {
         let Some(inbox_id) = InboxId::parse(&raw.id) else {
             continue;

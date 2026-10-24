@@ -153,14 +153,18 @@ async fn harness() -> Option<Harness> {
 impl Harness {
     /// A worker for the stream, over a service that snapshots every `every` versions.
     fn spawn(&self, stream: &StreamId, every: i64, config: WorkerConfig) -> WorkerHandle {
-        let service = CommandStreamService::new(
-            self.log.db.clone(),
-            self.inbox.db.clone(),
+        self.spawn_with(
+            stream,
             CommandStreamConfig {
                 snapshot_every: every,
                 ..CommandStreamConfig::default()
             },
-        );
+            config,
+        )
+    }
+
+    fn spawn_with(&self, stream: &StreamId, service_config: CommandStreamConfig, config: WorkerConfig) -> WorkerHandle {
+        let service = CommandStreamService::new(self.log.db.clone(), self.inbox.db.clone(), service_config);
         spawn_worker::<ChatState, _, _, _>(service, self.egress.clone(), stream.clone(), config)
     }
 
@@ -227,6 +231,30 @@ async fn a_subscriber_is_synced_and_then_gets_the_new_commands_in_order_exactly_
     worker.wake();
     sleep(Duration::from_millis(150)).await;
     assert_eq!(versions_of(&h.egress.messages(connection), &id), vec![1, 2, 3, 4, 5]);
+}
+
+#[test]
+async fn a_backlog_larger_than_one_poll_is_worked_off_without_waiting_for_another_wake() {
+    let Some(h) = harness().await else { return };
+    let id = stream_id();
+    let worker = h.spawn_with(
+        &id,
+        CommandStreamConfig {
+            poll_limit: 5,
+            ..CommandStreamConfig::default()
+        },
+        quiet(),
+    );
+    let connection = h.subscribe(&worker).await;
+    for i in 0..12 {
+        h.send(&id, &format!("m{i}")).await;
+    }
+
+    worker.wake();
+
+    h.egress
+        .wait(connection, |m| versions_of(m, &id) == (1..=12).collect::<Vec<_>>())
+        .await;
 }
 
 #[test]

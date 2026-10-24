@@ -65,9 +65,10 @@ async fn polling_continues_after_the_cursor_in_pages_and_stops_at_the_end() {
 
     let mut cursor = InboxId::START;
     let mut polled = Vec::new();
-    for expected_len in [2, 2, 1] {
+    for (expected_len, expected_more) in [(2, true), (2, true), (1, false)] {
         let batch = inbox.db.poll(&id, &cursor, 2).await.unwrap();
         assert_eq!(batch.entries.len(), expected_len);
+        assert_eq!(batch.more, expected_more);
         polled.extend(batch.entries.iter().map(|e| e.inbox_id.clone()));
         cursor = batch.cursor;
     }

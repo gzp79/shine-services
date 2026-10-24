@@ -220,11 +220,14 @@ where
     }
 
     async fn work(&mut self, state: &mut StreamState<S>) -> Flow {
-        match self.service.sync(state).await {
+        let more = match self.service.sync(state).await {
             Ok(outcome) if outcome.reload => return Flow::Reload,
-            Ok(outcome) => self.deliver(outcome.confirmed).await,
+            Ok(outcome) => {
+                self.deliver(outcome.confirmed).await;
+                outcome.more
+            }
             Err(err) => return self.failed(err),
-        }
+        };
         match self.service.replay(state).await {
             Ok(outcome) if outcome.reload => return Flow::Reload,
             Ok(outcome) => {
@@ -240,6 +243,10 @@ where
             Err(err) => return self.failed(err),
         }
         self.failures = 0;
+        if more {
+            // Work the rest of the backlog without waiting for another wake.
+            self.wake.notify_one();
+        }
         Flow::Continue
     }
 

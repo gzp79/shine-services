@@ -18,6 +18,9 @@ pub struct SyncOutcome {
     /// The log contradicts the history this instance confirmed. The state is of no further use: the
     /// stream has to be loaded again, and its subscribers synced again.
     pub reload: bool,
+    /// There is more to do right away: the inbox had more entries than one sync reads, or some are still
+    /// waiting to be stored. The caller should sync again without waiting for a wake.
+    pub more: bool,
 }
 
 /// What a replay did to a stream.
@@ -116,7 +119,7 @@ impl<L: CommandLogDb, I: CommandInboxDb> CommandStreamService<L, I> {
         // Whether this instance stored any command, as opposed to adopting those of the others.
         let mut stored_own = false;
 
-        self.ingest(state).await?;
+        let more_in_inbox = self.ingest(state).await?;
         for _ in 0..self.config.max_attempts {
             let step = if state.pending.is_empty() {
                 self.follow(state, &mut outcome).await?
@@ -133,6 +136,7 @@ impl<L: CommandLogDb, I: CommandInboxDb> CommandStreamService<L, I> {
             }
         }
 
+        outcome.more = !outcome.reload && (more_in_inbox || !state.pending.is_empty());
         if !outcome.reload {
             let advanced = state.stored_inbox() != stored_before.as_ref();
             self.finish(state, advanced, stored_own).await;
@@ -186,16 +190,18 @@ impl<L: CommandLogDb, I: CommandInboxDb> CommandStreamService<L, I> {
         Ok(outcome)
     }
 
-    async fn ingest<S: ReplayState>(&self, state: &mut StreamState<S>) -> Result<(), CommandStreamError> {
+    /// Takes the next entries of the inbox. Returns whether there may be more.
+    async fn ingest<S: ReplayState>(&self, state: &mut StreamState<S>) -> Result<bool, CommandStreamError> {
         if state.pending.len() >= self.config.max_pending {
-            return Ok(());
+            return Ok(true);
         }
         let batch = self
             .inbox
             .poll(state.stream_id(), &state.cursor, self.config.poll_limit)
             .await?;
+        let more = batch.more;
         state.ingest(batch);
-        Ok(())
+        Ok(more)
     }
 
     /// Nothing is waiting: looks for what other instances stored.
