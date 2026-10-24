@@ -4,9 +4,9 @@ use crate::{
         command_inbox::{CommandInboxDb, InboxId},
         command_log::{CommandLogDb, StoredCommand, StreamId},
     },
-    services::command_stream::{CommandStreamConfig, StreamState},
+    services::command_stream::{stream_state::to_envelope, CommandStreamConfig, StreamState},
 };
-use shine_game::replica::{decode_command, decode_snapshot, CommandEnvelope, CommandHeader, ReplayState, Replica};
+use shine_game::replica::{decode_snapshot, Checkpoint, ReplayState, Replica};
 use tracing::instrument;
 
 /// What a sync did to a stream.
@@ -17,6 +17,17 @@ pub struct SyncOutcome {
     pub confirmed: Vec<StoredCommand>,
     /// The log contradicts the history this instance confirmed. The state is of no further use: the
     /// stream has to be loaded again, and its subscribers synced again.
+    pub reload: bool,
+}
+
+/// What a replay did to a stream.
+#[derive(Debug, Default)]
+pub struct ReplayOutcome {
+    /// The latest checkpoint the replay passed and stored, if any: the state hash at its version, to
+    /// be sent to the subscribers.
+    pub checkpoint: Option<Checkpoint>,
+    /// Another instance stored another state for that version: the instances do not replay alike. The
+    /// state is of no further use: the stream has to be loaded again, from the stored snapshot.
     pub reload: bool,
 }
 
@@ -125,6 +136,44 @@ impl<L: CommandLogDb, I: CommandInboxDb> CommandStreamService<L, I> {
         if !outcome.reload {
             let advanced = state.stored_inbox() != stored_before.as_ref();
             self.finish(state, advanced, stored_own).await;
+        }
+        Ok(outcome)
+    }
+
+    /// Applies the commands confirmed since the last replay to the stream's replica, and stores the
+    /// snapshot of the latest checkpoint version it passed. Replay is off the path of delivering the
+    /// commands: it only feeds snapshots and the state a new subscriber is synced from.
+    #[instrument(level = "debug", skip_all, fields(stream_id = %state.stream_id()))]
+    pub async fn replay<S: ReplayState>(
+        &self,
+        state: &mut StreamState<S>,
+    ) -> Result<ReplayOutcome, CommandStreamError> {
+        let mut outcome = ReplayOutcome::default();
+        // Only the latest is stored: the ones before it add history, not safety.
+        let Some(snapshot) = state.replay(self.config.snapshot_every)?.pop() else {
+            return Ok(outcome);
+        };
+        match self.log.try_store_snapshot(state.stream_id(), &snapshot).await {
+            Ok(()) => {
+                outcome.checkpoint = Some(Checkpoint {
+                    version: snapshot.version,
+                    chain_hash: snapshot.chain_hash,
+                    state_hash: snapshot.hash,
+                });
+                state.set_snapshot(snapshot);
+                if let Err(err) = self.log.prune(state.stream_id(), self.config.keep_snapshots).await {
+                    tracing::warn!("[{}] Failed to prune the log: {err:#?}", state.stream_id());
+                }
+            }
+            Err(CommandLogError::SnapshotDiverged) => {
+                tracing::error!(
+                    "[{}] The state at version {} differs from the stored snapshot",
+                    state.stream_id(),
+                    snapshot.version
+                );
+                outcome.reload = true;
+            }
+            Err(err) => return Err(err.into()),
         }
         Ok(outcome)
     }
@@ -245,21 +294,6 @@ impl<L: CommandLogDb, I: CommandInboxDb> CommandStreamService<L, I> {
             }
         }
     }
-}
-
-fn to_envelope<S: ReplayState>(command: &StoredCommand) -> Result<CommandEnvelope<S::Command>, CommandStreamError> {
-    let decoded = decode_command::<S>(&command.data)
-        .map_err(|err| CommandStreamError::Corrupt(format!("command {}: {err}", command.version)))?;
-    Ok(CommandEnvelope {
-        header: CommandHeader {
-            version: command.version,
-            command_id: command.command_id,
-            user_id: command.user_id,
-            chain_hash: command.chain_hash,
-        },
-        command: decoded,
-        command_hash: command.command_hash,
-    })
 }
 
 #[cfg(test)]

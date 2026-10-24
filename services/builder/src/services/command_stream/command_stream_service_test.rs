@@ -12,9 +12,10 @@ use crate::{
         command_log::{
             pg::PgCommandLogDb,
             tests::test_utils::{
-                all_commands, append_range, create_test_log, stream_id, stream_with_snapshots, ChatLog, TestLog, KIND,
+                all_commands, append_range, create_test_log, replay, stream_id, stream_with_snapshots, ChatLog,
+                TestLog, KIND,
             },
-            CommandLogDb, StoredCommand, StreamId,
+            CommandLogDb, StoredCommand, StoredSnapshot, StreamId,
         },
     },
     services::command_stream::{CommandStreamConfig, CommandStreamService, StreamState},
@@ -39,6 +40,19 @@ async fn fixture() -> Option<Fixture> {
 }
 
 impl Fixture {
+    /// A service that snapshots every `every` versions and keeps the latest `keep` snapshots.
+    fn snapshotting(&self, every: i64, keep: i64) -> Service {
+        CommandStreamService::new(
+            self.log.db.clone(),
+            self.inbox.db.clone(),
+            CommandStreamConfig {
+                snapshot_every: every,
+                keep_snapshots: keep,
+                ..CommandStreamConfig::default()
+            },
+        )
+    }
+
     async fn load(&self, id: &StreamId) -> StreamState<ChatState> {
         self.service.load::<ChatState>(id).await.unwrap()
     }
@@ -457,4 +471,132 @@ async fn a_log_contradicting_the_confirmed_history_makes_the_stream_reload() {
         other.commands,
         "the log is left alone"
     );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Replay and snapshots
+// ---------------------------------------------------------------------------------------------
+
+#[test]
+async fn replaying_brings_the_replica_up_to_the_confirmed_version() {
+    let Some(fx) = fixture().await else { return };
+    let id = stream_id();
+    let mut state = fx.load(&id).await;
+    for text in ["a", "b", "c", "d", "e"] {
+        fx.send(&id, text).await;
+    }
+    fx.service.sync(&mut state).await.unwrap();
+    assert_eq!(state.replica().version(), 0, "the replica trails the confirmed version");
+
+    let outcome = fx.service.replay(&mut state).await.unwrap();
+
+    let expected = replay(None, &all_commands(&fx.log.db, &id).await);
+    assert!(
+        outcome.checkpoint.is_none() && !outcome.reload,
+        "no checkpoint before 100"
+    );
+    assert_eq!(state.replica().version(), 5);
+    assert_eq!(state.replica().state(), expected.state());
+    assert_eq!(state.replica().hash(), expected.hash());
+}
+
+#[test]
+async fn a_checkpoint_stores_its_snapshot_and_the_tail_continues_after_it() {
+    let Some(fx) = fixture().await else { return };
+    let id = stream_id();
+    let service = fx.snapshotting(4, 3);
+    let mut state = fx.load(&id).await;
+    for i in 0..10 {
+        fx.send(&id, &format!("m{i}")).await;
+    }
+    service.sync(&mut state).await.unwrap();
+
+    let outcome = service.replay(&mut state).await.unwrap();
+
+    // Versions 4 and 8 were passed; the latest checkpoint is the one reported and kept.
+    let commands = all_commands(&fx.log.db, &id).await;
+    let at_8 = replay(None, &commands[..8]);
+    let checkpoint = outcome.checkpoint.expect("a checkpoint");
+    assert_eq!((checkpoint.version, checkpoint.state_hash), (8, at_8.hash()));
+    assert_eq!(checkpoint.chain_hash, at_8.chain_hash());
+    assert!(!outcome.reload);
+    let stored = fx.log.db.latest_snapshot(&id, 10).await.unwrap().unwrap();
+    assert_eq!((stored.version, stored.hash), (8, at_8.hash()));
+    assert_eq!(state.snapshot().map(|s| s.version), Some(8));
+    assert_eq!(versions(state.tail()), vec![9, 10]);
+    assert_eq!(state.replica().version(), 10);
+
+    let loaded = fx.load(&id).await;
+    assert_eq!(loaded.snapshot().map(|s| s.version), Some(8));
+    assert_eq!(versions(loaded.tail()), vec![9, 10]);
+    assert_eq!(loaded.replica().state(), state.replica().state());
+}
+
+#[test]
+async fn instances_reaching_the_same_checkpoint_both_keep_it() {
+    let Some(fx) = fixture().await else { return };
+    let id = stream_id();
+    let service = fx.snapshotting(4, 3);
+    let mut first = fx.load(&id).await;
+    let mut second = fx.load(&id).await;
+    for i in 0..4 {
+        fx.send(&id, &format!("m{i}")).await;
+    }
+    service.sync(&mut first).await.unwrap();
+    service.sync(&mut second).await.unwrap();
+
+    let a = service.replay(&mut first).await.unwrap();
+    let b = service.replay(&mut second).await.unwrap();
+
+    assert!(!a.reload && !b.reload);
+    assert_eq!(a.checkpoint, b.checkpoint);
+    assert_eq!(a.checkpoint.map(|c| c.version), Some(4));
+    assert_eq!(fx.log.db.oldest_snapshot_version(&id).await.unwrap(), Some(4));
+}
+
+#[test]
+async fn a_snapshot_disagreeing_with_the_stored_one_makes_the_stream_reload() {
+    let Some(fx) = fixture().await else { return };
+    let id = stream_id();
+    let service = fx.snapshotting(4, 3);
+    let mut state = fx.load(&id).await;
+    for i in 0..4 {
+        fx.send(&id, &format!("m{i}")).await;
+    }
+    service.sync(&mut state).await.unwrap();
+    // Another instance stored another state for version 4.
+    let forged = StoredSnapshot {
+        version: 4,
+        hash: 12345,
+        chain_hash: state.confirmed_chain_hash(),
+        data: vec![1, 2, 3],
+    };
+    fx.log.db.try_store_snapshot(&id, &forged).await.unwrap();
+
+    let outcome = service.replay(&mut state).await.unwrap();
+
+    assert!(outcome.reload);
+    assert!(outcome.checkpoint.is_none());
+    assert_eq!(fx.log.db.latest_snapshot(&id, 4).await.unwrap(), Some(forged));
+}
+
+#[test]
+async fn only_the_latest_snapshots_are_kept_and_an_instance_behind_the_rest_reloads() {
+    let Some(fx) = fixture().await else { return };
+    let id = stream_id();
+    let service = fx.snapshotting(2, 2);
+    let mut state = fx.load(&id).await;
+    let mut behind = fx.load(&id).await;
+    for round in 0..4 {
+        fx.send(&id, &format!("a{round}")).await;
+        fx.send(&id, &format!("b{round}")).await;
+        service.sync(&mut state).await.unwrap();
+        service.replay(&mut state).await.unwrap();
+    }
+
+    // Snapshots were stored at 2, 4, 6 and 8; the latest two stay, with the commands from the older one.
+    assert_eq!(fx.log.db.oldest_snapshot_version(&id).await.unwrap(), Some(6));
+    assert_eq!(versions(&all_commands(&fx.log.db, &id).await), vec![6, 7, 8]);
+    let outcome = service.sync(&mut behind).await.unwrap();
+    assert!(outcome.reload, "the commands it needs are pruned");
 }

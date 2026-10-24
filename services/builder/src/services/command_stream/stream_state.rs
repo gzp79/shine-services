@@ -1,6 +1,10 @@
+use crate::models::CommandStreamError;
 use crate::repositories::command_inbox::{InboxBatch, InboxId};
 use crate::repositories::command_log::{StoredCommand, StoredSnapshot, StreamId};
-use shine_game::replica::{decode_command, encode_command, fold_chain_hash, Command, ReplayState, Replica};
+use shine_game::replica::{
+    decode_command, encode_command, encode_snapshot, fold_chain_hash, Command, CommandEnvelope, CommandHeader,
+    ReplayState, Replica,
+};
 use uuid::Uuid;
 
 /// A command taken from the inbox, waiting to be persisted. It has no version: that is decided when
@@ -90,6 +94,41 @@ impl<S: ReplayState> StreamState<S> {
 
     pub fn confirmed_chain_hash(&self) -> u64 {
         self.confirmed_chain_hash
+    }
+
+    /// Applies the confirmed commands the replica has not seen yet. Returns the snapshots of the checkpoint
+    /// versions it passed (multiples of `snapshot_every`), each taken at exactly its version even when
+    /// more commands follow, oldest first.
+    pub fn replay(&mut self, snapshot_every: i64) -> Result<Vec<StoredSnapshot>, CommandStreamError> {
+        let mut snapshots = Vec::new();
+        let start = self
+            .tail
+            .iter()
+            .position(|command| command.version > self.replica.version())
+            .unwrap_or(self.tail.len());
+        for command in &self.tail[start..] {
+            let envelope = to_envelope::<S>(command)?;
+            self.replica
+                .apply_next(&envelope)
+                .map_err(|err| CommandStreamError::Corrupt(format!("command {}: {err}", command.version)))?;
+            if snapshot_every > 0 && command.version % snapshot_every == 0 {
+                let data = encode_snapshot(self.replica.state())
+                    .map_err(|err| CommandStreamError::Corrupt(format!("snapshot {}: {err}", command.version)))?;
+                snapshots.push(StoredSnapshot {
+                    version: command.version,
+                    hash: self.replica.hash(),
+                    chain_hash: self.replica.chain_hash(),
+                    data,
+                });
+            }
+        }
+        Ok(snapshots)
+    }
+
+    /// Makes `snapshot` the stream's latest one; the tail goes on after it.
+    pub fn set_snapshot(&mut self, snapshot: StoredSnapshot) {
+        self.tail.retain(|command| command.version > snapshot.version);
+        self.snapshot = Some(snapshot);
     }
 
     /// The latest inbox position known to be in the log.
@@ -194,4 +233,19 @@ impl<S: ReplayState> StreamState<S> {
         self.tail.push(command);
         Ok(())
     }
+}
+
+pub fn to_envelope<S: ReplayState>(command: &StoredCommand) -> Result<CommandEnvelope<S::Command>, CommandStreamError> {
+    let decoded = decode_command::<S>(&command.data)
+        .map_err(|err| CommandStreamError::Corrupt(format!("command {}: {err}", command.version)))?;
+    Ok(CommandEnvelope {
+        header: CommandHeader {
+            version: command.version,
+            command_id: command.command_id,
+            user_id: command.user_id,
+            chain_hash: command.chain_hash,
+        },
+        command: decoded,
+        command_hash: command.command_hash,
+    })
 }

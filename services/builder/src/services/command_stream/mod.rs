@@ -8,6 +8,6 @@ mod stream_state;
 
 pub use self::{
     command_stream_config::CommandStreamConfig,
-    command_stream_service::{CommandStreamService, SyncOutcome},
+    command_stream_service::{CommandStreamService, ReplayOutcome, SyncOutcome},
     stream_state::StreamState,
 };
