@@ -186,8 +186,10 @@ New files are target state.
 | `services/builder/src/repositories/command_inbox/redis/` | Inbox write (`XADD` + `EXPIRE` + `PUBLISH`), per-stream poll, trim, wake publish and listen. |
 | `services/builder/src/services/command_stream/command_stream_service.rs` | Stateless service over the log and the inbox: `load` a stream, `sync` it (poll the inbox, version, append, adopt what other instances stored, re-sequence the rest, trim, announce), and `replay` it (apply the confirmed commands to the replica, store the snapshot of the latest checkpoint, prune old snapshots). |
 | `services/builder/src/services/command_stream/stream_state.rs` | The per-stream state the service works on: replica, snapshot, tail, confirmed version and chain hash, waiting commands, inbox cursor, latest stored inbox position. |
-| `services/builder/src/services/command_stream/stream_worker.rs` | Per-stream task: wake and tick loop, calls to the service, subscriber cursors, fan-out, unload. |
-| `services/builder/src/services/command_stream/stream_registry.rs` | Spawns and routes to workers from the hub's subscription events; owns the shared wake listener. |
+| `services/builder/src/services/command_stream/stream_worker.rs` | Per-stream task: wake and backstop loop, calls to the service, subscriber cursors, fan-out, grace period and unload, reload, giving up (`Unsynced`). Its handle does not depend on the kind of the stream. |
+| `services/builder/src/services/command_stream/stream_message.rs` | What a worker sends to its subscribers (`Sync`, `Commands`, `Checkpoint`, `Reset`, `Unsynced`); independent of the hub and of any wire format, and without the inbox position. |
+| `services/builder/src/services/command_stream/stream_egress.rs` | The interface a worker sends through; the hub implements it. |
+| `services/builder/src/services/command_stream/stream_registry.rs` | The workers of this instance by stream id, and the table of registered kinds (how to start a worker, how to check a command). Starts a worker on the first subscribe, routes inbox wakes to workers, releases a connection's streams on disconnect, shuts workers down. |
 | `services/builder/src/services/hub/hub_command.rs` | `SubscribeStream` and `UnsubscribeStream` control commands. |
 | `services/builder/src/services/hub/hub_connections.rs` | Per-connection stream set, dropped with the connection. |
 | `services/builder/src/routes/ws/connect.rs` | Stream frames: subscribe, unsubscribe, command ingest. |

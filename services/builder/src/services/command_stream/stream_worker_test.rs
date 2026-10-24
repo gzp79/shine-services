@@ -19,122 +19,22 @@ use crate::{
         },
     },
     services::command_stream::{
-        spawn_worker, CommandStreamConfig, CommandStreamService, StreamEgress, StreamMessage, WorkerConfig,
-        WorkerHandle,
+        spawn_worker,
+        stream_test_utils::{kinds, quiet, versions_of, wait_finished, TestEgress},
+        CommandStreamConfig, CommandStreamService, StreamMessage, WorkerConfig, WorkerHandle,
     },
 };
 use shine_game::replica::{encode_command, ChatCommand, ChatState};
 use shine_test::test;
 use std::{
-    collections::{HashMap, HashSet},
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
+        Arc,
     },
     time::Duration,
 };
-use tokio::time::{sleep, timeout};
+use tokio::time::sleep;
 use uuid::Uuid;
-
-const WAIT: Duration = Duration::from_secs(5);
-
-// ---------------------------------------------------------------------------------------------
-// The sink and the harness
-// ---------------------------------------------------------------------------------------------
-
-#[derive(Default)]
-struct EgressInner {
-    received: HashMap<Uuid, Vec<Arc<StreamMessage>>>,
-    dead: HashSet<Uuid>,
-}
-
-/// Records what is sent to each connection; a connection can be made dead.
-#[derive(Clone, Default)]
-struct TestEgress {
-    inner: Arc<Mutex<EgressInner>>,
-}
-
-impl StreamEgress for TestEgress {
-    async fn send(&self, connection_id: Uuid, message: Arc<StreamMessage>) -> bool {
-        let mut inner = self.inner.lock().unwrap();
-        if inner.dead.contains(&connection_id) {
-            return false;
-        }
-        inner.received.entry(connection_id).or_default().push(message);
-        true
-    }
-}
-
-impl TestEgress {
-    fn messages(&self, connection_id: Uuid) -> Vec<Arc<StreamMessage>> {
-        self.inner
-            .lock()
-            .unwrap()
-            .received
-            .get(&connection_id)
-            .cloned()
-            .unwrap_or_default()
-    }
-
-    fn kill(&self, connection_id: Uuid) {
-        self.inner.lock().unwrap().dead.insert(connection_id);
-    }
-
-    fn revive(&self, connection_id: Uuid) {
-        self.inner.lock().unwrap().dead.remove(&connection_id);
-    }
-
-    /// Waits until the messages of the connection satisfy `condition`.
-    async fn wait(&self, connection_id: Uuid, condition: impl Fn(&[Arc<StreamMessage>]) -> bool) {
-        let result = timeout(WAIT, async {
-            loop {
-                if condition(&self.messages(connection_id)) {
-                    return;
-                }
-                sleep(Duration::from_millis(5)).await;
-            }
-        })
-        .await;
-        assert!(result.is_ok(), "timed out; got {:#?}", self.messages(connection_id));
-    }
-}
-
-/// The versions of the commands a connection was sent for a stream, in order, from syncs and command
-/// messages.
-fn versions_of(messages: &[Arc<StreamMessage>], stream: &StreamId) -> Vec<i64> {
-    let mut versions = Vec::new();
-    for message in messages.iter().filter(|m| m.stream_id() == stream) {
-        match message.as_ref() {
-            StreamMessage::Sync { commands, .. } | StreamMessage::Commands { commands, .. } => {
-                versions.extend(commands.iter().map(|c| c.version));
-            }
-            _ => {}
-        }
-    }
-    versions
-}
-
-fn kinds(messages: &[Arc<StreamMessage>]) -> Vec<String> {
-    messages
-        .iter()
-        .map(|m| match m.as_ref() {
-            StreamMessage::Sync { commands, .. } => format!("sync:{}", commands.len()),
-            StreamMessage::Commands { commands, .. } => format!("commands:{}", commands.len()),
-            StreamMessage::Checkpoint { version, .. } => format!("checkpoint:{version}"),
-            StreamMessage::Reset { .. } => "reset".to_string(),
-            StreamMessage::Unsynced { .. } => "unsynced".to_string(),
-        })
-        .collect()
-}
-
-fn quiet() -> WorkerConfig {
-    WorkerConfig {
-        backstop: Duration::from_secs(3600),
-        min_wake_spacing: Duration::ZERO,
-        unload_grace: Duration::from_secs(3600),
-        max_failures: 3,
-    }
-}
 
 struct Harness {
     log: TestLog,
@@ -184,16 +84,6 @@ impl Harness {
         self.egress.wait(connection, |m| !m.is_empty()).await;
         connection
     }
-}
-
-async fn wait_finished(worker: &WorkerHandle) {
-    let result = timeout(WAIT, async {
-        while !worker.is_finished() {
-            sleep(Duration::from_millis(5)).await;
-        }
-    })
-    .await;
-    assert!(result.is_ok(), "the worker did not end");
 }
 
 // ---------------------------------------------------------------------------------------------

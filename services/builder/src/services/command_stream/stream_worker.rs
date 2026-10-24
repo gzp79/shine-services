@@ -84,6 +84,16 @@ impl WorkerHandle {
     pub fn is_finished(&self) -> bool {
         self.messages.is_closed()
     }
+
+    /// Resolves when the worker has ended.
+    pub async fn finished(&self) {
+        self.messages.closed().await;
+    }
+
+    /// Whether both handles belong to the same worker.
+    pub fn same_worker(&self, other: &WorkerHandle) -> bool {
+        Arc::ptr_eq(&self.wake, &other.wake)
+    }
 }
 
 enum Flow {

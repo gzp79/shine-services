@@ -138,6 +138,9 @@ shine-infra-macros = { path = "./crates/shine-infra-macros" }
 shine-infra = { path = "./crates/shine-infra" }
 shine-game = { path = "./crates/shine-game" }
 
+[profile.release]
+panic = "abort"
+
 [profile.release-lto]
 inherits = "release"
 strip = "debuginfo"
