@@ -161,7 +161,7 @@ impl<L: CommandLogDb, I: CommandInboxDb> CommandStreamService<L, I> {
                     state_hash: snapshot.hash,
                 });
                 state.set_snapshot(snapshot);
-                if let Err(err) = self.log.prune(state.stream_id(), self.config.keep_snapshots).await {
+                if let Err(err) = self.log.prune(state.stream_id(), i64::MAX).await {
                     tracing::warn!("[{}] Failed to prune the log: {err:#?}", state.stream_id());
                 }
             }
