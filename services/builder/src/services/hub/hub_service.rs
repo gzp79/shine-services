@@ -1,18 +1,24 @@
 use crate::services::hub::hub_metrics::hub_metrics;
 use crate::{
     models::{
-        messages::{DisconnectReason, HubEvent, HubMessage, TopicKey},
+        messages::{
+            DisconnectReason, HubEvent, HubMessage, NackReason, StreamEvent, StreamMessage, SubscribeFailure, TopicKey,
+        },
         HubError,
     },
+    repositories::command_inbox::redis::RedisCommandInboxDb,
+    repositories::command_log::{pg::PgCommandLogDb, StreamId},
     repositories::hub_registry::{redis::RedisHubConnectionDb, HubConnection, HubConnectionDb, HubRegistry},
     services::{
+        command_stream::StreamRegistry,
         hub::{
             hub_command::ControlCommand,
             hub_connections::{Connections, DeadConnection, RemovedConnection},
+            hub_streams::StreamSubscriptions,
             hub_subscribers::Subscribers,
-            tasks::{ChatDispatcher, Heartbeat, SessionChecker},
+            tasks::{ChatDispatcher, Heartbeat, SessionChecker, StreamDispatcher},
         },
-        ChatService,
+        ChatService, StreamEgress,
     },
 };
 use opentelemetry::trace::SpanContext;
@@ -20,7 +26,10 @@ use shine_infra::session::{CurrentUserService, SessionKey};
 use shine_infra::telemetry::{current_span_context, label, link_span};
 use std::collections::VecDeque;
 use std::time::Instant;
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{Arc, OnceLock},
+    time::Duration,
+};
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::{info_span, Instrument};
 use uuid::Uuid;
@@ -39,11 +48,17 @@ pub struct HubStats {
     pub subscribers: usize,
 }
 
+/// How long the stream workers get to persist what is waiting when the hub shuts down.
+const STREAMS_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
+
 struct Inner {
     control_tx: mpsc::UnboundedSender<(ControlCommand, SpanContext, Instant)>,
     connections: Connections,
     subscribers: Subscribers,
     hub_registry: RedisHubConnectionDb,
+    /// The streams of this instance, when the hub serves streams.
+    streams: OnceLock<StreamRegistry<PgCommandLogDb, RedisCommandInboxDb>>,
+    subscriptions: StreamSubscriptions,
 }
 
 /// Messaging service for connected users.
@@ -53,11 +68,42 @@ pub struct HubService {
 }
 
 impl HubService {
+    /// A hub without streams.
+    #[cfg(test)]
     pub async fn new(
         hub_registry: RedisHubConnectionDb,
         session_service: Arc<CurrentUserService>,
         chat_service: ChatService,
         intervals: HubIntervals,
+    ) -> Self {
+        Self::build(
+            hub_registry,
+            session_service,
+            chat_service,
+            intervals,
+            None::<fn(&HubService) -> StreamRegistry<PgCommandLogDb, RedisCommandInboxDb>>,
+        )
+        .await
+    }
+
+    /// A hub that also serves streams. `streams` makes the registry of the streams from the hub itself, which its
+    /// workers send through, so the two can exist together.
+    pub async fn with_streams(
+        hub_registry: RedisHubConnectionDb,
+        session_service: Arc<CurrentUserService>,
+        chat_service: ChatService,
+        intervals: HubIntervals,
+        streams: impl FnOnce(&HubService) -> StreamRegistry<PgCommandLogDb, RedisCommandInboxDb>,
+    ) -> Self {
+        Self::build(hub_registry, session_service, chat_service, intervals, Some(streams)).await
+    }
+
+    async fn build(
+        hub_registry: RedisHubConnectionDb,
+        session_service: Arc<CurrentUserService>,
+        chat_service: ChatService,
+        intervals: HubIntervals,
+        streams: Option<impl FnOnce(&HubService) -> StreamRegistry<PgCommandLogDb, RedisCommandInboxDb>>,
     ) -> Self {
         let (control_tx, control_rx) = mpsc::unbounded_channel();
 
@@ -67,6 +113,8 @@ impl HubService {
                 connections: Connections::new(),
                 subscribers: Subscribers::new(),
                 hub_registry,
+                streams: OnceLock::new(),
+                subscriptions: StreamSubscriptions::default(),
             }),
         };
 
@@ -81,8 +129,77 @@ impl HubService {
             SessionChecker::start(service.clone(), session_service, intervals.session_check).await,
             ChatDispatcher::start(service.clone(), chat_service, intervals.chat).await,
         ];
+        if let Some(streams) = streams {
+            let registry = streams(&service);
+            let _ = service.inner.streams.set(registry.clone());
+            // Not among the background tasks the loop aborts when it ends: on shutdown it has the workers
+            // persist what is waiting, and ends on its own.
+            StreamDispatcher::start(service.clone(), registry, STREAMS_SHUTDOWN_TIMEOUT).await;
+        }
         Self::start_dispatcher(service.clone(), control_rx, background_tasks);
         service
+    }
+
+    /// The stream workers of this instance, if the hub serves streams.
+    pub fn streams(&self) -> Option<&StreamRegistry<PgCommandLogDb, RedisCommandInboxDb>> {
+        self.inner.streams.get()
+    }
+
+    /// Subscribes the connection to a stream (or asks for it to be synced again), as `requested_kind` if the
+    /// stream is new. What the stream carries is then sent to the connection through the hub. This is the way
+    /// for every transport.
+    ///
+    /// The stream methods of the hub trust their caller: the transport has authenticated the user, and holds
+    /// the id the hub gave its connection. Neither is ever taken from the client. What the client does send
+    /// (stream id, kind, command) is checked here and in the registry.
+    pub async fn subscribe_stream(
+        &self,
+        connection_id: Uuid,
+        stream_id: StreamId,
+        requested_kind: &str,
+    ) -> Result<(), SubscribeFailure> {
+        let registry = self.inner.streams.get().ok_or(SubscribeFailure::Failed)?;
+        // The connection's own subscription decides first: its stream may not have a worker yet, nor be in the log.
+        if self
+            .inner
+            .subscriptions
+            .kind_of(connection_id, &stream_id)
+            .is_some_and(|kind| kind != requested_kind)
+        {
+            return Err(SubscribeFailure::KindMismatch);
+        }
+        let kind = registry
+            .open(&stream_id, requested_kind)
+            .await
+            .map_err(|err| err.subscribe_failure())?;
+        // Known to the hub at once, so that what the connection does next sees it; the loop follows.
+        self.inner
+            .subscriptions
+            .subscribe(connection_id, stream_id.clone(), kind.clone());
+        self.request_stream_subscribe(connection_id, stream_id, kind)
+            .map_err(|_| SubscribeFailure::Failed)
+    }
+
+    pub fn unsubscribe_stream(&self, connection_id: Uuid, stream_id: StreamId) -> Result<(), HubError> {
+        self.inner.subscriptions.unsubscribe(connection_id, &stream_id);
+        self.request_stream_unsubscribe(connection_id, stream_id)
+    }
+
+    /// Queues a command of the connection, which has to be subscribed to the stream. It does not go through
+    /// the hub's loop. The sender sees its command come back with its version, in the stream.
+    pub async fn send_stream_command(
+        &self,
+        connection_id: Uuid,
+        user_id: Uuid,
+        stream_id: &StreamId,
+        command_id: Uuid,
+        command: &str,
+    ) -> Result<(), NackReason> {
+        let kind = self.inner.subscriptions.kind_of(connection_id, stream_id);
+        match (kind, self.inner.streams.get()) {
+            (Some(kind), Some(registry)) => registry.push(stream_id, &kind, user_id, command_id, command).await,
+            _ => Err(NackReason::NotSubscribed),
+        }
     }
 
     fn send_control(&self, command: ControlCommand) -> Result<(), HubError> {
@@ -143,6 +260,21 @@ impl HubService {
     /// connection with the given reason once the connection is actually removed.
     pub fn request_drop(&self, user_id: Uuid, connection_id: Uuid, reason: DisconnectReason) -> Result<(), HubError> {
         self.send_control(ControlCommand::DisconnectUser { user_id, connection_id, reason })
+    }
+
+    /// Subscribes the connection to a stream, or asks for it to be synced again if it already is.
+    /// Ignored by the loop when the connection is no longer registered.
+    pub fn request_stream_subscribe(
+        &self,
+        connection_id: Uuid,
+        stream_id: StreamId,
+        kind: String,
+    ) -> Result<(), HubError> {
+        self.send_control(ControlCommand::SubscribeStream { connection_id, stream_id, kind })
+    }
+
+    pub fn request_stream_unsubscribe(&self, connection_id: Uuid, stream_id: StreamId) -> Result<(), HubError> {
+        self.send_control(ControlCommand::UnsubscribeStream { connection_id, stream_id })
     }
 
     /// Requests hub shutdown.
@@ -367,6 +499,23 @@ impl HubService {
                 self.process_registry_change(user_id).await;
                 true
             }
+            ControlCommand::SubscribeStream { connection_id, stream_id, kind } => {
+                // A subscribe that comes after the connection is gone must not start anything.
+                if self.inner.connections.contains(connection_id).await {
+                    self.publish_internal(StreamEvent::Subscribed { connection_id, stream_id, kind })
+                        .await;
+                } else {
+                    self.inner.subscriptions.remove_connection(connection_id);
+                }
+                true
+            }
+            ControlCommand::UnsubscribeStream { connection_id, stream_id } => {
+                if self.inner.connections.contains(connection_id).await {
+                    self.publish_internal(StreamEvent::Unsubscribed { connection_id, stream_id })
+                        .await;
+                }
+                true
+            }
             ControlCommand::Shutdown => {
                 self.shutdown().await;
                 false
@@ -465,6 +614,7 @@ impl HubService {
             .publish(HubMessage::Hub(HubEvent::Shutdown))
             .await;
         self.inner.subscribers.clear().await;
+        self.inner.subscriptions.clear();
 
         if let Err(err) = self.inner.hub_registry.unlisten_registry_changes().await {
             tracing::warn!("Failed to stop listening to hub registry changes: {err:#?}");
@@ -478,11 +628,20 @@ impl HubService {
         }
     }
 
+    /// Delivers a stream event to the internal subscribers only: subscribing and unsubscribing must never
+    /// load the sockets' queues.
+    async fn publish_internal(&self, event: StreamEvent) {
+        self.inner.subscribers.publish(HubMessage::StreamEvent(event)).await;
+    }
+
     /// Delivers a lifecycle `HubEvent` to every internal subscriber and every topic-matching
     /// connection, pruning any connection found dead.
     async fn publish(&self, event: HubEvent) {
         let mut pending = VecDeque::from([event]);
         while let Some(event) = pending.pop_front() {
+            if let HubEvent::UserDisconnected { connection_id, .. } = &event {
+                self.inner.subscriptions.remove_connection(*connection_id);
+            }
             let message = HubMessage::Hub(event);
             // Internal subscribers first: only the loop delivers to them.
             self.inner.subscribers.publish(message.clone()).await;
@@ -499,6 +658,21 @@ impl HubService {
                         pending.push_back(HubEvent::UserDisconnected { user_id, connection_id, reason });
                     }
                 }
+            }
+        }
+    }
+}
+
+impl StreamEgress for HubService {
+    async fn send(&self, connection_id: Uuid, message: Arc<StreamMessage>) -> bool {
+        match self
+            .send_to_connection(connection_id, HubMessage::Stream(message))
+            .await
+        {
+            Ok(queued) => queued,
+            Err(err) => {
+                tracing::warn!("[{connection_id}] Failed to send a stream message: {err:#?}");
+                false
             }
         }
     }

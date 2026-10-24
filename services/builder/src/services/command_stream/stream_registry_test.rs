@@ -3,11 +3,12 @@
 //! `SHINE_TEST_REDIS_CNS`.
 
 use crate::{
+    models::messages::{NackReason, SubscribeFailure},
     repositories::{
         command_inbox::{
             redis::RedisCommandInboxDb,
             tests::test_utils::{create_test_inbox, TestInbox},
-            CommandInboxDb,
+            CommandInboxDb, InboxId,
         },
         command_log::{
             pg::PgCommandLogDb,
@@ -17,7 +18,7 @@ use crate::{
     },
     services::command_stream::{
         stream_test_utils::{kinds, quiet, versions_of, TestEgress, WAIT},
-        CommandStreamConfig, CommandStreamService, RegistryError, StreamRegistry, WorkerConfig,
+        CommandStreamConfig, CommandStreamService, RegistryError, StreamRegistry, WorkerConfig, MAX_COMMAND_BYTES,
     },
 };
 use shine_game::replica::{encode_command, ChatCommand, ChatState, PixelMapCommand, PixelMapState, ReplayState};
@@ -30,7 +31,7 @@ struct Harness {
     log: TestLog,
     inbox: TestInbox,
     egress: TestEgress,
-    registry: StreamRegistry<PgCommandLogDb>,
+    registry: StreamRegistry<PgCommandLogDb, RedisCommandInboxDb>,
 }
 
 async fn harness(worker: WorkerConfig) -> Option<Harness> {
@@ -38,9 +39,9 @@ async fn harness(worker: WorkerConfig) -> Option<Harness> {
     let inbox = create_test_inbox(60).await?;
     let egress = TestEgress::default();
     let service = || CommandStreamService::new(log.db.clone(), inbox.db.clone(), CommandStreamConfig::default());
-    let registry = StreamRegistry::builder(log.db.clone())
-        .register::<ChatState, _, _>(service(), egress.clone(), worker.clone())
-        .register::<PixelMapState, _, _>(service(), egress.clone(), worker)
+    let registry = StreamRegistry::builder(log.db.clone(), inbox.db.clone())
+        .register::<ChatState, _>(service(), egress.clone(), worker.clone())
+        .register::<PixelMapState, _>(service(), egress.clone(), worker)
         .build()
         .unwrap();
     Some(Harness { log, inbox, egress, registry })
@@ -81,7 +82,7 @@ impl Harness {
     }
 }
 
-async fn wait_for_workers(registry: &StreamRegistry<PgCommandLogDb>, count: usize) {
+async fn wait_for_workers(registry: &StreamRegistry<PgCommandLogDb, RedisCommandInboxDb>, count: usize) {
     let result = timeout(WAIT, async {
         while registry.worker_count() != count {
             sleep(Duration::from_millis(5)).await;
@@ -106,9 +107,9 @@ async fn a_kind_registered_twice_fails_the_build() {
     };
     let service = || CommandStreamService::new(log.db.clone(), inbox.db.clone(), CommandStreamConfig::default());
 
-    let result = StreamRegistry::builder(log.db.clone())
-        .register::<ChatState, _, _>(service(), TestEgress::default(), quiet())
-        .register::<ChatState, _, _>(service(), TestEgress::default(), quiet())
+    let result = StreamRegistry::builder(log.db.clone(), inbox.db.clone())
+        .register::<ChatState, _>(service(), TestEgress::default(), quiet())
+        .register::<ChatState, _>(service(), TestEgress::default(), quiet())
         .build();
 
     assert!(matches!(result, Err(RegistryError::DuplicateKind(kind)) if kind == ChatState::KIND));
@@ -162,6 +163,70 @@ async fn commands_are_checked_by_the_kind_of_their_stream() {
     );
     assert!(!h.registry.validate(ChatState::KIND, &paint), "not a chat command");
     assert!(!h.registry.validate("nothing", &chat), "unknown kind");
+}
+
+#[test]
+async fn the_reasons_a_stream_cannot_be_opened_are_what_a_client_is_told() {
+    let Some(h) = harness(quiet()).await else { return };
+    let id = stream_id();
+    h.join(&id, ChatState::KIND).await;
+
+    let unknown = h.registry.open(&stream_id(), "nothing").await.unwrap_err();
+    let mismatch = h.registry.open(&id, PixelMapState::KIND).await.unwrap_err();
+
+    assert_eq!(unknown.subscribe_failure(), SubscribeFailure::UnknownKind);
+    assert_eq!(mismatch.subscribe_failure(), SubscribeFailure::KindMismatch);
+}
+
+#[test]
+async fn a_valid_command_is_queued_in_the_inbox_of_its_stream() {
+    let Some(h) = harness(quiet()).await else { return };
+    let id = stream_id();
+    let (command_id, user_id) = (Uuid::new_v4(), Uuid::new_v4());
+    let data = encode_command::<ChatState>(&ChatCommand::Add { text: "hi".into() }).unwrap();
+
+    h.registry
+        .push(&id, ChatState::KIND, user_id, command_id, &data)
+        .await
+        .unwrap();
+
+    let queued = h.inbox.db.poll(&id, &InboxId::START, 10).await.unwrap().entries;
+    assert_eq!(queued.len(), 1);
+    assert_eq!((queued[0].command_id, queued[0].user_id), (command_id, user_id));
+}
+
+#[test]
+async fn a_command_that_is_not_valid_for_the_kind_is_refused_and_not_queued() {
+    let Some(h) = harness(quiet()).await else { return };
+    let id = stream_id();
+    let paint = encode_command::<PixelMapState>(&PixelMapCommand::Paint { x: 1, y: 1, color: 1 }).unwrap();
+    let off_the_map = encode_command::<PixelMapState>(&PixelMapCommand::Paint { x: 90, y: 1, color: 1 }).unwrap();
+    let too_long = encode_command::<ChatState>(&ChatCommand::Add {
+        text: "a".repeat(MAX_COMMAND_BYTES + 1),
+    })
+    .unwrap();
+    let push = |kind: &'static str, command: String| {
+        let (registry, id) = (h.registry.clone(), id.clone());
+        async move { registry.push(&id, kind, Uuid::nil(), Uuid::new_v4(), &command).await }
+    };
+
+    let results = [
+        push(ChatState::KIND, paint.clone()).await,
+        push(PixelMapState::KIND, off_the_map).await,
+        push(ChatState::KIND, "{not json".to_string()).await,
+        push(ChatState::KIND, too_long).await,
+        push("nothing", paint).await,
+    ];
+
+    assert!(results.iter().all(|r| *r == Err(NackReason::Invalid)), "{results:?}");
+    assert!(h
+        .inbox
+        .db
+        .poll(&id, &InboxId::START, 10)
+        .await
+        .unwrap()
+        .entries
+        .is_empty());
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -220,7 +285,7 @@ async fn a_wake_reaches_the_worker_of_its_stream() {
 #[test]
 async fn the_inbox_wakes_the_workers_without_anyone_calling_wake() {
     let Some(h) = harness(quiet()).await else { return };
-    h.registry.listen(&h.inbox.db).await.unwrap();
+    h.registry.listen().await.unwrap();
     let id = stream_id();
     let connection = h.join(&id, ChatState::KIND).await;
 
@@ -228,13 +293,13 @@ async fn the_inbox_wakes_the_workers_without_anyone_calling_wake() {
     h.push_chat(&id, "b").await;
 
     h.egress.wait(connection, |m| versions_of(m, &id) == [1, 2]).await;
-    h.registry.unlisten(&h.inbox.db).await.unwrap();
+    h.registry.unlisten().await.unwrap();
 }
 
 #[test]
 async fn streams_of_different_kinds_work_side_by_side_for_one_connection() {
     let Some(h) = harness(quiet()).await else { return };
-    h.registry.listen(&h.inbox.db).await.unwrap();
+    h.registry.listen().await.unwrap();
     let (chat, map) = (stream_id(), stream_id());
     let connection = h.join(&chat, ChatState::KIND).await;
     h.join_as(connection, &map, PixelMapState::KIND).await;
@@ -251,7 +316,7 @@ async fn streams_of_different_kinds_work_side_by_side_for_one_connection() {
     assert_eq!(all_commands(&h.log.db, &map).await.len(), 2);
     assert_eq!(h.log.db.head(&chat).await.unwrap().unwrap().kind, ChatState::KIND);
     assert_eq!(h.log.db.head(&map).await.unwrap().unwrap().kind, PixelMapState::KIND);
-    h.registry.unlisten(&h.inbox.db).await.unwrap();
+    h.registry.unlisten().await.unwrap();
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -287,6 +352,20 @@ async fn an_unsubscribe_releases_only_that_stream_and_a_stream_can_be_joined_aga
     h.join_as(again, &a, ChatState::KIND).await;
     assert_eq!(kinds(&h.egress.messages(again)), vec!["sync:0"]);
     assert_eq!(h.registry.worker_count(), 2);
+}
+
+#[test]
+async fn ended_workers_are_not_running_and_a_purge_forgets_them() {
+    let Some(h) = harness(short_grace()).await else { return };
+    let id = stream_id();
+    let connection = h.join(&id, ChatState::KIND).await;
+
+    h.registry.unsubscribe(connection, &id);
+
+    wait_for_workers(&h.registry, 0).await;
+    assert_eq!(h.registry.held_workers(), 1, "an ended worker is held until a purge");
+    h.registry.purge();
+    assert_eq!(h.registry.held_workers(), 0);
 }
 
 #[test]

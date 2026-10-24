@@ -1,7 +1,8 @@
 use crate::{
     app_state::AppState,
-    models::messages::{DisconnectReason, HubEvent, HubMessage, TopicKey},
-    routes::ws::message::{ChatWireComment, WSMessageRequest, WSMessageResponse},
+    models::messages::{DisconnectReason, HubEvent, HubMessage, StreamMessage, TopicKey},
+    repositories::command_log::StreamId,
+    routes::ws::message::{stream_message_to_wire, ChatWireComment, WSMessageRequest, WSMessageResponse},
     services::{hub_metrics, ChatService, HubService},
 };
 use axum::{
@@ -22,7 +23,7 @@ use shine_infra::{
         responses::{IntoProblemResponse, Problem, ProblemConfig, ProblemResponse},
     },
 };
-use std::{fmt::Debug, time::Duration};
+use std::{fmt::Debug, sync::Arc, time::Duration};
 use tokio::sync::mpsc;
 use tracing::{
     field::{display, Empty},
@@ -97,7 +98,8 @@ pub async fn connect(
 
 fn event_to_wire_message(message: HubMessage) -> Option<WSMessageResponse> {
     match message {
-        HubMessage::Hub(_) => None,
+        HubMessage::Stream(message) => Some(stream_message_to_wire(&message)),
+        HubMessage::Hub(_) | HubMessage::StreamEvent(_) => None,
         HubMessage::Chat(batch) => {
             let messages = batch
                 .comments
@@ -149,6 +151,9 @@ async fn serve_socket<S, R, E>(
     E: Send + 'static,
 {
     let (tx, rx) = mpsc::channel::<HubMessage>(WS_CLIENT_CHANNEL_CAPACITY);
+    // To answer its own client. Weak, so that it does not keep the channel open: the hub ends the socket by
+    // dropping its sender.
+    let replies = tx.downgrade();
 
     let Some(connection_id) = open_connection(span_context, &hub_service, current_user_id, session_key, tx) else {
         // There is no live connection to keep, so close the socket without emitting a disconnect for it.
@@ -160,22 +165,15 @@ async fn serve_socket<S, R, E>(
     tracing::info!("[{current_user_id}] [{connection_id}] Connected to the hub");
 
     let mut recv_task = {
+        let hub_service = hub_service.clone();
         tokio::spawn(async move {
             while let Some(Ok(message)) = ws_receiver.next().await {
                 tracing::debug!("[{current_user_id}] WsMessage received");
-                if let WsMessage::Text(text) = message {
-                    let msg = match serde_json::from_str::<WSMessageRequest>(&text) {
-                        Ok(WSMessageRequest::Chat { text }) => Some(text),
-                        Err(_) => {
-                            hub_metrics()
-                                .ws_messages_received
-                                .add(1, &[label("kind", "unknown"), label("outcome", "invalid")]);
-                            tracing::trace!("[{current_user_id}] Received invalid message: {text}");
-                            None
-                        }
-                    };
-
-                    if let Some(text) = msg {
+                let WsMessage::Text(text) = message else {
+                    continue;
+                };
+                match serde_json::from_str::<WSMessageRequest>(&text) {
+                    Ok(WSMessageRequest::Chat { text }) => {
                         let span = info_span!(
                             parent: None,
                             "ws message",
@@ -194,6 +192,24 @@ async fn serve_socket<S, R, E>(
                         if let Err(err) = appended {
                             tracing::error!("[{current_user_id}] Failed to append chat message: {err:#?}");
                         }
+                    }
+                    Ok(request) => {
+                        let span = info_span!(
+                            parent: None,
+                            "ws message",
+                            enduser.id = %current_user_id,
+                            ws.connection_id = %connection_id,
+                            ws.message.kind = "stream"
+                        );
+                        handle_stream_request(request, &hub_service, &replies, current_user_id, connection_id)
+                            .instrument(span)
+                            .await;
+                    }
+                    Err(_) => {
+                        hub_metrics()
+                            .ws_messages_received
+                            .add(1, &[label("kind", "unknown"), label("outcome", "invalid")]);
+                        tracing::trace!("[{current_user_id}] Received invalid message: {text}");
                     }
                 }
             }
@@ -233,6 +249,76 @@ async fn serve_socket<S, R, E>(
             send_task.abort();
         }
     }
+}
+
+/// Answers the client of a socket on its own egress channel. This does not go through the hub, which may not
+/// have registered the connection yet when the client's first frame arrives, and would lose the answer.
+fn reply(replies: &mpsc::WeakSender<HubMessage>, message: StreamMessage) {
+    // A channel that is gone, or full, means the client is going away or is too slow: no answer is needed.
+    if let Some(tx) = replies.upgrade() {
+        let _ = tx.try_send(HubMessage::Stream(Arc::new(message)));
+    }
+}
+
+/// Handles a request about streams, sent by the client. The hub is the way to the streams; a refusal is
+/// answered to the client at once.
+async fn handle_stream_request(
+    request: WSMessageRequest,
+    hub_service: &HubService,
+    replies: &mpsc::WeakSender<HubMessage>,
+    user_id: Uuid,
+    connection_id: Uuid,
+) {
+    let (kind, outcome) = match request {
+        WSMessageRequest::StreamSubscribe { stream_id, kind } => {
+            let outcome = match StreamId::parse(&stream_id) {
+                Err(_) => "invalid",
+                Ok(stream_id) => match hub_service
+                    .subscribe_stream(connection_id, stream_id.clone(), &kind)
+                    .await
+                {
+                    Ok(()) => "ok",
+                    Err(reason) => {
+                        reply(replies, StreamMessage::SubscribeFailed { stream_id, reason });
+                        "refused"
+                    }
+                },
+            };
+            ("stream_subscribe", outcome)
+        }
+        WSMessageRequest::StreamUnsubscribe { stream_id } => {
+            let outcome = match StreamId::parse(&stream_id) {
+                Err(_) => "invalid",
+                Ok(stream_id) => match hub_service.unsubscribe_stream(connection_id, stream_id) {
+                    Ok(()) => "ok",
+                    Err(_) => "failed",
+                },
+            };
+            ("stream_unsubscribe", outcome)
+        }
+        WSMessageRequest::StreamCommand { stream_id, command_id, command } => {
+            let outcome = match StreamId::parse(&stream_id) {
+                Err(_) => "invalid",
+                Ok(stream_id) => {
+                    let sent = hub_service
+                        .send_stream_command(connection_id, user_id, &stream_id, command_id, &command.to_string())
+                        .await;
+                    match sent {
+                        Ok(()) => "ok",
+                        Err(reason) => {
+                            reply(replies, StreamMessage::Nack { stream_id, command_id, reason });
+                            "refused"
+                        }
+                    }
+                }
+            };
+            ("stream_command", outcome)
+        }
+        WSMessageRequest::Chat { .. } => return,
+    };
+    hub_metrics()
+        .ws_messages_received
+        .add(1, &[label("kind", kind), label("outcome", outcome)]);
 }
 
 /// Forwards the hub's messages to the socket, and closes it once the hub ends the connection.

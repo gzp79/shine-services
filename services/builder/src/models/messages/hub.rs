@@ -1,5 +1,6 @@
-use crate::models::messages::ChatBatch;
+use crate::models::messages::{ChatBatch, StreamEvent, StreamMessage};
 use shine_infra::session::SessionKey;
+use std::sync::Arc;
 use uuid::Uuid;
 
 /// High level filter for messages sent to the hub bus.
@@ -7,6 +8,7 @@ use uuid::Uuid;
 pub enum TopicKey {
     Hub,
     Chat,
+    Stream,
 }
 
 pub trait ToTopic {
@@ -88,6 +90,10 @@ impl ToTopic for HubEvent {
 pub enum HubMessage {
     Hub(HubEvent),
     Chat(ChatBatch),
+    /// A message of a stream worker to one connection.
+    Stream(Arc<StreamMessage>),
+    /// A change of stream subscriptions, for the internal consumers only.
+    StreamEvent(StreamEvent),
 }
 
 impl ToTopic for HubMessage {
@@ -95,6 +101,8 @@ impl ToTopic for HubMessage {
         match self {
             HubMessage::Hub(event) => event.topic(),
             HubMessage::Chat(batch) => batch.topic(),
+            HubMessage::Stream(message) => message.topic(),
+            HubMessage::StreamEvent(event) => event.topic(),
         }
     }
 }

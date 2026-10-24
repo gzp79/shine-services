@@ -1,5 +1,8 @@
 use crate::{
-    models::{CommandInboxError, CommandLogError},
+    models::{
+        messages::{NackReason, SubscribeFailure},
+        CommandInboxError, CommandLogError,
+    },
     repositories::{
         command_inbox::{CommandInboxDb, InboxWake},
         command_log::{CommandLogDb, StreamId},
@@ -16,6 +19,9 @@ use std::{
 use thiserror::Error as ThisError;
 use uuid::Uuid;
 
+/// Longest command, as JSON text, that is queued.
+pub const MAX_COMMAND_BYTES: usize = 16 * 1024;
+
 #[derive(Debug, ThisError)]
 pub enum RegistryError {
     #[error("Unknown stream kind {0:?}")]
@@ -26,6 +32,17 @@ pub enum RegistryError {
     KindMismatch { stored: String, requested: String },
     #[error(transparent)]
     Log(#[from] CommandLogError),
+}
+
+impl RegistryError {
+    /// What a client is told when this is why it cannot subscribe.
+    pub fn subscribe_failure(&self) -> SubscribeFailure {
+        match self {
+            RegistryError::UnknownKind(_) => SubscribeFailure::UnknownKind,
+            RegistryError::KindMismatch { .. } => SubscribeFailure::KindMismatch,
+            RegistryError::DuplicateKind(_) | RegistryError::Log(_) => SubscribeFailure::Failed,
+        }
+    }
 }
 
 /// What a kind of stream is to the registry. It is made by `register`, which is the only place that
@@ -42,40 +59,41 @@ struct State {
     connections: HashMap<Uuid, HashSet<StreamId>>,
 }
 
-struct Inner<L: CommandLogDb> {
+struct Inner<L: CommandLogDb, I: CommandInboxDb> {
     log: L,
+    inbox: I,
     /// Fixed at startup, so it needs no lock.
     kinds: HashMap<String, KindEntry>,
     state: Mutex<State>,
 }
 
-/// The workers of the streams this instance serves: finds or starts the worker of a stream when a
-/// connection subscribes, routes the wakes of the inbox to the workers, and releases a connection's
-/// streams when it leaves. It does not know the types of the streams' states: each kind is registered
-/// with what it takes to start its workers.
-pub struct StreamRegistry<L: CommandLogDb> {
-    inner: Arc<Inner<L>>,
+/// The streams this instance serves. Its write path checks a command for its kind and queues it in the
+/// inbox of its stream. Its workers are found or started when a connection subscribes, woken by the
+/// inbox, and released with the connection. It does not know the types of the streams' states: each
+/// kind is registered with what it takes to start its workers and to check its commands.
+pub struct StreamRegistry<L: CommandLogDb, I: CommandInboxDb> {
+    inner: Arc<Inner<L, I>>,
 }
 
-impl<L: CommandLogDb> Clone for StreamRegistry<L> {
+impl<L: CommandLogDb, I: CommandInboxDb> Clone for StreamRegistry<L, I> {
     fn clone(&self) -> Self {
         Self { inner: self.inner.clone() }
     }
 }
 
 /// Collects the kinds of streams to serve, at startup. The registry made from it serves exactly those.
-pub struct StreamRegistryBuilder<L: CommandLogDb> {
+pub struct StreamRegistryBuilder<L: CommandLogDb, I: CommandInboxDb> {
     log: L,
+    inbox: I,
     kinds: HashMap<String, KindEntry>,
     duplicate: Option<String>,
 }
 
-impl<L: CommandLogDb + 'static> StreamRegistryBuilder<L> {
+impl<L: CommandLogDb + 'static, I: CommandInboxDb + 'static> StreamRegistryBuilder<L, I> {
     /// Registers the kind `S::KIND`: its workers are started over `service` and send through `egress`.
-    pub fn register<S, I, E>(mut self, service: CommandStreamService<L, I>, egress: E, config: WorkerConfig) -> Self
+    pub fn register<S, E>(mut self, service: CommandStreamService<L, I>, egress: E, config: WorkerConfig) -> Self
     where
         S: ReplayState,
-        I: CommandInboxDb + 'static,
         E: StreamEgress,
     {
         let entry = KindEntry {
@@ -93,13 +111,14 @@ impl<L: CommandLogDb + 'static> StreamRegistryBuilder<L> {
     }
 
     /// Fails if a kind was registered twice.
-    pub fn build(self) -> Result<StreamRegistry<L>, RegistryError> {
+    pub fn build(self) -> Result<StreamRegistry<L, I>, RegistryError> {
         if let Some(kind) = self.duplicate {
             return Err(RegistryError::DuplicateKind(kind));
         }
         Ok(StreamRegistry {
             inner: Arc::new(Inner {
                 log: self.log,
+                inbox: self.inbox,
                 kinds: self.kinds,
                 state: Mutex::new(State::default()),
             }),
@@ -107,10 +126,11 @@ impl<L: CommandLogDb + 'static> StreamRegistryBuilder<L> {
     }
 }
 
-impl<L: CommandLogDb + 'static> StreamRegistry<L> {
-    pub fn builder(log: L) -> StreamRegistryBuilder<L> {
+impl<L: CommandLogDb + 'static, I: CommandInboxDb + 'static> StreamRegistry<L, I> {
+    pub fn builder(log: L, inbox: I) -> StreamRegistryBuilder<L, I> {
         StreamRegistryBuilder {
             log,
+            inbox,
             kinds: HashMap::new(),
             duplicate: None,
         }
@@ -119,6 +139,26 @@ impl<L: CommandLogDb + 'static> StreamRegistry<L> {
     /// Checks that a connection may subscribe to the stream as `requested`, and returns its kind. The
     /// kind of an existing stream is the one it was created with; a new stream takes the requested one.
     pub async fn open(&self, stream_id: &StreamId, requested: &str) -> Result<String, RegistryError> {
+        // A worker that is running has the say: the stream may not be in the log yet, as the worker creates it.
+        let running = self
+            .inner
+            .state
+            .lock()
+            .unwrap()
+            .workers
+            .get(stream_id)
+            .filter(|worker| !worker.is_finished())
+            .map(|worker| worker.kind());
+        if let Some(running) = running {
+            return if running == requested {
+                Ok(running.to_string())
+            } else {
+                Err(RegistryError::KindMismatch {
+                    stored: running.to_string(),
+                    requested: requested.to_string(),
+                })
+            };
+        }
         let kind = match self.inner.log.head(stream_id).await? {
             Some(head) if head.kind != requested => {
                 return Err(RegistryError::KindMismatch {
@@ -143,6 +183,30 @@ impl<L: CommandLogDb + 'static> StreamRegistry<L> {
             .is_some_and(|entry| (entry.is_valid_command)(data))
     }
 
+    /// Queues a command of the stream, of the given kind, in its inbox, if it is valid for the kind. This
+    /// is the write path: the workers do the rest.
+    pub async fn push(
+        &self,
+        stream_id: &StreamId,
+        kind: &str,
+        user_id: Uuid,
+        command_id: Uuid,
+        command: &str,
+    ) -> Result<(), NackReason> {
+        if command.len() > MAX_COMMAND_BYTES || !self.validate(kind, command) {
+            return Err(NackReason::Invalid);
+        }
+        self.inner
+            .inbox
+            .push(stream_id, command_id, user_id, command)
+            .await
+            .map(|_| ())
+            .map_err(|err| {
+                tracing::warn!("[{stream_id}] Failed to queue a command: {err:#?}");
+                NackReason::Failed
+            })
+    }
+
     /// Subscribes the connection to the stream, starting its worker if there is none. The kind comes
     /// from `open`.
     pub fn subscribe(&self, connection_id: Uuid, stream_id: &StreamId, kind: &str) -> Result<(), RegistryError> {
@@ -163,7 +227,6 @@ impl<L: CommandLogDb + 'static> StreamRegistry<L> {
             // None, or one that ended just now: start a new one, which takes the subscriber at once.
             let worker = (entry.spawn)(stream_id.clone());
             worker.subscribe(connection_id);
-            self.watch(stream_id, &worker);
             state.workers.insert(stream_id.clone(), worker);
         }
         state
@@ -210,15 +273,41 @@ impl<L: CommandLogDb + 'static> StreamRegistry<L> {
         }
     }
 
+    /// The workers that are running.
     pub fn worker_count(&self) -> usize {
+        self.inner
+            .state
+            .lock()
+            .unwrap()
+            .workers
+            .values()
+            .filter(|worker| !worker.is_finished())
+            .count()
+    }
+
+    /// Forgets the workers that have ended. A new subscribe replaces an ended worker anyway; this only
+    /// releases the entries of streams nobody comes back to.
+    pub fn purge(&self) {
+        self.inner
+            .state
+            .lock()
+            .unwrap()
+            .workers
+            .retain(|_, worker| !worker.is_finished());
+    }
+
+    /// The workers held, running or ended.
+    #[cfg(test)]
+    fn held_workers(&self) -> usize {
         self.inner.state.lock().unwrap().workers.len()
     }
 
     /// Starts to wake the workers on the wakes of the inbox. A listener that reconnected may have missed
     /// wakes, so it wakes every worker.
-    pub async fn listen<I: CommandInboxDb>(&self, inbox: &I) -> Result<(), CommandInboxError> {
+    pub async fn listen(&self) -> Result<(), CommandInboxError> {
         let registry = self.clone();
-        inbox
+        self.inner
+            .inbox
             .listen(move |wake| match wake {
                 InboxWake::Stream { stream_id, .. } => registry.wake(&stream_id),
                 InboxWake::All => registry.wake_all(),
@@ -226,8 +315,8 @@ impl<L: CommandLogDb + 'static> StreamRegistry<L> {
             .await
     }
 
-    pub async fn unlisten<I: CommandInboxDb>(&self, inbox: &I) -> Result<(), CommandInboxError> {
-        inbox.unlisten().await
+    pub async fn unlisten(&self) -> Result<(), CommandInboxError> {
+        self.inner.inbox.unlisten().await
     }
 
     /// Asks every worker to persist what is waiting and end, and waits for them for up to `timeout`.
@@ -240,30 +329,7 @@ impl<L: CommandLogDb + 'static> StreamRegistry<L> {
         if tokio::time::timeout(timeout, ended).await.is_err() {
             tracing::warn!("Some stream workers did not end within {timeout:?}");
         }
-        // Do not leave it to the watchers to forget the ended workers: the count is exact when this returns.
-        self.inner
-            .state
-            .lock()
-            .unwrap()
-            .workers
-            .retain(|_, worker| !worker.is_finished());
-    }
-
-    /// Forgets the worker when it ends, unless a new one has taken its place.
-    fn watch(&self, stream_id: &StreamId, worker: &WorkerHandle) {
-        let registry = self.clone();
-        let (stream_id, worker) = (stream_id.clone(), worker.clone());
-        tokio::spawn(async move {
-            worker.finished().await;
-            let mut state = registry.inner.state.lock().unwrap();
-            if state
-                .workers
-                .get(&stream_id)
-                .is_some_and(|current| current.same_worker(&worker))
-            {
-                state.workers.remove(&stream_id);
-            }
-        });
+        self.purge();
     }
 }
 

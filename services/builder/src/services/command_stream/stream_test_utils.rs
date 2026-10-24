@@ -94,6 +94,8 @@ pub(crate) fn kinds(messages: &[Arc<StreamMessage>]) -> Vec<String> {
             StreamMessage::Checkpoint { version, .. } => format!("checkpoint:{version}"),
             StreamMessage::Reset { .. } => "reset".to_string(),
             StreamMessage::Unsynced { .. } => "unsynced".to_string(),
+            StreamMessage::Nack { .. } => "nack".to_string(),
+            StreamMessage::SubscribeFailed { .. } => "subscribe-failed".to_string(),
         })
         .collect()
 }

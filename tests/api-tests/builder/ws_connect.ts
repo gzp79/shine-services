@@ -1,6 +1,6 @@
 import { expect, test } from '$fixtures/setup';
+import { type WsConnectOptions, buildHeaders, wsConnectUrl, wsHeaders } from '$lib/api/builder_ws';
 import { MintedSession, SessionMint } from '$lib/mocks/session_mint';
-import { DEFAULT_USER_AGENT, joinURL } from '$lib/utils';
 import { randomUUID } from 'node:crypto';
 import { IncomingMessage } from 'node:http';
 import { WebSocket } from 'ws';
@@ -20,31 +20,11 @@ type WsHoldResult = {
     settled: Promise<WsCloseOutcome>;
 };
 
-type WsConnectOptions = {
-    // Omit to send no Cookie header at all (unauthenticated); pass a bad value to test a tampered sid.
-    sid?: string;
-    origin?: string;
-    userAgent?: string;
-    extraHeaders?: Record<string, string>;
-    timeoutMs?: number;
-};
-
 // The wire protocol mirrors WSMessageRequest/WSMessageResponse in the service (internally tagged,
 // camelCased): client sends {type:'chat', text}; the server persists it to the room stream and the
 // chat dispatcher later pushes a batch {type:'chat', messages:[{id, from, text}]}.
 type WsChatComment = { id: string; from: string; text: string };
 type WsChatBatch = { type: 'chat'; messages: WsChatComment[] };
-
-function buildHeaders(options: WsConnectOptions): Record<string, string> {
-    const headers: Record<string, string> = {
-        'User-Agent': options.userAgent ?? DEFAULT_USER_AGENT,
-        ...(options.extraHeaders ?? {})
-    };
-    if (options.sid !== undefined) {
-        headers.Cookie = `sid=${options.sid}`;
-    }
-    return headers;
-}
 
 async function connectWs(url: string, options: WsConnectOptions): Promise<WsOutcome> {
     return await new Promise<WsOutcome>((resolve) => {
@@ -86,22 +66,6 @@ async function connectWs(url: string, options: WsConnectOptions): Promise<WsOutc
             finish({ kind: 'error', message: error.message });
         });
     });
-}
-
-function wsConnectUrl(builderUrl: string): string {
-    const httpUrl = joinURL(builderUrl, '/api/connect');
-    const wsUrl = new URL(httpUrl);
-    wsUrl.protocol = wsUrl.protocol === 'https:' ? 'wss:' : 'ws:';
-    return wsUrl.toString();
-}
-
-// x-forwarded-host mirrors the endpoint authority so the builder resolves the same host whether it
-// reads the header directly (bare service) or the proxy rewrites it from the connected host.
-function wsHeaders(homeUrl: string, endpointUrl: string): WsConnectOptions {
-    return {
-        origin: new URL(homeUrl).origin,
-        extraHeaders: { 'x-forwarded-host': new URL(endpointUrl).host }
-    };
 }
 
 type WsHoldOptions = WsConnectOptions & { holdTimeoutMs?: number };

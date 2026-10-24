@@ -51,6 +51,7 @@ enum Message {
 #[derive(Clone)]
 pub struct WorkerHandle {
     stream_id: StreamId,
+    kind: &'static str,
     messages: mpsc::UnboundedSender<Message>,
     wake: Arc<Notify>,
 }
@@ -58,6 +59,11 @@ pub struct WorkerHandle {
 impl WorkerHandle {
     pub fn stream_id(&self) -> &StreamId {
         &self.stream_id
+    }
+
+    /// The kind of the stream the worker serves.
+    pub fn kind(&self) -> &'static str {
+        self.kind
     }
 
     /// Adds the connection as a subscriber, or syncs it again if it already is one. `false` if the
@@ -132,7 +138,12 @@ where
         grace_deadline: None,
     };
     tokio::spawn(worker.run(receiver));
-    WorkerHandle { stream_id, messages, wake }
+    WorkerHandle {
+        stream_id,
+        kind: S::KIND,
+        messages,
+        wake,
+    }
 }
 
 struct StreamWorker<S: ReplayState, L: CommandLogDb, I: CommandInboxDb, E: StreamEgress> {

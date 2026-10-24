@@ -1,4 +1,7 @@
-use crate::repositories::command_log::{StoredCommand, StoredSnapshot, StreamId};
+use crate::{
+    models::messages::{ToTopic, TopicKey},
+    repositories::command_log::{StoredCommand, StoredSnapshot, StreamId},
+};
 use uuid::Uuid;
 
 /// A command as the subscribers see it. It has no inbox position: that stays on the server.
@@ -67,6 +70,17 @@ pub enum StreamMessage {
     Reset { stream_id: StreamId },
     /// The stream cannot be served now. The subscriber is dropped and has to subscribe again.
     Unsynced { stream_id: StreamId },
+    /// A command of the connection was not accepted.
+    Nack {
+        stream_id: StreamId,
+        command_id: Uuid,
+        reason: NackReason,
+    },
+    /// The connection could not be subscribed to the stream.
+    SubscribeFailed {
+        stream_id: StreamId,
+        reason: SubscribeFailure,
+    },
 }
 
 impl StreamMessage {
@@ -76,7 +90,55 @@ impl StreamMessage {
             | StreamMessage::Commands { stream_id, .. }
             | StreamMessage::Checkpoint { stream_id, .. }
             | StreamMessage::Reset { stream_id }
-            | StreamMessage::Unsynced { stream_id } => stream_id,
+            | StreamMessage::Unsynced { stream_id }
+            | StreamMessage::Nack { stream_id, .. }
+            | StreamMessage::SubscribeFailed { stream_id, .. } => stream_id,
         }
+    }
+}
+
+/// Why a command of a connection was not accepted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NackReason {
+    /// The connection is not subscribed to the stream.
+    NotSubscribed,
+    /// The command does not decode, or is not well formed, for the kind of the stream.
+    Invalid,
+    /// The command could not be queued; it may or may not have been.
+    Failed,
+}
+
+/// Why a connection could not be subscribed to a stream.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SubscribeFailure {
+    UnknownKind,
+    KindMismatch,
+    Failed,
+}
+
+impl ToTopic for StreamMessage {
+    fn topic(&self) -> TopicKey {
+        TopicKey::Stream
+    }
+}
+
+/// A change of the stream subscriptions of a connection, for the internal consumers of the hub bus. It
+/// is never sent to the sockets.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StreamEvent {
+    Subscribed {
+        connection_id: Uuid,
+        stream_id: StreamId,
+        kind: String,
+    },
+    Unsubscribed {
+        connection_id: Uuid,
+        stream_id: StreamId,
+    },
+}
+
+impl ToTopic for StreamEvent {
+    fn topic(&self) -> TopicKey {
+        TopicKey::Stream
     }
 }

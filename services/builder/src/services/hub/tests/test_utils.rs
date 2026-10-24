@@ -1,3 +1,5 @@
+use crate::repositories::{command_inbox::redis::RedisCommandInboxDb, command_log::pg::PgCommandLogDb};
+use crate::services::command_stream::{standard_registry, CommandStreamConfig, WorkerConfig};
 use crate::services::{HubIntervals, HubService};
 use crate::{
     models::messages::{ChatBatch, ChatComment, DisconnectReason, HubEvent, HubMessage, TopicKey},
@@ -49,6 +51,8 @@ pub struct TestHubOptions {
     pub chat_room: String,
     /// Redis of the hub; the test Redis when not given.
     pub redis_cns: Option<String>,
+    /// Stream workers behind the hub: their log and inbox, and how the workers behave.
+    pub streams: Option<(PgCommandLogDb, RedisCommandInboxDb, WorkerConfig)>,
 }
 
 impl Default for TestHubOptions {
@@ -59,6 +63,7 @@ impl Default for TestHubOptions {
             chat: IDLE,
             chat_room: format!("test-{}", Uuid::new_v4()),
             redis_cns: None,
+            streams: None,
         }
     }
 }
@@ -93,7 +98,16 @@ pub async fn create_test_hub(options: TestHubOptions) -> Option<TestHub> {
         session_check: options.session_check,
         chat: options.chat,
     };
-    let hub = HubService::new(registry.clone(), session_service, chat_service, intervals).await;
+    let hub = match options.streams {
+        None => HubService::new(registry.clone(), session_service, chat_service, intervals).await,
+        Some((log, inbox, worker)) => {
+            HubService::with_streams(registry.clone(), session_service, chat_service, intervals, move |hub| {
+                standard_registry(log, inbox, hub.clone(), CommandStreamConfig::default(), worker)
+                    .expect("the standard kinds are distinct")
+            })
+            .await
+        }
+    };
     let events = hub.subscribe(vec![TopicKey::Hub]).await;
     Some(TestHub {
         hub,
@@ -274,7 +288,7 @@ impl EgressState {
             {
                 self.notices.push(reason)
             }
-            HubMessage::Hub(_) => {}
+            HubMessage::Hub(_) | HubMessage::Stream(_) | HubMessage::StreamEvent(_) => {}
         }
     }
 }

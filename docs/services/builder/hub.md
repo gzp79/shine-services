@@ -170,6 +170,7 @@ JSON text frames, `type` tagged in camelCase, the same envelope as chat. Hashes 
 | server to client | `streamCommands` | `streamId`, `commands[]` of version, `commandId`, `userId`, `command`; contiguous versions |
 | server to client | `streamCheckpoint` | `streamId`, `version`, `stateHash` |
 | server to client | `streamReset` | `streamId`; a fresh `streamSync` follows |
+| server to client | `streamUnsynced` | `streamId`; the stream cannot be served now and the subscriber is dropped, so it has to subscribe again |
 | server to client | `streamNack` | `streamId`, `commandId`, `reason` (`notSubscribed`, `invalid`, `failed`) |
 | server to client | `streamSubscribeFailed` | `streamId`, `reason` (`kindMismatch`, `forbidden`, `failed`) |
 
@@ -189,11 +190,15 @@ New files are target state.
 | `services/builder/src/services/command_stream/stream_worker.rs` | Per-stream task: wake and backstop loop, calls to the service, subscriber cursors, fan-out, grace period and unload, reload, giving up (`Unsynced`). Its handle does not depend on the kind of the stream. |
 | `services/builder/src/services/command_stream/stream_message.rs` | What a worker sends to its subscribers (`Sync`, `Commands`, `Checkpoint`, `Reset`, `Unsynced`); independent of the hub and of any wire format, and without the inbox position. |
 | `services/builder/src/services/command_stream/stream_egress.rs` | The interface a worker sends through; the hub implements it. |
-| `services/builder/src/services/command_stream/stream_registry.rs` | The workers of this instance by stream id, and the table of registered kinds (how to start a worker, how to check a command). Starts a worker on the first subscribe, routes inbox wakes to workers, releases a connection's streams on disconnect, shuts workers down. |
-| `services/builder/src/services/hub/hub_command.rs` | `SubscribeStream` and `UnsubscribeStream` control commands. |
-| `services/builder/src/services/hub/hub_connections.rs` | Per-connection stream set, dropped with the connection. |
-| `services/builder/src/routes/ws/connect.rs` | Stream frames: subscribe, unsubscribe, command ingest. |
-| `services/builder/src/routes/ws/message.rs` | Stream message types. |
+| `services/builder/src/services/command_stream/stream_registry.rs` | The workers of this instance by stream id, and the table of registered kinds (how to start a worker, how to check a command). Starts a worker on the first subscribe, routes inbox wakes to workers, releases a connection's streams on disconnect, shuts workers down. It also has the write path: `push` checks a command for its kind and size and queues it in the inbox of its stream. |
+| `services/builder/src/services/command_stream/stream_kinds.rs` | The kinds of stream this service serves (`chat`, `pixel-map`), each with its own service. |
+| `services/builder/src/services/hub/hub_service.rs` | The hub is the API of the streams for every transport (the socket is one, a long poll would be another): `subscribe_stream`, `unsubscribe_stream` and `send_stream_command`, each answering with the reason when it refuses. The hub keeps what each connection is subscribed to, and as which kind, so a command can be checked against it; the writes go to the registry without passing the loop. Messages to a connection go the other way, through the hub's egress. The caller is trusted: a transport has authenticated the user and holds the connection id the hub gave it, and takes neither from the client. |
+| `services/builder/src/services/hub/hub_command.rs` | `SubscribeStream` and `UnsubscribeStream` control commands. The loop only checks that the connection is registered and publishes a stream event to the internal consumers, so a subscribe is ordered with the connection's lifecycle and never reaches the sockets. |
+| `services/builder/src/services/hub/tasks/stream_dispatcher.rs` | The one task per instance that reads the hub's ordered subscription and lifecycle events and turns them into registry calls; it also forgets ended workers now and then and has the workers persist on shutdown. |
+| `services/builder/src/models/messages/stream.rs` | The messages of the streams: what workers send to subscribers, and the stream events of the hub bus. Independent of the hub and of any wire format, and without the inbox position. |
+| `services/builder/src/routes/ws/connect.rs` | The socket: a transport of the hub. It reads the stream frames of the client and calls the hub's API (it knows nothing of the registry), answers its own refusals on its egress channel (the hub may not have registered the connection yet), and forwards the stream messages of the hub. |
+| `services/builder/src/routes/ws/message.rs` | The JSON frames of the stream messages (hashes as hex, snapshot data as base64, commands as JSON). |
+| `tests/api-tests/builder/streams.ts` | API tests of the stream protocol over a real socket: sync, ordered delivery to several subscribers, two kinds on one connection, refusals, unsubscribe, checkpoint and snapshot. |
 
 <details data-agent="implementation">
 <summary>Why Ok from append is not enough, and what "confirmed" means</summary>
