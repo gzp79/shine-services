@@ -336,3 +336,21 @@ async fn client_chat_is_appended_and_delivered_back() {
     let seen = barrier(&test.hub, &mut test.events).await;
     assert_eq!(drops(&seen), dropped(&[]));
 }
+
+#[test(serial = "hub-service")]
+async fn client_chat_over_the_text_limit_is_ignored() {
+    let Some((mut test, chat)) = socket_hub().await else {
+        return;
+    };
+    let mut client = Client::open(&mut test, &chat, Uuid::new_v4()).await;
+
+    let too_long = "a".repeat(CHAT_MAX_TEXT_BYTES + 1);
+    client.send(&format!(r#"{{"type":"chat","text":"{too_long}"}}"#));
+    client.send(r#"{"type":"chat","text":"hi"}"#);
+    let delivered = chat_frame(&client.next_frame().await);
+    assert_eq!(delivered.len(), 1);
+    assert_eq!(delivered[0].1, "hi");
+
+    client.leave();
+    assert_eq!(client.finished().await, [WsMessage::Close(None)]);
+}

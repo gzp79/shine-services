@@ -3,7 +3,7 @@ use crate::{
     models::messages::{DisconnectReason, HubEvent, HubMessage, StreamMessage, TopicKey},
     repositories::command_log::StreamId,
     routes::ws::message::{stream_message_to_wire, ChatWireComment, WSMessageRequest, WSMessageResponse},
-    services::{hub_metrics, ChatService, HubService},
+    services::{hub_metrics, ChatService, HubService, MAX_COMMAND_BYTES},
 };
 use axum::{
     extract::{
@@ -15,6 +15,7 @@ use axum::{
 };
 use futures::{Sink, SinkExt, Stream, StreamExt};
 use opentelemetry::trace::SpanContext;
+use shine_game::replica::CHAT_MAX_TEXT_BYTES;
 use shine_infra::{
     session::{CheckedCurrentUser, CurrentUser, SessionKey},
     telemetry::{current_span_context, label, link_span},
@@ -52,6 +53,10 @@ fn close_code(reason: DisconnectReason) -> u16 {
         | DisconnectReason::DeadChannel => CLOSE_CODE_DROPPED,
     }
 }
+
+/// Max size of a message and of a frame received from a client. The largest request is a stream command,
+/// capped at `MAX_COMMAND_BYTES` plus a small envelope. A larger message ends the socket.
+const MAX_WS_MESSAGE_BYTES: usize = 2 * MAX_COMMAND_BYTES;
 
 /// Max wait after a client close for the hub to drop the connection, before the send task is aborted.
 const SEND_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
@@ -93,6 +98,9 @@ pub async fn connect(
     let hub_service = state.hub_service().clone();
     let chat_service = state.chat_service().clone();
     let span_context = current_span_context();
+    let ws = ws
+        .max_message_size(MAX_WS_MESSAGE_BYTES)
+        .max_frame_size(MAX_WS_MESSAGE_BYTES);
     Ok(ws.on_upgrade(move |socket| handle_socket(socket, user, hub_service, chat_service, span_context)))
 }
 
@@ -173,6 +181,11 @@ async fn serve_socket<S, R, E>(
                     continue;
                 };
                 match serde_json::from_str::<WSMessageRequest>(&text) {
+                    Ok(WSMessageRequest::Chat { text }) if text.len() > CHAT_MAX_TEXT_BYTES => {
+                        hub_metrics()
+                            .ws_messages_received
+                            .add(1, &[label("kind", "chat"), label("outcome", "invalid")]);
+                    }
                     Ok(WSMessageRequest::Chat { text }) => {
                         let span = info_span!(
                             parent: None,

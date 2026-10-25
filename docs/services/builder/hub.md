@@ -186,7 +186,7 @@ sequenceDiagram
 | Isolation | One task per stream and no shared loop; the number of streams an instance serves does not depend on the number of clients. |
 | Hub loop | Only subscription bookkeeping; it never waits on Redis or Postgres for streams. |
 | Trust | The hub trusts its caller: a transport has authenticated the user and holds the connection id the hub gave it, and takes neither from the client. |
-| Back-pressure | The inbox TTL and the 16 KiB command limit bound the inbox; there is no length check and no rate limit. |
+| Back-pressure | The 16 KiB command limit and the 32 KiB socket message and frame limit bound a request; the inbox has no length check and there is no rate limit. |
 | Redis loss | Unsequenced inbox entries are lost. Clients resubmit their pending commands after a resync. |
 
 ### Client protocol
@@ -314,7 +314,7 @@ These are constants in code, not yet part of the application config.
 | Worker backstop tick, minimum wake spacing, unload grace, failed passes before giving up | 10 s, 50 ms, 60 s, 5 |
 | Inbox entries read per pass, waiting commands, log page, append attempts per pass | 128, 512, 256, 4 |
 | `snapshot_every`, `keep_snapshots` | 100, 3 |
-| Inbox TTL, command size limit | 1 h, 16 KiB |
+| Inbox TTL, command size limit, socket message and frame size limit | 1 h, 16 KiB, 32 KiB |
 | Dispatcher purge of ended workers, workers' time to persist on shutdown | 60 s, 10 s |
 | Per-connection egress queue (slow consumer limit) | 1000 messages |
 </details>

@@ -4,7 +4,9 @@ mod hub;
 
 pub use self::{
     chat_service::ChatService,
-    command_stream::{standard_registry, CommandStreamConfig, CommandStreamService, StreamEgress, WorkerConfig},
+    command_stream::{
+        standard_registry, CommandStreamConfig, CommandStreamService, StreamEgress, WorkerConfig, MAX_COMMAND_BYTES,
+    },
     hub::{hub_metrics, HubIntervals, HubService, HubStatus},
 };
 
