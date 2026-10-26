@@ -2,7 +2,7 @@ import { PlaywrightTestConfig } from '@playwright/test';
 import { ServiceOptions } from '$fixtures/setup';
 import { suppress_tls_certificate_warning } from '$lib/suppress_tls_certificate_warning';
 
-const isCiPipeline: boolean = !!process.env.CI;
+const isCiPipeline: boolean = process.env.CI?.trim().toLowerCase() === 'true';
 const enableLogging: boolean = !!process.env.ENABLE_REQUEST_LOGGING;
 
 // Allow self-signed certificates
