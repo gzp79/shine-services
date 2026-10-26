@@ -7,10 +7,6 @@ use uuid::Uuid;
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 #[serde(tag = "type")]
 pub enum WSMessageRequest {
-    Chat {
-        text: String,
-    },
-    /// Subscribes to a stream, or asks for it to be synced again. `kind` only counts when the stream is new.
     StreamSubscribe {
         stream_id: String,
         kind: String,
@@ -18,7 +14,6 @@ pub enum WSMessageRequest {
     StreamUnsubscribe {
         stream_id: String,
     },
-    /// A command of the stream's kind. `command_id` is the client's own: it comes back with the command.
     StreamCommand {
         stream_id: String,
         command_id: Uuid,
@@ -28,20 +23,10 @@ pub enum WSMessageRequest {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ChatWireComment {
-    pub id: String,
-    pub from: Uuid,
-    pub text: String,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct WireStreamSnapshot {
     pub version: i64,
-    /// Hashes are hex text: a 64 bit number is not safe in JSON.
     pub chain_hash: String,
     pub state_hash: String,
-    /// The state, base64.
     pub data: String,
 }
 
@@ -58,9 +43,6 @@ pub struct WireStreamCommand {
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 #[serde(tag = "type")]
 pub enum WSMessageResponse {
-    Chat {
-        messages: Vec<ChatWireComment>,
-    },
     StreamSync {
         stream_id: String,
         snapshot: Option<WireStreamSnapshot>,

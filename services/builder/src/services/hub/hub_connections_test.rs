@@ -1,24 +1,17 @@
 //! Unit tests of [`Connections`]: send outcomes, topic filter, CAS removal, drop notice.
 
 use crate::{
-    models::messages::{ChatBatch, ChatComment, DisconnectReason, HubEvent, HubMessage, TopicKey},
-    services::hub::hub_connections::{Connections, DeadConnection},
+    models::messages::{DisconnectReason, HubEvent, HubMessage, TopicKey},
+    services::{
+        hub::hub_connections::{Connections, DeadConnection},
+        hub_test_utils::ping,
+    },
 };
 use ring::rand::SystemRandom;
 use shine_infra::session::SessionKey;
 use shine_test::test;
 use tokio::sync::mpsc;
 use uuid::Uuid;
-
-fn chat(text: &str) -> HubMessage {
-    HubMessage::Chat(ChatBatch {
-        comments: vec![ChatComment {
-            id: "0-0".to_string(),
-            user_id: Uuid::new_v4(),
-            text: text.to_string(),
-        }],
-    })
-}
 
 fn disconnected(user_id: Uuid, connection_id: Uuid, reason: DisconnectReason) -> HubEvent {
     HubEvent::UserDisconnected { user_id, connection_id, reason }
@@ -34,21 +27,21 @@ async fn directed_send_moves_to_the_one_connection() {
     let (tx, mut rx) = mpsc::channel(4);
     let (user_id, conn_id) = (Uuid::new_v4(), Uuid::new_v4());
     users
-        .register_connection(user_id, conn_id, key(), tx, vec![TopicKey::Chat])
+        .register_connection(user_id, conn_id, key(), tx, vec![TopicKey::Ping])
         .await;
 
-    assert!(users.send_to_connection(conn_id, chat("hi")).await.is_ok());
-    assert!(users.send_to_user(user_id, chat("yo")).await.is_ok());
+    assert!(users.send_to_connection(conn_id, ping("hi")).await.is_ok());
+    assert!(users.send_to_user(user_id, ping("yo")).await.is_ok());
 
-    assert!(matches!(rx.recv().await, Some(HubMessage::Chat(m)) if m.comments[0].text == "hi"));
-    assert!(matches!(rx.recv().await, Some(HubMessage::Chat(m)) if m.comments[0].text == "yo"));
+    assert!(matches!(rx.recv().await, Some(HubMessage::Ping(m)) if m.id == "hi"));
+    assert!(matches!(rx.recv().await, Some(HubMessage::Ping(m)) if m.id == "yo"));
 }
 
 #[test]
 async fn directed_send_to_unknown_target_is_ok_noop() {
     let users = Connections::new();
-    assert_eq!(users.send_to_connection(Uuid::new_v4(), chat("x")).await, Ok(false));
-    assert!(users.send_to_user(Uuid::new_v4(), chat("x")).await.is_ok());
+    assert_eq!(users.send_to_connection(Uuid::new_v4(), ping("x")).await, Ok(false));
+    assert!(users.send_to_user(Uuid::new_v4(), ping("x")).await.is_ok());
 }
 
 #[test]
@@ -62,13 +55,13 @@ async fn send_to_user_follows_the_active_connection_and_reports_dead_ones() {
     users.register_connection(user_id, new_id, key(), new_tx, vec![]).await;
 
     // The user's latest registration is its active connection.
-    assert!(users.send_to_user(user_id, chat("1")).await.is_ok());
-    assert!(matches!(new_rx.try_recv(), Ok(HubMessage::Chat(m)) if m.comments[0].text == "1"));
+    assert!(users.send_to_user(user_id, ping("1")).await.is_ok());
+    assert!(matches!(new_rx.try_recv(), Ok(HubMessage::Ping(m)) if m.id == "1"));
     assert!(old_rx.try_recv().is_err());
 
-    assert!(users.send_to_user(user_id, chat("2")).await.is_ok());
+    assert!(users.send_to_user(user_id, ping("2")).await.is_ok());
     assert_eq!(
-        users.send_to_user(user_id, chat("3")).await,
+        users.send_to_user(user_id, ping("3")).await,
         Err(DeadConnection {
             connection_id: new_id,
             reason: DisconnectReason::SlowConsumer
@@ -76,7 +69,7 @@ async fn send_to_user_follows_the_active_connection_and_reports_dead_ones() {
     );
     drop(new_rx);
     assert_eq!(
-        users.send_to_user(user_id, chat("4")).await,
+        users.send_to_user(user_id, ping("4")).await,
         Err(DeadConnection {
             connection_id: new_id,
             reason: DisconnectReason::DeadChannel
@@ -90,12 +83,12 @@ async fn full_channel_reports_dead_connection() {
     let (tx, _rx) = mpsc::channel(1);
     let conn_id = Uuid::new_v4();
     users
-        .register_connection(Uuid::new_v4(), conn_id, key(), tx, vec![TopicKey::Chat])
+        .register_connection(Uuid::new_v4(), conn_id, key(), tx, vec![TopicKey::Ping])
         .await;
 
-    assert!(users.send_to_connection(conn_id, chat("1")).await.is_ok()); // fills capacity 1
+    assert!(users.send_to_connection(conn_id, ping("1")).await.is_ok()); // fills capacity 1
     assert_eq!(
-        users.send_to_connection(conn_id, chat("2")).await,
+        users.send_to_connection(conn_id, ping("2")).await,
         Err(DeadConnection {
             connection_id: conn_id,
             reason: DisconnectReason::SlowConsumer
@@ -109,11 +102,11 @@ async fn closed_channel_reports_dead_connection() {
     let (tx, rx) = mpsc::channel(1);
     let conn_id = Uuid::new_v4();
     users
-        .register_connection(Uuid::new_v4(), conn_id, key(), tx, vec![TopicKey::Chat])
+        .register_connection(Uuid::new_v4(), conn_id, key(), tx, vec![TopicKey::Ping])
         .await;
     drop(rx);
     assert_eq!(
-        users.send_to_connection(conn_id, chat("1")).await,
+        users.send_to_connection(conn_id, ping("1")).await,
         Err(DeadConnection {
             connection_id: conn_id,
             reason: DisconnectReason::DeadChannel
@@ -129,14 +122,14 @@ async fn broadcast_clones_to_matching_topic_only() {
     let chat_conn = Uuid::new_v4();
     let hub_conn = Uuid::new_v4();
     users
-        .register_connection(Uuid::new_v4(), chat_conn, key(), tx_chat, vec![TopicKey::Chat])
+        .register_connection(Uuid::new_v4(), chat_conn, key(), tx_chat, vec![TopicKey::Ping])
         .await;
     users
         .register_connection(Uuid::new_v4(), hub_conn, key(), tx_hub, vec![TopicKey::Hub])
         .await;
 
-    assert!(users.broadcast(chat("broadcast")).await.is_ok());
-    assert!(matches!(rx_chat.recv().await, Some(HubMessage::Chat(_))));
+    assert!(users.broadcast(ping("broadcast")).await.is_ok());
+    assert!(matches!(rx_chat.recv().await, Some(HubMessage::Ping(_))));
     // Hub-topic connection must not receive a Chat broadcast.
     assert!(rx_hub.try_recv().is_err());
 }
@@ -182,14 +175,14 @@ async fn close_notice_on_a_full_channel_is_dropped() {
     let (tx, mut rx) = mpsc::channel(1);
     let (user_id, conn_id) = (Uuid::new_v4(), Uuid::new_v4());
     users.register_connection(user_id, conn_id, key(), tx, vec![]).await;
-    assert_eq!(users.send_to_connection(conn_id, chat("1")).await, Ok(true));
+    assert_eq!(users.send_to_connection(conn_id, ping("1")).await, Ok(true));
 
     users
         .remove_connection(user_id, Some(conn_id))
         .await
         .unwrap()
         .notify(disconnected(user_id, conn_id, DisconnectReason::Replaced));
-    assert!(matches!(rx.recv().await, Some(HubMessage::Chat(_))));
+    assert!(matches!(rx.recv().await, Some(HubMessage::Ping(_))));
     assert!(rx.recv().await.is_none());
 }
 

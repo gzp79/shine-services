@@ -59,9 +59,9 @@ struct State {
     connections: HashMap<Uuid, HashSet<StreamId>>,
 }
 
-struct Inner<L: CommandLogDb, I: CommandInboxDb> {
-    log: L,
+struct Inner<I: CommandInboxDb, L: CommandLogDb> {
     inbox: I,
+    log: L,
     /// Fixed at startup, so it needs no lock.
     kinds: HashMap<String, KindEntry>,
     state: Mutex<State>,
@@ -71,34 +71,35 @@ struct Inner<L: CommandLogDb, I: CommandInboxDb> {
 /// inbox of its stream. Its workers are found or started when a connection subscribes, woken by the
 /// inbox, and released with the connection. It does not know the types of the streams' states: each
 /// kind is registered with what it takes to start its workers and to check its commands.
-pub struct StreamRegistry<L: CommandLogDb, I: CommandInboxDb> {
-    inner: Arc<Inner<L, I>>,
+// todo: swap generic args
+pub struct StreamRegistry<I: CommandInboxDb, L: CommandLogDb> {
+    inner: Arc<Inner<I, L>>,
 }
 
-impl<L: CommandLogDb, I: CommandInboxDb> Clone for StreamRegistry<L, I> {
+impl<I: CommandInboxDb, L: CommandLogDb> Clone for StreamRegistry<I, L> {
     fn clone(&self) -> Self {
         Self { inner: self.inner.clone() }
     }
 }
 
 /// Collects the kinds of streams to serve, at startup. The registry made from it serves exactly those.
-pub struct StreamRegistryBuilder<L: CommandLogDb, I: CommandInboxDb> {
-    log: L,
+pub struct StreamRegistryBuilder<I: CommandInboxDb, L: CommandLogDb> {
     inbox: I,
+    log: L,
     kinds: HashMap<String, KindEntry>,
     duplicate: Option<String>,
 }
 
-impl<L: CommandLogDb + 'static, I: CommandInboxDb + 'static> StreamRegistryBuilder<L, I> {
+impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistryBuilder<I, L> {
     /// Registers the kind `S::KIND`: its workers are started over `service` and send through `egress`.
-    pub fn register<S, E>(mut self, service: CommandStreamService<L, I>, egress: E, config: WorkerConfig) -> Self
+    pub fn register<S, E>(mut self, service: CommandStreamService<I, L>, egress: E, config: WorkerConfig) -> Self
     where
         S: ReplayState,
         E: StreamEgress,
     {
         let entry = KindEntry {
             spawn: Box::new(move |stream_id| {
-                spawn_worker::<S, L, I, E>(service.clone(), egress.clone(), stream_id, config.clone())
+                spawn_worker::<S, I, L, E>(service.clone(), egress.clone(), stream_id, config.clone())
             }),
             is_valid_command: Box::new(|data| {
                 decode_command::<S>(data).is_ok_and(|command| S::is_well_formed(&command))
@@ -111,7 +112,7 @@ impl<L: CommandLogDb + 'static, I: CommandInboxDb + 'static> StreamRegistryBuild
     }
 
     /// Fails if a kind was registered twice.
-    pub fn build(self) -> Result<StreamRegistry<L, I>, RegistryError> {
+    pub fn build(self) -> Result<StreamRegistry<I, L>, RegistryError> {
         if let Some(kind) = self.duplicate {
             return Err(RegistryError::DuplicateKind(kind));
         }
@@ -126,11 +127,11 @@ impl<L: CommandLogDb + 'static, I: CommandInboxDb + 'static> StreamRegistryBuild
     }
 }
 
-impl<L: CommandLogDb + 'static, I: CommandInboxDb + 'static> StreamRegistry<L, I> {
-    pub fn builder(log: L, inbox: I) -> StreamRegistryBuilder<L, I> {
+impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L> {
+    pub fn builder(inbox: I, log: L) -> StreamRegistryBuilder<I, L> {
         StreamRegistryBuilder {
-            log,
             inbox,
+            log,
             kinds: HashMap::new(),
             duplicate: None,
         }

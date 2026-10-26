@@ -47,15 +47,15 @@ enum Step {
 /// inbox into the log. It keeps nothing of any stream: the stream is the `StreamState` it is given, and
 /// it can work many of them at once.
 #[derive(Clone)]
-pub struct CommandStreamService<L: CommandLogDb, I: CommandInboxDb> {
-    log: L,
+pub struct CommandStreamService<I: CommandInboxDb, L: CommandLogDb> {
     inbox: I,
+    log: L,
     config: CommandStreamConfig,
 }
 
-impl<L: CommandLogDb, I: CommandInboxDb> CommandStreamService<L, I> {
-    pub fn new(log: L, inbox: I, config: CommandStreamConfig) -> Self {
-        Self { log, inbox, config }
+impl<I: CommandInboxDb, L: CommandLogDb> CommandStreamService<I, L> {
+    pub fn new(inbox: I, log: L, config: CommandStreamConfig) -> Self {
+        Self { inbox, log, config }
     }
 
     /// Loads the stream, creating it if it is new: its latest snapshot and the commands after it,

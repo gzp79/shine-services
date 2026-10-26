@@ -31,15 +31,15 @@ struct Harness {
     log: TestLog,
     inbox: TestInbox,
     egress: TestEgress,
-    registry: StreamRegistry<PgCommandLogDb, RedisCommandInboxDb>,
+    registry: StreamRegistry<RedisCommandInboxDb, PgCommandLogDb>,
 }
 
 async fn harness(worker: WorkerConfig) -> Option<Harness> {
     let log = create_test_log().await?;
     let inbox = create_test_inbox(60).await?;
     let egress = TestEgress::default();
-    let service = || CommandStreamService::new(log.db.clone(), inbox.db.clone(), CommandStreamConfig::default());
-    let registry = StreamRegistry::builder(log.db.clone(), inbox.db.clone())
+    let service = || CommandStreamService::new(inbox.db.clone(), log.db.clone(), CommandStreamConfig::default());
+    let registry = StreamRegistry::builder(inbox.db.clone(), log.db.clone())
         .register::<ChatState, _>(service(), egress.clone(), worker.clone())
         .register::<PixelMapState, _>(service(), egress.clone(), worker)
         .build()
@@ -82,7 +82,7 @@ impl Harness {
     }
 }
 
-async fn wait_for_workers(registry: &StreamRegistry<PgCommandLogDb, RedisCommandInboxDb>, count: usize) {
+async fn wait_for_workers(registry: &StreamRegistry<RedisCommandInboxDb, PgCommandLogDb>, count: usize) {
     let result = timeout(WAIT, async {
         while registry.worker_count() != count {
             sleep(Duration::from_millis(5)).await;
@@ -105,9 +105,9 @@ async fn a_kind_registered_twice_fails_the_build() {
     let Some(inbox) = create_test_inbox(60).await else {
         return;
     };
-    let service = || CommandStreamService::new(log.db.clone(), inbox.db.clone(), CommandStreamConfig::default());
+    let service = || CommandStreamService::new(inbox.db.clone(), log.db.clone(), CommandStreamConfig::default());
 
-    let result = StreamRegistry::builder(log.db.clone(), inbox.db.clone())
+    let result = StreamRegistry::builder(inbox.db.clone(), log.db.clone())
         .register::<ChatState, _>(service(), TestEgress::default(), quiet())
         .register::<ChatState, _>(service(), TestEgress::default(), quiet())
         .build();

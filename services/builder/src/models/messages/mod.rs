@@ -1,9 +1,9 @@
-mod chat;
 mod hub;
+mod ping;
 mod stream;
 
 pub use self::{
-    chat::{ChatBatch, ChatComment},
     hub::{DisconnectReason, HubEvent, HubMessage, ToTopic, TopicKey},
+    ping::PingEvent,
     stream::{NackReason, StreamCommand, StreamEvent, StreamMessage, StreamSnapshot, SubscribeFailure},
 };

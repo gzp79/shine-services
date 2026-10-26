@@ -3,11 +3,10 @@
 
 use super::*;
 use crate::{
-    models::messages::{ChatBatch, ChatComment, DisconnectReason, HubEvent},
-    repositories::chat_comments::redis::RedisChatCommentsDb,
+    models::messages::{DisconnectReason, HubEvent},
     services::hub_test_utils::{
-        barrier, create_test_hub, dropped, drops, key, lifecycle_of, wait_event, wait_stopped, Lifecycle, TestHub,
-        TestHubOptions, BARRIER_TIMEOUT,
+        barrier, create_test_hub, dropped, drops, key, lifecycle_of, ping, wait_event, wait_stopped, Lifecycle,
+        TestHub, TestHubOptions, BARRIER_TIMEOUT,
     },
 };
 use futures::channel::mpsc as socket;
@@ -28,28 +27,18 @@ fn dropped_event(reason: DisconnectReason) -> HubMessage {
     })
 }
 
-fn chat_payload(id: &str, text: &str) -> HubMessage {
-    HubMessage::Chat(ChatBatch {
-        comments: vec![ChatComment {
-            id: id.into(),
-            user_id: Uuid::nil(),
-            text: text.into(),
-        }],
-    })
-}
-
 /// The ids and texts of a chat frame.
-fn chat_frame(frame: &WsMessage) -> Vec<(String, String)> {
+fn ping_frame(frame: &WsMessage) -> Vec<String> {
     let WsMessage::Text(text) = frame else {
         panic!("expected a text frame, got {frame:?}");
     };
     let json: serde_json::Value = serde_json::from_str(text.as_str()).unwrap();
-    assert_eq!(json["type"], "chat");
+    assert_eq!(json["type"], "ping");
     json["messages"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|m| (m["id"].as_str().unwrap().into(), m["text"].as_str().unwrap().into()))
+        .map(|m| m["id"].as_str().unwrap().into())
         .collect()
 }
 
@@ -68,16 +57,16 @@ async fn forwarded(messages: Vec<HubMessage>) -> Vec<WsMessage> {
 #[test]
 async fn a_close_notice_ends_the_socket_with_its_reason() {
     let frames = forwarded(vec![
-        chat_payload("1-0", "hello"),
+        ping("1-0"),
         HubMessage::Hub(HubEvent::Shutdown),
         dropped_event(DisconnectReason::Replaced),
-        chat_payload("2-0", "after the close"),
+        ping("2-0"),
     ])
     .await;
 
     // Hub events are not forwarded, and nothing after the notice is.
     assert_eq!(frames.len(), 2, "{frames:?}");
-    assert_eq!(chat_frame(&frames[0]), [("1-0".to_string(), "hello".to_string())]);
+    assert_eq!(ping_frame(&frames[0]), ["1-0".to_string()]);
     assert_eq!(frames[1], close(CLOSE_CODE_DROPPED, "replaced"));
 }
 
@@ -88,10 +77,10 @@ async fn the_drops_of_other_connections_do_not_end_the_socket() {
         connection_id: Uuid::new_v4(),
         reason: DisconnectReason::SessionInvalid,
     });
-    let frames = forwarded(vec![other, chat_payload("1-0", "still open")]).await;
+    let frames = forwarded(vec![other, ping("1-0")]).await;
 
     assert_eq!(frames.len(), 2, "{frames:?}");
-    assert_eq!(chat_frame(&frames[0]), [("1-0".to_string(), "still open".to_string())]);
+    assert_eq!(ping_frame(&frames[0]), ["1-0".to_string()]);
     assert_eq!(frames[1], WsMessage::Close(None));
 }
 
@@ -117,9 +106,9 @@ async fn every_drop_reason_maps_to_its_close_code() {
 #[test]
 async fn a_channel_ending_without_a_notice_closes_without_a_reason() {
     // As for a slow consumer, whose notice did not fit: the buffered messages are still sent first.
-    let frames = forwarded(vec![chat_payload("1-0", "buffered")]).await;
+    let frames = forwarded(vec![ping("1-0")]).await;
     assert_eq!(frames.len(), 2, "{frames:?}");
-    assert_eq!(chat_frame(&frames[0]), [("1-0".to_string(), "buffered".to_string())]);
+    assert_eq!(ping_frame(&frames[0]), ["1-0".to_string()]);
     assert_eq!(frames[1], WsMessage::Close(None));
 }
 
@@ -134,7 +123,7 @@ struct Client {
 
 impl Client {
     /// Opens a socket and waits until the hub has registered it.
-    async fn open(test: &mut TestHub, chat: &ChatService, user_id: Uuid) -> Self {
+    async fn open(test: &mut TestHub, user_id: Uuid) -> Self {
         let (to_server, server_rx) = socket::unbounded();
         let (server_tx, from_server) = socket::unbounded();
         let server = tokio::spawn(serve_socket(
@@ -143,7 +132,6 @@ impl Client {
             user_id,
             key(),
             test.hub.clone(),
-            chat.clone(),
             SpanContext::empty_context(),
         ));
         let seen = wait_event(
@@ -191,13 +179,6 @@ impl Client {
     }
 }
 
-async fn socket_hub() -> Option<(TestHub, ChatService)> {
-    let test = create_test_hub(TestHubOptions::default()).await?;
-    let chat_db = RedisChatCommentsDb::new(&test.redis, 200, 3600).await.unwrap();
-    let chat = ChatService::with_room(chat_db, test.chat_room.clone());
-    Some((test, chat))
-}
-
 /// The connection id of the user's socket, from its connect event.
 fn connection_of(events: &[HubEvent], user_id: Uuid) -> Uuid {
     match lifecycle_of(events, user_id).as_slice() {
@@ -208,20 +189,17 @@ fn connection_of(events: &[HubEvent], user_id: Uuid) -> Uuid {
 
 #[test(serial = "hub-service")]
 async fn a_replaced_socket_is_closed_with_the_reason() {
-    let Some((mut test, chat)) = socket_hub().await else {
+    let Some(mut test) = create_test_hub(TestHubOptions::default()).await else {
         return;
     };
     let user = Uuid::new_v4();
 
-    let first = Client::open(&mut test, &chat, user).await;
-    let mut second = Client::open(&mut test, &chat, user).await;
+    let first = Client::open(&mut test, user).await;
+    let mut second = Client::open(&mut test, user).await;
 
     assert_eq!(first.finished().await, [close(CLOSE_CODE_DROPPED, "replaced")]);
-    test.hub.broadcast(chat_payload("1-0", "still here")).await.unwrap();
-    assert_eq!(
-        chat_frame(&second.next_frame().await),
-        [("1-0".to_string(), "still here".to_string())]
-    );
+    test.hub.broadcast(ping("1-0")).await.unwrap();
+    assert_eq!(ping_frame(&second.next_frame().await), ["1-0".to_string()]);
 
     second.leave();
     let second_id = second.connection_id;
@@ -232,13 +210,13 @@ async fn a_replaced_socket_is_closed_with_the_reason() {
 
 #[test(serial = "hub-service")]
 async fn a_forced_drop_and_a_shutdown_close_the_sockets_with_their_reason() {
-    let Some((mut test, chat)) = socket_hub().await else {
+    let Some(mut test) = create_test_hub(TestHubOptions::default()).await else {
         return;
     };
     let (dropped_user, other_user) = (Uuid::new_v4(), Uuid::new_v4());
 
-    let dropped_client = Client::open(&mut test, &chat, dropped_user).await;
-    let other = Client::open(&mut test, &chat, other_user).await;
+    let dropped_client = Client::open(&mut test, dropped_user).await;
+    let other = Client::open(&mut test, other_user).await;
 
     test.hub
         .request_drop(
@@ -265,7 +243,6 @@ async fn a_forced_drop_and_a_shutdown_close_the_sockets_with_their_reason() {
         Uuid::new_v4(),
         key(),
         test.hub.clone(),
-        chat.clone(),
         SpanContext::empty_context(),
     )
     .await;
@@ -275,7 +252,7 @@ async fn a_forced_drop_and_a_shutdown_close_the_sockets_with_their_reason() {
 
 #[test(serial = "hub-service")]
 async fn a_client_leaving_under_traffic_is_not_counted_as_a_drop() {
-    let Some((mut test, chat)) = socket_hub().await else {
+    let Some(mut test) = create_test_hub(TestHubOptions::default()).await else {
         return;
     };
 
@@ -283,7 +260,7 @@ async fn a_client_leaving_under_traffic_is_not_counted_as_a_drop() {
     // removed it, or the sends would find it closed and count a dead channel.
     for _ in 0..20 {
         let user = Uuid::new_v4();
-        let mut client = Client::open(&mut test, &chat, user).await;
+        let mut client = Client::open(&mut test, user).await;
         let connection_id = client.connection_id;
 
         let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
@@ -292,7 +269,7 @@ async fn a_client_leaving_under_traffic_is_not_counted_as_a_drop() {
             tokio::spawn(async move {
                 let mut seq = 0;
                 while !*stop_rx.borrow() {
-                    hub.send_to_connection(connection_id, chat_payload(&format!("{seq}-0"), ""))
+                    hub.send_to_connection(connection_id, ping(format!("{seq}-0")))
                         .await
                         .unwrap();
                     seq += 1;
@@ -316,41 +293,22 @@ async fn a_client_leaving_under_traffic_is_not_counted_as_a_drop() {
 }
 
 #[test(serial = "hub-service")]
-async fn client_chat_is_appended_and_delivered_back() {
-    let Some((mut test, chat)) = socket_hub().await else {
+async fn client_ping_is_appended_and_delivered_back() {
+    let Some(mut test) = create_test_hub(TestHubOptions::default()).await else {
         return;
     };
     let user = Uuid::new_v4();
-    let mut client = Client::open(&mut test, &chat, user).await;
+    let mut client = Client::open(&mut test, user).await;
 
-    // Invalid frames are ignored; the valid chat goes through the room and back to every socket.
+    // Invalid frames are ignored; the valid ping goes through the room and back to every socket.
     client.send("not json");
     client.send(r#"{"type":"unknown"}"#);
-    client.send(r#"{"type":"chat","text":"hi"}"#);
-    let delivered = chat_frame(&client.next_frame().await);
-    assert_eq!(delivered.len(), 1);
-    assert_eq!(delivered[0].1, "hi");
+    client.send(r#"{"type":"ping","id":"hi"}"#);
+    let delivered = ping_frame(&client.next_frame().await);
+    assert_eq!(delivered, ["hi".to_string()]);
 
     client.leave();
     assert_eq!(client.finished().await, [WsMessage::Close(None)]);
     let seen = barrier(&test.hub, &mut test.events).await;
     assert_eq!(drops(&seen), dropped(&[]));
-}
-
-#[test(serial = "hub-service")]
-async fn client_chat_over_the_text_limit_is_ignored() {
-    let Some((mut test, chat)) = socket_hub().await else {
-        return;
-    };
-    let mut client = Client::open(&mut test, &chat, Uuid::new_v4()).await;
-
-    let too_long = "a".repeat(CHAT_MAX_TEXT_BYTES + 1);
-    client.send(&format!(r#"{{"type":"chat","text":"{too_long}"}}"#));
-    client.send(r#"{"type":"chat","text":"hi"}"#);
-    let delivered = chat_frame(&client.next_frame().await);
-    assert_eq!(delivered.len(), 1);
-    assert_eq!(delivered[0].1, "hi");
-
-    client.leave();
-    assert_eq!(client.finished().await, [WsMessage::Close(None)]);
 }

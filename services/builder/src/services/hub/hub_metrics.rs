@@ -21,8 +21,6 @@ pub struct HubMetrics {
     pub command_queue_delay: Histogram<f64>,
     /// Messages pushed to the connections, by kind and outcome.
     pub messages_sent: Counter<u64>,
-    /// Comments delivered to the connections by the chat dispatcher.
-    pub chat_delivered: Counter<u64>,
     /// Duration of the ticks of the background consumers, by consumer.
     pub tick_duration: Histogram<f64>,
     /// Messages received from the clients, by kind and outcome.
@@ -67,10 +65,6 @@ impl HubMetrics {
             messages_sent: meter
                 .u64_counter("hub_messages_sent")
                 .with_description("Messages pushed to the hub connections")
-                .build(),
-            chat_delivered: meter
-                .u64_counter("hub_chat_delivered")
-                .with_description("Chat comments delivered to the connections")
                 .build(),
             tick_duration: meter
                 .f64_histogram("hub_tick_duration")

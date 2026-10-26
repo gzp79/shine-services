@@ -112,21 +112,21 @@ enum Flow {
 
 /// Starts the worker of one stream. It loads the stream, then serves its subscribers until the last one
 /// has left for the grace period, or it is stopped.
-pub fn spawn_worker<S, L, I, E>(
-    service: CommandStreamService<L, I>,
+pub fn spawn_worker<S, I, L, E>(
+    service: CommandStreamService<I, L>,
     egress: E,
     stream_id: StreamId,
     config: WorkerConfig,
 ) -> WorkerHandle
 where
     S: ReplayState,
-    L: CommandLogDb + 'static,
     I: CommandInboxDb + 'static,
+    L: CommandLogDb + 'static,
     E: StreamEgress,
 {
     let (messages, receiver) = mpsc::unbounded_channel();
     let wake = Arc::new(Notify::new());
-    let worker = StreamWorker::<S, L, I, E> {
+    let worker = StreamWorker::<S, I, L, E> {
         service,
         egress,
         stream_id: stream_id.clone(),
@@ -146,8 +146,8 @@ where
     }
 }
 
-struct StreamWorker<S: ReplayState, L: CommandLogDb, I: CommandInboxDb, E: StreamEgress> {
-    service: CommandStreamService<L, I>,
+struct StreamWorker<S: ReplayState, I: CommandInboxDb, L: CommandLogDb, E: StreamEgress> {
+    service: CommandStreamService<I, L>,
     egress: E,
     stream_id: StreamId,
     config: WorkerConfig,
@@ -160,11 +160,11 @@ struct StreamWorker<S: ReplayState, L: CommandLogDb, I: CommandInboxDb, E: Strea
     grace_deadline: Option<Instant>,
 }
 
-impl<S, L, I, E> StreamWorker<S, L, I, E>
+impl<S, I, L, E> StreamWorker<S, I, L, E>
 where
     S: ReplayState,
-    L: CommandLogDb + 'static,
     I: CommandInboxDb + 'static,
+    L: CommandLogDb + 'static,
     E: StreamEgress,
 {
     async fn run(mut self, mut receiver: mpsc::UnboundedReceiver<Message>) {

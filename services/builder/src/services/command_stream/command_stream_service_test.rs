@@ -24,27 +24,27 @@ use shine_game::replica::{decode_command, encode_command, ChatCommand, ChatState
 use shine_test::test;
 use uuid::Uuid;
 
-type Service = CommandStreamService<PgCommandLogDb, RedisCommandInboxDb>;
+type Service = CommandStreamService<RedisCommandInboxDb, PgCommandLogDb>;
 
 struct Fixture {
-    log: TestLog,
     inbox: TestInbox,
+    log: TestLog,
     service: Service,
 }
 
 async fn fixture() -> Option<Fixture> {
     let log = create_test_log().await?;
     let inbox = create_test_inbox(60).await?;
-    let service = CommandStreamService::new(log.db.clone(), inbox.db.clone(), CommandStreamConfig::default());
-    Some(Fixture { log, inbox, service })
+    let service = CommandStreamService::new(inbox.db.clone(), log.db.clone(), CommandStreamConfig::default());
+    Some(Fixture { inbox, log, service })
 }
 
 impl Fixture {
     /// A service that snapshots every `every` versions and keeps the latest `keep` snapshots.
     fn snapshotting(&self, every: i64, keep: i64) -> Service {
         CommandStreamService::new(
-            self.log.db.clone(),
             self.inbox.db.clone(),
+            self.log.db.clone(),
             CommandStreamConfig {
                 snapshot_every: every,
                 keep_snapshots: keep,
@@ -301,8 +301,8 @@ async fn a_waiting_command_that_another_instance_stored_is_not_appended_again() 
     let mut behind = fx.load(&id).await;
     // Reads the inbox but persists nothing: `x` waits in `behind`.
     let reads_only = CommandStreamService::new(
-        fx.log.db.clone(),
         fx.inbox.db.clone(),
+        fx.log.db.clone(),
         CommandStreamConfig {
             max_attempts: 0,
             ..CommandStreamConfig::default()
@@ -329,8 +329,8 @@ async fn a_waiting_command_is_kept_when_the_stored_one_with_its_id_is_another_co
     let mut ahead = fx.load(&id).await;
     let mut behind = fx.load(&id).await;
     let reads_only = CommandStreamService::new(
-        fx.log.db.clone(),
         fx.inbox.db.clone(),
+        fx.log.db.clone(),
         CommandStreamConfig {
             max_attempts: 0,
             ..CommandStreamConfig::default()

@@ -64,7 +64,7 @@ impl Harness {
     }
 
     fn spawn_with(&self, stream: &StreamId, service_config: CommandStreamConfig, config: WorkerConfig) -> WorkerHandle {
-        let service = CommandStreamService::new(self.log.db.clone(), self.inbox.db.clone(), service_config);
+        let service = CommandStreamService::new(self.inbox.db.clone(), self.log.db.clone(), service_config);
         spawn_worker::<ChatState, _, _, _>(service, self.egress.clone(), stream.clone(), config)
     }
 
@@ -434,7 +434,7 @@ async fn a_stream_that_keeps_failing_is_given_up_and_its_subscribers_are_told() 
         inner: h.inbox.db.clone(),
         fail: fail.clone(),
     };
-    let service = CommandStreamService::new(h.log.db.clone(), flaky, CommandStreamConfig::default());
+    let service = CommandStreamService::new(flaky, h.log.db.clone(), CommandStreamConfig::default());
     let worker = spawn_worker::<ChatState, _, _, _>(
         service,
         h.egress.clone(),

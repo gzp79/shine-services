@@ -14,10 +14,6 @@ use std::sync::Arc;
 use tokio::sync::mpsc::error::TryRecvError;
 use uuid::Uuid;
 
-async fn hub() -> Option<TestHub> {
-    create_test_hub(TestHubOptions::default()).await
-}
-
 fn stream(name: &str) -> StreamId {
     StreamId::parse(name).unwrap()
 }
@@ -48,12 +44,14 @@ fn describe(messages: &[HubMessage]) -> Vec<String> {
 
 #[test(serial = "hub-service")]
 async fn a_subscribe_reaches_the_internal_subscribers_and_never_the_sockets() {
-    let Some(mut test) = hub().await else { return };
+    let Some(mut test) = create_test_hub(TestHubOptions::default()).await else {
+        return;
+    };
     let mut internal = test.hub.subscribe(vec![TopicKey::Stream]).await;
-    let (connection, mut socket) = connect_on(&test.hub, Uuid::new_v4(), 8, vec![TopicKey::Hub, TopicKey::Chat]);
+    let (connection, mut socket) = connect_on(&test.hub, Uuid::new_v4(), 8, vec![TopicKey::Hub, TopicKey::Ping]);
 
     test.hub
-        .request_stream_subscribe(connection, stream("s1"), "chat".to_string())
+        .request_stream_subscribe(connection, stream("s1"), "ping".to_string())
         .unwrap();
     test.hub.request_stream_unsubscribe(connection, stream("s1")).unwrap();
     barrier(&test.hub, &mut test.events).await;
@@ -70,7 +68,9 @@ async fn a_subscribe_reaches_the_internal_subscribers_and_never_the_sockets() {
 
 #[test(serial = "hub-service")]
 async fn a_subscribe_of_a_connection_that_is_not_registered_is_ignored() {
-    let Some(mut test) = hub().await else { return };
+    let Some(mut test) = create_test_hub(TestHubOptions::default()).await else {
+        return;
+    };
     let mut internal = test.hub.subscribe(vec![TopicKey::Stream]).await;
 
     test.hub
@@ -86,7 +86,9 @@ async fn a_subscribe_of_a_connection_that_is_not_registered_is_ignored() {
 
 #[test(serial = "hub-service")]
 async fn a_subscribe_is_ordered_with_the_lifecycle_of_its_connection() {
-    let Some(mut test) = hub().await else { return };
+    let Some(mut test) = create_test_hub(TestHubOptions::default()).await else {
+        return;
+    };
     let user = Uuid::new_v4();
     let mut internal = test.hub.subscribe(vec![TopicKey::Hub, TopicKey::Stream]).await;
     let (connection, _socket) = connect(&test.hub, user, 8);
@@ -113,7 +115,9 @@ async fn a_subscribe_is_ordered_with_the_lifecycle_of_its_connection() {
 
 #[test(serial = "hub-service")]
 async fn the_hub_sends_stream_messages_to_a_connection_by_its_id() {
-    let Some(mut test) = hub().await else { return };
+    let Some(mut test) = create_test_hub(TestHubOptions::default()).await else {
+        return;
+    };
     let (connection, mut socket) = connect(&test.hub, Uuid::new_v4(), 8);
     barrier(&test.hub, &mut test.events).await;
     let message = Arc::new(StreamMessage::Reset { stream_id: stream("s1") });
@@ -125,7 +129,7 @@ async fn the_hub_sends_stream_messages_to_a_connection_by_its_id() {
     assert!(!unknown);
     assert!(matches!(
         socket.try_recv(),
-        Ok(HubMessage::Stream(sent)) if *sent == *message
+        Ok(HubMessage::StreamMessage(sent)) if *sent == *message
     ));
     assert!(matches!(socket.try_recv(), Err(TryRecvError::Empty)));
 }
@@ -168,7 +172,12 @@ mod served {
             ..TestHubOptions::default()
         })
         .await?;
-        test.hub.streams().expect("the hub has streams").listen().await.unwrap();
+        test.hub
+            .stream_registry()
+            .expect("the hub has streams")
+            .listen()
+            .await
+            .unwrap();
         Some(Served { test, _inbox: inbox, _log: log })
     }
 
@@ -177,7 +186,7 @@ mod served {
         timeout(Duration::from_secs(5), async {
             loop {
                 match socket.recv().await {
-                    Some(HubMessage::Stream(message)) => return message,
+                    Some(HubMessage::StreamMessage(message)) => return message,
                     Some(_) => {}
                     None => panic!("the connection was closed"),
                 }
@@ -259,7 +268,7 @@ mod served {
         barrier(&served.test.hub, &mut served.test.events).await;
         subscribe(&served, connection, &id, ChatState::KIND).await;
         next_stream_message(&mut socket).await;
-        let streams = served.test.hub.streams().unwrap().clone();
+        let streams = served.test.hub.stream_registry().unwrap().clone();
         assert_eq!(streams.worker_count(), 1);
 
         served.test.hub.request_disconnection(user, connection).unwrap();
@@ -334,7 +343,9 @@ mod served {
 
 #[test(serial = "hub-service")]
 async fn a_hub_without_streams_refuses_them() {
-    let Some(test) = hub().await else { return };
+    let Some(test) = create_test_hub(TestHubOptions::default()).await else {
+        return;
+    };
     let (connection, _socket) = connect(&test.hub, Uuid::new_v4(), 8);
     let id = stream("s1");
 

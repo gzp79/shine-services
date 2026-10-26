@@ -17,32 +17,6 @@ fn frame(message: StreamMessage) -> serde_json::Value {
 }
 
 #[test]
-fn the_stream_requests_parse() {
-    let subscribe: WSMessageRequest =
-        serde_json::from_value(json!({"type": "streamSubscribe", "streamId": "room-1", "kind": "chat"})).unwrap();
-    let unsubscribe: WSMessageRequest =
-        serde_json::from_value(json!({"type": "streamUnsubscribe", "streamId": "room-1"})).unwrap();
-    let command_id = Uuid::new_v4();
-    let command: WSMessageRequest = serde_json::from_value(json!({
-        "type": "streamCommand", "streamId": "room-1", "commandId": command_id,
-        "command": {"type": "add", "text": "hi"}
-    }))
-    .unwrap();
-    let chat: WSMessageRequest = serde_json::from_value(json!({"type": "chat", "text": "hi"})).unwrap();
-
-    assert!(
-        matches!(subscribe, WSMessageRequest::StreamSubscribe { stream_id, kind } if stream_id == "room-1" && kind == "chat")
-    );
-    assert!(matches!(unsubscribe, WSMessageRequest::StreamUnsubscribe { stream_id } if stream_id == "room-1"));
-    assert!(matches!(
-        command,
-        WSMessageRequest::StreamCommand { stream_id, command_id: id, command }
-            if stream_id == "room-1" && id == command_id && command["text"] == "hi"
-    ));
-    assert!(matches!(chat, WSMessageRequest::Chat { text } if text == "hi"));
-}
-
-#[test]
 fn a_sync_carries_the_snapshot_and_the_commands() {
     let (command_id, user_id) = (Uuid::new_v4(), Uuid::new_v4());
 

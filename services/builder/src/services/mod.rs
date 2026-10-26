@@ -1,13 +1,9 @@
-mod chat_service;
 mod command_stream;
 mod hub;
 
 pub use self::{
-    chat_service::ChatService,
-    command_stream::{
-        standard_registry, CommandStreamConfig, CommandStreamService, StreamEgress, WorkerConfig, MAX_COMMAND_BYTES,
-    },
-    hub::{hub_metrics, HubIntervals, HubService, HubStatus},
+    command_stream::{standard_registry, CommandStreamConfig, StreamEgress, WorkerConfig, MAX_COMMAND_BYTES},
+    hub::{hub_metrics, HubConfig, HubService, HubStatus},
 };
 
 #[cfg(test)]

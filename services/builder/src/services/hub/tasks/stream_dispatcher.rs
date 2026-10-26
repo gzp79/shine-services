@@ -19,7 +19,7 @@ impl StreamDispatcher {
     /// persist what is waiting (for up to `shutdown_timeout`) and ends.
     pub async fn start(
         service: HubService,
-        registry: StreamRegistry<PgCommandLogDb, RedisCommandInboxDb>,
+        registry: StreamRegistry<RedisCommandInboxDb, PgCommandLogDb>,
         shutdown_timeout: Duration,
     ) -> JoinHandle<()> {
         // Subscribed before the hub's loop starts: an event dispatched before is lost to it for good.
