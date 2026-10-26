@@ -1,6 +1,6 @@
 use crate::{
     app_state::AppState,
-    models::messages::{DisconnectReason, HubEvent, HubMessage, StreamMessage, TopicKey},
+    models::messages::{DisconnectReason, HubEvent, HubMessage, PingEvent, StreamMessage, TopicKey},
     repositories::command_log::StreamId,
     routes::ws::message::{stream_message_to_wire, WSMessageRequest, WSMessageResponse},
     services::{hub_metrics, HubService, MAX_COMMAND_BYTES},
@@ -105,7 +105,8 @@ pub async fn connect(
 fn event_to_wire_message(message: HubMessage) -> Option<WSMessageResponse> {
     match message {
         HubMessage::StreamMessage(message) => Some(stream_message_to_wire(&message)),
-        HubMessage::Hub(_) | HubMessage::Ping(_) | HubMessage::StreamEvent(_) => None,
+        HubMessage::Ping(event) => Some(WSMessageResponse::Ping { id: event.id }),
+        HubMessage::Hub(_) | HubMessage::StreamEvent(_) => None,
     }
 }
 
@@ -226,8 +227,7 @@ fn reply(replies: &mpsc::WeakSender<HubMessage>, message: StreamMessage) {
     }
 }
 
-/// Handles a request about streams, sent by the client. The hub is the way to the streams; a refusal is
-/// answered to the client at once.
+/// Handles a request about streams, sent by the client.
 async fn handle_stream_request(
     request: WSMessageRequest,
     hub_service: &HubService,
@@ -279,6 +279,13 @@ async fn handle_stream_request(
                 }
             };
             ("stream_command", outcome)
+        }
+        WSMessageRequest::Ping { id } => {
+            let outcome = match hub_service.broadcast(HubMessage::Ping(PingEvent { id })).await {
+                Ok(()) => "ok",
+                Err(_) => "failed",
+            };
+            ("ping", outcome)
         }
     };
     hub_metrics()
@@ -348,7 +355,7 @@ fn open_connection(
     tx: mpsc::Sender<HubMessage>,
 ) -> Option<Uuid> {
     link_span(&Span::current(), span_context);
-    match hub_service.request_connection(user_id, session_key, tx, vec![TopicKey::Hub]) {
+    match hub_service.request_connection(user_id, session_key, tx, vec![TopicKey::Hub, TopicKey::Ping]) {
         Ok(connection_id) => {
             Span::current().record("ws.connection_id", display(connection_id));
             Some(connection_id)

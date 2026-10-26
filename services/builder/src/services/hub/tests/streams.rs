@@ -51,7 +51,7 @@ async fn a_subscribe_reaches_the_internal_subscribers_and_never_the_sockets() {
     let (connection, mut socket) = connect_on(&test.hub, Uuid::new_v4(), 8, vec![TopicKey::Hub, TopicKey::Ping]);
 
     test.hub
-        .request_stream_subscribe(connection, stream("s1"), "ping".to_string())
+        .request_stream_subscribe(connection, stream("s1"), "chat".to_string())
         .unwrap();
     test.hub.request_stream_unsubscribe(connection, stream("s1")).unwrap();
     barrier(&test.hub, &mut test.events).await;
@@ -172,12 +172,6 @@ mod served {
             ..TestHubOptions::default()
         })
         .await?;
-        test.hub
-            .stream_registry()
-            .expect("the hub has streams")
-            .listen()
-            .await
-            .unwrap();
         Some(Served { test, _inbox: inbox, _log: log })
     }
 

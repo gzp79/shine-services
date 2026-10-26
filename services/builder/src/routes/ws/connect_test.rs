@@ -10,6 +10,7 @@ use crate::{
     },
 };
 use futures::channel::mpsc as socket;
+use serde::Deserialize;
 use shine_test::test;
 use std::convert::Infallible;
 use tokio::{task::JoinHandle, time::timeout};
@@ -28,18 +29,21 @@ fn dropped_event(reason: DisconnectReason) -> HubMessage {
 }
 
 /// The ids and texts of a chat frame.
-fn ping_frame(frame: &WsMessage) -> Vec<String> {
+fn ping_frame(frame: &WsMessage) -> PingEvent {
     let WsMessage::Text(text) = frame else {
         panic!("expected a text frame, got {frame:?}");
     };
-    let json: serde_json::Value = serde_json::from_str(text.as_str()).unwrap();
-    assert_eq!(json["type"], "ping");
-    json["messages"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|m| m["id"].as_str().unwrap().into())
-        .collect()
+
+    #[derive(Deserialize)]
+    struct WsMessagePing {
+        r#type: String,
+        id: String,
+    }
+    let json: WsMessagePing = serde_json::from_str(text.as_str()).unwrap();
+    match json.r#type.as_str() {
+        "ping" => PingEvent::new(json.id),
+        _ => panic!("expected a ping response, got: {text}"),
+    }
 }
 
 /// Runs [`forward_egress`] over the given hub messages and returns the frames it sent.
@@ -66,7 +70,7 @@ async fn a_close_notice_ends_the_socket_with_its_reason() {
 
     // Hub events are not forwarded, and nothing after the notice is.
     assert_eq!(frames.len(), 2, "{frames:?}");
-    assert_eq!(ping_frame(&frames[0]), ["1-0".to_string()]);
+    assert_eq!(ping_frame(&frames[0]), PingEvent::new("1-0"));
     assert_eq!(frames[1], close(CLOSE_CODE_DROPPED, "replaced"));
 }
 
@@ -80,7 +84,7 @@ async fn the_drops_of_other_connections_do_not_end_the_socket() {
     let frames = forwarded(vec![other, ping("1-0")]).await;
 
     assert_eq!(frames.len(), 2, "{frames:?}");
-    assert_eq!(ping_frame(&frames[0]), ["1-0".to_string()]);
+    assert_eq!(ping_frame(&frames[0]), PingEvent::new("1-0"));
     assert_eq!(frames[1], WsMessage::Close(None));
 }
 
@@ -108,7 +112,7 @@ async fn a_channel_ending_without_a_notice_closes_without_a_reason() {
     // As for a slow consumer, whose notice did not fit: the buffered messages are still sent first.
     let frames = forwarded(vec![ping("1-0")]).await;
     assert_eq!(frames.len(), 2, "{frames:?}");
-    assert_eq!(ping_frame(&frames[0]), ["1-0".to_string()]);
+    assert_eq!(ping_frame(&frames[0]), PingEvent::new("1-0"));
     assert_eq!(frames[1], WsMessage::Close(None));
 }
 
@@ -199,7 +203,7 @@ async fn a_replaced_socket_is_closed_with_the_reason() {
 
     assert_eq!(first.finished().await, [close(CLOSE_CODE_DROPPED, "replaced")]);
     test.hub.broadcast(ping("1-0")).await.unwrap();
-    assert_eq!(ping_frame(&second.next_frame().await), ["1-0".to_string()]);
+    assert_eq!(ping_frame(&second.next_frame().await), PingEvent::new("1-0"));
 
     second.leave();
     let second_id = second.connection_id;
@@ -304,8 +308,7 @@ async fn client_ping_is_appended_and_delivered_back() {
     client.send("not json");
     client.send(r#"{"type":"unknown"}"#);
     client.send(r#"{"type":"ping","id":"hi"}"#);
-    let delivered = ping_frame(&client.next_frame().await);
-    assert_eq!(delivered, ["hi".to_string()]);
+    assert_eq!(ping_frame(&client.next_frame().await), PingEvent::new("hi"));
 
     client.leave();
     assert_eq!(client.finished().await, [WsMessage::Close(None)]);
