@@ -24,8 +24,12 @@ use crate::{
     },
 };
 use opentelemetry::trace::SpanContext;
-use shine_infra::session::{CurrentUserService, SessionKey};
-use shine_infra::telemetry::{current_span_context, label, link_span};
+use serde::{Deserialize, Serialize};
+use shine_infra::{
+    serde::{consts, duration},
+    session::{CurrentUserService, SessionKey},
+    telemetry::{current_span_context, label, link_span},
+};
 use std::collections::VecDeque;
 use std::time::Instant;
 use std::{sync::Arc, time::Duration};
@@ -41,20 +45,26 @@ pub struct HubStats {
     pub subscribers: usize,
 }
 
-/// Cadence configuration for the hub's periodic connection consumers.
+/// Configuration for the hub's periodic connection consumers.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HubConfig {
+    #[serde(default = "duration::seconds::<300>", with = "duration::seconds")]
     pub heartbeat: Duration,
+    #[serde(default = "duration::seconds::<60>", with = "duration::seconds")]
     pub session_check: Duration,
+    #[serde(default = "duration::seconds::<10>", with = "duration::seconds")]
     pub stream_shutdown_timeout: Duration,
+    #[serde(default = "consts::bool::<true>")]
     pub ping_enabled: bool,
 }
 
-impl Default for HubConfig {
-    fn default() -> Self {
+impl HubConfig {
+    pub const fn defaults() -> Self {
         Self {
-            heartbeat: Duration::from_secs(5),
-            session_check: Duration::from_secs(10),
-            stream_shutdown_timeout: Duration::from_secs(10),
+            heartbeat: duration::seconds::<300>(),
+            session_check: duration::seconds::<60>(),
+            stream_shutdown_timeout: duration::seconds::<10>(),
             ping_enabled: true,
         }
     }

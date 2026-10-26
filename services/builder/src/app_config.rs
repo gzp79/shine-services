@@ -1,6 +1,6 @@
-use crate::repositories::DBConfig;
+use crate::{repositories::DBConfig, services::HubConfig};
 use serde::{Deserialize, Serialize};
-use shine_infra::{serde::*, web::FeatureConfig};
+use shine_infra::web::FeatureConfig;
 use validator::Validate;
 
 /// Raw WebSocket configuration loaded from config files.
@@ -19,16 +19,8 @@ pub struct WsConfig {
 pub struct AppConfig {
     pub db: DBConfig,
     pub ws: WsConfig,
-    /// Hub heartbeat interval in seconds; Redis TTL is derived from  heartbeat timeout.
-    #[serde(default = "u64::<300>")]
-    #[validate(range(min = 1, max = 86_400))]
-    pub hub_heartbeat_seconds: u64,
-    /// Interval in seconds between session-liveness re-checks.
-    #[serde(default = "u64::<60>")]
-    pub auth_check_interval: u64,
-    /// Enables WebSocket ping delivery through the hub.
-    #[serde(default = "bool::<true>")]
-    pub hub_ping_enabled: bool,
+    #[serde(default = "HubConfig::defaults")]
+    pub hub: HubConfig,
 }
 
 impl FeatureConfig for AppConfig {

@@ -1,5 +1,5 @@
 /// Functions with const generics to use as `serde(default = "...")` paths, so a numeric/bool/char
-/// default can be written inline (e.g. `#[serde(default = "shine_infra::serde::u64::<300>")]`)
+/// default can be written inline (e.g. `#[serde(default = "consts::u64::<300>")]`)
 /// instead of a dedicated named function per field.
 /// See [issue](https://github.com/serde-rs/serde/issues/368) for more details; this can be removed once the issue is resolved.
 macro_rules! ty {
@@ -30,12 +30,13 @@ ty!(char, char);
 
 #[cfg(test)]
 mod test {
+    use crate::serde::consts;
     use serde::Deserialize;
     use shine_test::test;
 
     #[derive(Deserialize)]
     struct Defaulted {
-        #[serde(default = "crate::serde::u64::<300>")]
+        #[serde(default = "consts::u64::<300>")]
         value: u64,
     }
 

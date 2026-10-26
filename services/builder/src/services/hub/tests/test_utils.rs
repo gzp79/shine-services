@@ -86,8 +86,8 @@ pub async fn create_test_hub(options: TestHubOptions) -> Option<TestHub> {
         let hub_config = HubConfig {
             heartbeat: options.heartbeat,
             session_check: options.session_check,
+            stream_shutdown_timeout: Duration::from_secs(10),
             ping_enabled: options.ping_enabled,
-            ..Default::default()
         };
 
         let mut hub_builder = HubService::builder(hub_config)

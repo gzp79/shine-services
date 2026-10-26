@@ -7,8 +7,10 @@
   },
 
   "builder": {
-    "hubHeartbeatSeconds": 300,
-    "authCheckInterval": 2,
+    "hub": {
+      "heartbeat": 300,
+      "sessionCheck": 2
+    },
     "chat": {
       "syncIntervalSeconds": 1
     },
