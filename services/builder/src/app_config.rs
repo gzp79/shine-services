@@ -26,6 +26,9 @@ pub struct AppConfig {
     /// Interval in seconds between session-liveness re-checks.
     #[serde(default = "u64::<60>")]
     pub auth_check_interval: u64,
+    /// Enables WebSocket ping delivery through the hub.
+    #[serde(default = "bool::<true>")]
+    pub hub_ping_enabled: bool,
 }
 
 impl FeatureConfig for AppConfig {

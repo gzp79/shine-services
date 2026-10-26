@@ -13,7 +13,10 @@ use futures::channel::mpsc as socket;
 use serde::Deserialize;
 use shine_test::test;
 use std::convert::Infallible;
-use tokio::{task::JoinHandle, time::timeout};
+use tokio::{
+    task::JoinHandle,
+    time::{timeout, Duration},
+};
 
 fn close(code: u16, reason: &'static str) -> WsMessage {
     WsMessage::Close(Some(CloseFrame { code, reason: reason.into() }))
@@ -297,14 +300,14 @@ async fn a_client_leaving_under_traffic_is_not_counted_as_a_drop() {
 }
 
 #[test(serial = "hub-service")]
-async fn client_ping_is_appended_and_delivered_back() {
+async fn client_ping_is_broadcast_when_no_target_is_set() {
     let Some(mut test) = create_test_hub(TestHubOptions::default()).await else {
         return;
     };
     let user = Uuid::new_v4();
     let mut client = Client::open(&mut test, user).await;
 
-    // Invalid frames are ignored; the valid ping goes through the room and back to every socket.
+    // Invalid frames are ignored; a ping without a target is broadcast back to every socket.
     client.send("not json");
     client.send(r#"{"type":"unknown"}"#);
     client.send(r#"{"type":"ping","id":"hi"}"#);

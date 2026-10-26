@@ -44,6 +44,7 @@ pub fn test_redis_cns() -> Option<String> {
 pub struct TestHubOptions {
     pub heartbeat: Duration,
     pub session_check: Duration,
+    pub ping_enabled: bool,
     pub redis_cns: Option<String>,
     pub streams: Option<(PgCommandLogDb, RedisCommandInboxDb, WorkerConfig)>,
 }
@@ -53,6 +54,7 @@ impl Default for TestHubOptions {
         Self {
             heartbeat: IDLE,
             session_check: IDLE,
+            ping_enabled: true,
             redis_cns: None,
             streams: None,
         }
@@ -84,6 +86,7 @@ pub async fn create_test_hub(options: TestHubOptions) -> Option<TestHub> {
         let hub_config = HubConfig {
             heartbeat: options.heartbeat,
             session_check: options.session_check,
+            ping_enabled: options.ping_enabled,
             ..Default::default()
         };
 

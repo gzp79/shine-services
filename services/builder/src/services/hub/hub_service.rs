@@ -46,6 +46,7 @@ pub struct HubConfig {
     pub heartbeat: Duration,
     pub session_check: Duration,
     pub stream_shutdown_timeout: Duration,
+    pub ping_enabled: bool,
 }
 
 impl Default for HubConfig {
@@ -54,6 +55,7 @@ impl Default for HubConfig {
             heartbeat: Duration::from_secs(5),
             session_check: Duration::from_secs(10),
             stream_shutdown_timeout: Duration::from_secs(10),
+            ping_enabled: true,
         }
     }
 }
@@ -140,6 +142,7 @@ impl HubServiceBuilder {
                 hub_registry,
                 stream_registry,
                 subscriptions: StreamSubscriptions::default(),
+                ping_enabled: config.ping_enabled,
             }),
         };
 
@@ -200,6 +203,7 @@ struct Inner {
     hub_registry: RedisHubConnectionDb,
     stream_registry: Option<StreamRegistry<RedisCommandInboxDb, PgCommandLogDb>>,
     subscriptions: StreamSubscriptions,
+    ping_enabled: bool,
 }
 
 /// Messaging service for connected users.
@@ -211,6 +215,10 @@ pub struct HubService {
 impl HubService {
     pub fn builder(hub_config: HubConfig) -> HubServiceBuilder {
         HubServiceBuilder::new(hub_config)
+    }
+
+    pub fn ping_enabled(&self) -> bool {
+        self.inner.ping_enabled
     }
 
     /// The stream workers of this instance, if the hub serves streams.

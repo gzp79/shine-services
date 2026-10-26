@@ -12,6 +12,7 @@
   "builder": {
     "hubHeartbeatSeconds": 300,
     "authCheckInterval": 60,
+    "hubPingEnabled": false,
     "ws": {
       "allowedHosts": ["^ws\\.scytta\\.com(:443)?$"]
     }

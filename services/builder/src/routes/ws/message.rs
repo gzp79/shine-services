@@ -9,6 +9,7 @@ use validator::{Validate, ValidationErrors};
 pub struct PingRequest {
     #[validate(length(max = 255))]
     pub id: String,
+    pub user_id: Option<Uuid>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

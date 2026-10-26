@@ -286,10 +286,18 @@ async fn handle_stream_request(
             };
             ("stream_command", outcome)
         }
-        WSMessageRequest::Ping(PingRequest { id }) => {
-            let outcome = match hub_service.broadcast(HubMessage::Ping(PingEvent { id })).await {
-                Ok(()) => "ok",
-                Err(_) => "failed",
+        WSMessageRequest::Ping(PingRequest { id, user_id }) => {
+            let outcome = if !hub_service.ping_enabled() {
+                "disabled"
+            } else {
+                let message = HubMessage::Ping(PingEvent { id });
+                match match user_id {
+                    Some(user_id) => hub_service.send_to_user(user_id, message).await,
+                    None => hub_service.broadcast(message).await,
+                } {
+                    Ok(()) => "ok",
+                    Err(_) => "failed",
+                }
             };
             ("ping", outcome)
         }

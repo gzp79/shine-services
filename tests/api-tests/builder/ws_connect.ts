@@ -135,7 +135,8 @@ function openAndWaitClose(url: string, options: WsHoldOptions): WsHoldResult {
 
 type WsPingSession = {
     waitPing: (predicate: (ping: WsPing) => boolean, timeoutMs?: number) => Promise<WsPing>;
-    sendPing: (id: string) => void;
+    sendPing: (id: string, userId?: string) => void;
+    sendPingAndWait: (id: string, timeoutMs?: number) => Promise<WsPing>;
     sendRaw: (frame: string) => void;
     close: () => void;
 };
@@ -191,9 +192,24 @@ async function openPingSession(url: string, options: WsConnectOptions): Promise<
             });
         });
 
+    const sendPingAndWait = async (id: string, timeoutMs = 5000) => {
+        const response = waitPing((ping) => ping.id === id, timeoutMs);
+        const send = () => ws.send(JSON.stringify({ type: 'ping', id }));
+        send();
+        // The socket upgrade completes before the hub asynchronously registers the connection.
+        // Retry the same id until it can receive the broadcast rather than depending on a delay.
+        const retry = setInterval(send, 50);
+        try {
+            return await response;
+        } finally {
+            clearInterval(retry);
+        }
+    };
+
     return {
         waitPing,
-        sendPing: (id) => ws.send(JSON.stringify({ type: 'ping', id })),
+        sendPing: (id, userId) => ws.send(JSON.stringify({ type: 'ping', id, ...(userId && { userId }) })),
+        sendPingAndWait,
         sendRaw: (frame: string) => ws.send(frame),
         close: () => ws.close()
     };
@@ -273,9 +289,8 @@ test.describe('Builder websocket', { tag: ['@regression'] }, () => {
 
         try {
             const id = randomUUID();
-            session.sendPing(id);
 
-            expect(await session.waitPing((ping) => ping.id === id)).toEqual({ type: 'ping', id });
+            expect(await session.sendPingAndWait(id)).toEqual({ type: 'ping', id });
         } finally {
             session.close();
         }
@@ -290,11 +305,35 @@ test.describe('Builder websocket', { tag: ['@regression'] }, () => {
         const bob = await openPingSession(url, { sid: other.sessionCookie, ...headers });
 
         try {
+            await bob.sendPingAndWait(randomUUID());
             const id = randomUUID();
-            alice.sendPing(id);
+            const alicePing = alice.sendPingAndWait(id);
 
-            expect(await alice.waitPing((ping) => ping.id === id)).toEqual({ type: 'ping', id });
+            expect(await alicePing).toEqual({ type: 'ping', id });
             expect(await bob.waitPing((ping) => ping.id === id)).toEqual({ type: 'ping', id });
+        } finally {
+            alice.close();
+            bob.close();
+        }
+    });
+
+    test('WS ping shall be delivered only to its target user', async ({ homeUrl, builderWSUrl }) => {
+        const url = wsConnectUrl(builderWSUrl);
+        const headers = wsHeaders(homeUrl, builderWSUrl);
+        const other = await mint.createUserSession({ userId: randomUUID() });
+
+        const alice = await openPingSession(url, { sid: user.sessionCookie, ...headers });
+        const bob = await openPingSession(url, { sid: other.sessionCookie, ...headers });
+
+        try {
+            await alice.sendPingAndWait(randomUUID());
+            await bob.sendPingAndWait(randomUUID());
+
+            const id = randomUUID();
+            alice.sendPing(id, other.userId);
+
+            expect(await bob.waitPing((ping) => ping.id === id)).toEqual({ type: 'ping', id });
+            await expect(alice.waitPing((ping) => ping.id === id, 250)).rejects.toThrow();
         } finally {
             alice.close();
             bob.close();
@@ -314,11 +353,9 @@ test.describe('Builder websocket', { tag: ['@regression'] }, () => {
             session.sendRaw('this is not json');
             session.sendRaw(JSON.stringify({ type: 'unknown', text: 'x' }));
             session.sendRaw(JSON.stringify({ type: 'ping' }));
-
             const id = randomUUID();
-            session.sendPing(id);
 
-            expect(await session.waitPing((ping) => ping.id === id)).toEqual({ type: 'ping', id });
+            expect(await session.sendPingAndWait(id)).toEqual({ type: 'ping', id });
         } finally {
             session.close();
         }

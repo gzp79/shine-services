@@ -61,6 +61,7 @@ impl AppState {
         let hub_config = HubConfig {
             heartbeat: Duration::from_secs(hub_heartbeat_seconds),
             session_check: Duration::from_secs(config.feature.auth_check_interval.max(1)),
+            ping_enabled: config.feature.hub_ping_enabled,
             ..Default::default()
         };
 
