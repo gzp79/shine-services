@@ -2,7 +2,7 @@ use crate::{
     app_state::AppState,
     models::messages::{DisconnectReason, HubEvent, HubMessage, PingEvent, StreamMessage, TopicKey},
     repositories::command_log::StreamId,
-    routes::ws::message::{stream_message_to_wire, WSMessageRequest, WSMessageResponse},
+    routes::ws::message::{stream_message_to_wire, PingRequest, WSMessageRequest, WSMessageResponse},
     services::{hub_metrics, HubService, MAX_COMMAND_BYTES},
 };
 use axum::{
@@ -30,6 +30,7 @@ use tracing::{
     info_span, instrument, Instrument, Span,
 };
 use uuid::Uuid;
+use validator::Validate;
 
 /// Per-WS-client egress buffer capacity. A client that lets this many broadcast messages queue
 /// without draining them is considered too slow, and the hub drops its subscription — closing the
@@ -235,6 +236,11 @@ async fn handle_stream_request(
     user_id: Uuid,
     connection_id: Uuid,
 ) {
+    if let Err(errors) = request.validate() {
+        tracing::trace!("[{user_id}] Validation errors: {errors:#?}");
+        return;
+    }
+
     let (kind, outcome) = match request {
         WSMessageRequest::StreamSubscribe { stream_id, kind } => {
             let outcome = match StreamId::parse(&stream_id) {
@@ -280,7 +286,7 @@ async fn handle_stream_request(
             };
             ("stream_command", outcome)
         }
-        WSMessageRequest::Ping { id } => {
+        WSMessageRequest::Ping(PingRequest { id }) => {
             let outcome = match hub_service.broadcast(HubMessage::Ping(PingEvent { id })).await {
                 Ok(()) => "ok",
                 Err(_) => "failed",

@@ -2,9 +2,16 @@ use crate::models::messages::{NackReason, StreamCommand, StreamMessage, Subscrib
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use validator::Validate;
+use validator::{Validate, ValidationErrors};
 
 #[derive(Clone, Debug, Deserialize, Validate)]
+#[serde(rename_all = "camelCase")]
+pub struct PingRequest {
+    #[validate(length(max = 255))]
+    pub id: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 #[serde(tag = "type")]
 pub enum WSMessageRequest {
@@ -20,10 +27,16 @@ pub enum WSMessageRequest {
         command_id: Uuid,
         command: serde_json::Value,
     },
-    Ping {
-        #[validate(length(min = 1, max = 255))]
-        id: String,
-    },
+    Ping(PingRequest),
+}
+
+impl Validate for WSMessageRequest {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            Self::Ping(ping) => ping.validate(),
+            _ => Ok(()),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
