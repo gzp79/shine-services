@@ -4,6 +4,8 @@ mod redis_connection;
 mod redis_error;
 mod redis_listener;
 
+pub mod testing;
+
 pub use self::{
     redis_check::check_redis,
     redis_connection::{

@@ -3959,6 +3959,7 @@ dependencies = [
  "shine-core",
  "shine-game",
  "shine-infra",
+ "shine-infra-testing",
  "shine-test",
  "thiserror 2.0.21",
  "tokio",
@@ -4050,6 +4051,7 @@ dependencies = [
  "serde_urlencoded",
  "shine-core",
  "shine-infra",
+ "shine-infra-testing",
  "shine-test",
  "tera",
  "thiserror 2.0.21",
@@ -4115,6 +4117,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shine-infra-macros",
+ "shine-infra-testing",
  "shine-test",
  "thiserror 2.0.21",
  "time",
@@ -4143,6 +4146,13 @@ version = "0.1.0"
 dependencies = [
  "quote",
  "syn 3.0.9",
+]
+
+[[package]]
+name = "shine-infra-testing"
+version = "0.1.0"
+dependencies = [
+ "shine-infra",
 ]
 
 [[package]]

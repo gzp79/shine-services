@@ -11,9 +11,9 @@ use shine_infra::{
     db::redis::{create_redis_pool, RedisConnectionPool},
     session::{CurrentUserService, SessionKey},
 };
+use shine_infra_testing::db::redis::get_redis_cns;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
-    env,
     sync::Arc,
     time::Duration,
 };
@@ -28,16 +28,6 @@ const IDLE: Duration = Duration::from_secs(3600);
 
 pub type Events = mpsc::UnboundedReceiver<HubMessage>;
 pub type Egress = mpsc::Receiver<HubMessage>;
-
-pub fn test_redis_cns() -> Option<String> {
-    let cns = env::var("SHINE_TEST_REDIS_CNS")
-        .or_else(|_| env::var("SHINE_REDIS_CNS"))
-        .ok();
-    if cns.is_none() {
-        tracing::warn!("Missing SHINE_TEST_REDIS_CNS/SHINE_REDIS_CNS, skipping test");
-    }
-    cns
-}
 
 /// Hub configuration of a test. The background consumers idle unless a test shortens their interval, and
 /// every hub chats in its own room so no other test's appends wake it.
@@ -71,10 +61,7 @@ pub struct TestHub {
 /// A hub on its own Redis pool, i.e. with its own registry listener: two of them act as two service
 /// instances. `None` when no test Redis is configured.
 pub async fn create_test_hub(options: TestHubOptions) -> Option<TestHub> {
-    let redis_cns = match options.redis_cns {
-        Some(cns) => cns,
-        None => test_redis_cns()?,
-    };
+    let redis_cns = options.redis_cns.or(get_redis_cns())?;
     let redis = create_redis_pool(redis_cns.as_str()).await.unwrap();
     let registry = RedisHubConnectionDb::new(&redis, 120).await.unwrap();
 
@@ -363,7 +350,8 @@ pub fn registry_key(user_id: Uuid) -> String {
 
 /// A registry on the test Redis, bypassing any proxy of the hub under test.
 pub async fn direct_registry() -> RedisHubConnectionDb {
-    let redis = create_redis_pool(test_redis_cns().unwrap().as_str()).await.unwrap();
+    let cns = get_redis_cns().unwrap();
+    let redis = create_redis_pool(&cns).await.unwrap();
     RedisHubConnectionDb::new(&redis, 120).await.unwrap()
 }
 

@@ -1,6 +1,5 @@
 //! The stream registry on a real Postgres and Redis, with a recording sink instead of the hub. Two kinds
-//! of stream are registered: the chat room and the pixel map. They skip without `SHINE_TEST_PG_CNS` and
-//! `SHINE_TEST_REDIS_CNS`.
+//! of stream are registered: the chat room and the pixel map.
 
 use crate::{
     models::messages::{NackReason, SubscribeFailure},

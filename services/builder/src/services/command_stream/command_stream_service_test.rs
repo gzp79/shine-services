@@ -1,6 +1,5 @@
 //! The command stream service on a real Postgres and Redis, with the chat room as the replayed state.
-//! Several instances are simulated by several `StreamState`s of one stream sharing one service. They
-//! skip without `SHINE_TEST_PG_CNS` and `SHINE_TEST_REDIS_CNS`.
+//! Several instances are simulated by several `StreamState`s of one stream sharing one service.
 
 use crate::{
     repositories::{

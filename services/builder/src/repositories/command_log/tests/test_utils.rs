@@ -10,7 +10,7 @@ use shine_game::replica::{
     CommandEnvelope, CommandHeader, ReplayState, Replica,
 };
 use shine_infra::db::postgres::{self, PgConnectionPool};
-use std::env;
+use shine_infra_testing::db::postgres::get_postgres_cns;
 use tokio::{sync::OnceCell, task::JoinHandle};
 use uuid::Uuid;
 
@@ -48,10 +48,7 @@ pub async fn join<T>(handles: Vec<JoinHandle<T>>) -> Vec<T> {
 /// A command log on the test Postgres, or `None` (the test skips) when none is configured. Tests
 /// share the database and stay apart by using a stream of their own.
 pub async fn create_test_log() -> Option<TestLog> {
-    let Ok(cns) = env::var("SHINE_TEST_PG_CNS") else {
-        tracing::warn!("Missing SHINE_TEST_PG_CNS, skipping test");
-        return None;
-    };
+    let cns = get_postgres_cns()?;
     let _ = rustls::crypto::ring::default_provider().install_default();
 
     // Concurrent runners of the same migration would race on creating its objects.

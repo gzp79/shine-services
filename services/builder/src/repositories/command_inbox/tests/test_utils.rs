@@ -1,6 +1,7 @@
 use crate::repositories::command_inbox::{redis::RedisCommandInboxDb, CommandInboxDb, InboxId, InboxWake, StreamId};
 use shine_infra::db::redis::{create_redis_pool, RedisConnectionPool};
-use std::{env, time::Duration};
+use shine_infra_testing::db::redis::get_redis_cns;
+use std::time::Duration;
 use tokio::{sync::mpsc, time::timeout};
 use uuid::Uuid;
 
@@ -91,14 +92,7 @@ impl TestInbox {
 /// An inbox on the test Redis, or `None` (the test skips) when none is configured. Tests share the
 /// Redis and stay apart by using a stream of their own.
 pub async fn create_test_inbox(ttl_seconds: u64) -> Option<TestInbox> {
-    let Some(cns) = env::var("SHINE_TEST_REDIS_CNS")
-        .or_else(|_| env::var("SHINE_REDIS_CNS"))
-        .ok()
-    else {
-        tracing::warn!("Missing SHINE_TEST_REDIS_CNS/SHINE_REDIS_CNS, skipping test");
-        return None;
-    };
-    // A pool of its own, so it has its own wake listener.
+    let cns = get_redis_cns()?;
     let redis = create_redis_pool(&cns).await.unwrap();
     let db = RedisCommandInboxDb::new(&redis, ttl_seconds).await.unwrap();
     Some(TestInbox { db, redis })

@@ -9,7 +9,7 @@ use crate::{
     services::hub_test_utils::{
         assert_consistent, barrier, closed_with, connect, connect_with_key, create_test_hub, delete_key,
         direct_registry, dropped, drops, egress_state, find_registry_connection, key, lifecycle_of, open, registry_key,
-        seed_session, test_redis_cns, wait_event, Lifecycle, TestHub, TestHubOptions, BARRIER_TIMEOUT,
+        seed_session, wait_event, Lifecycle, TestHub, TestHubOptions, BARRIER_TIMEOUT,
     },
 };
 use shine_test::{
@@ -27,7 +27,6 @@ const CUT_IN_SET: u64 = 60;
 
 /// A hub whose Redis goes through the proxy, with short timeouts so an outage fails fast.
 async fn proxied_hub(toxiproxy: &Toxiproxy, options: TestHubOptions) -> Option<TestHub> {
-    test_redis_cns()?;
     let (host, port) = (toxiproxy.host(), toxiproxy.proxy("redis").await.listen_port());
     create_test_hub(TestHubOptions {
         redis_cns: Some(format!("redis://{host}:{port}?timeout=1000&pool_timeout=500")),
@@ -51,9 +50,7 @@ async fn warm_pool(test: &TestHub) {
 
 #[test(serial = "hub-service")]
 async fn connect_proceeds_when_the_registry_write_landed_but_its_reply_was_lost() {
-    let Some(toxiproxy) = Toxiproxy::from_env() else {
-        return;
-    };
+    let Some(toxiproxy) = Toxiproxy::from_env() else { return };
     let _reset = toxiproxy.reset_guard().await;
     let Some(mut test) = proxied_hub(&toxiproxy, TestHubOptions::default()).await else {
         return;

@@ -11,6 +11,7 @@ default = [
 
 ot_otlp = ["opentelemetry-otlp"]
 ot_app_insight = ["opentelemetry-application-insights"]
+testing = []
 
 [dependencies]
 log = { workspace = true }
@@ -107,10 +108,10 @@ axum-extra = { workspace = true, features = [
     "typed-header",
 ] }
 
-############################# MEMBERS #############################
 shine-infra-macros = { workspace = true }
 
 [dev-dependencies]
 shine-test = { workspace = true }
 itertools = { workspace = true }
 postgres-types = { workspace = true, features = ["derive"] }
+shine-infra-testing = { workspace = true }

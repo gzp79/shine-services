@@ -1,6 +1,5 @@
 //! The stream worker on a real Postgres and Redis, with a recording sink instead of the hub. The wake that
-//! the inbox listener will give a worker is simulated by calling `wake`. They skip without
-//! `SHINE_TEST_PG_CNS` and `SHINE_TEST_REDIS_CNS`.
+//! the inbox listener will give a worker is simulated by calling `wake`.
 
 use crate::{
     models::CommandInboxError,

@@ -57,3 +57,4 @@ shine-infra = { workspace = true }
 [dev-dependencies]
 rustls = { workspace = true, features = ["ring"] }
 shine-test = { workspace = true, features = ["toxiproxy"] }
+shine-infra-testing = { workspace = true }
