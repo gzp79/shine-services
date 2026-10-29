@@ -8,7 +8,7 @@ use crate::{
     },
     repositories::{
         command_inbox::redis::RedisCommandInboxDb,
-        command_log::{pg::PgCommandLogDb, StreamId},
+        command_log::pg::PgCommandLogDb,
         hub_registry::{redis::RedisHubConnectionDb, HubConnection, HubConnectionDb, HubRegistry},
     },
     services::{
@@ -26,6 +26,7 @@ use crate::{
 };
 use opentelemetry::trace::SpanContext;
 use serde::{Deserialize, Serialize};
+use shine_game::replica::StreamId;
 use shine_infra::{
     serde::{consts, duration},
     session::{CurrentUserService, SessionKey},

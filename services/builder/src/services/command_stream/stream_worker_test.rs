@@ -14,7 +14,7 @@ use crate::{
             tests::test_utils::{
                 all_commands, append_range, create_test_log, replay, stream_id, ChatLog, TestLog, KIND,
             },
-            CommandLogDb, StreamId,
+            CommandLogDb,
         },
     },
     services::command_stream::{
@@ -23,7 +23,7 @@ use crate::{
         CommandStreamConfig, CommandStreamService, StreamMessage, WorkerConfig, WorkerHandle,
     },
 };
-use shine_game::replica::{encode_command, ChatCommand, ChatState};
+use shine_game::replica::{encode_command, ChatCommand, ChatState, StreamId};
 use shine_test::test;
 use std::{
     sync::{

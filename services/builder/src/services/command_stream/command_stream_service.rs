@@ -2,11 +2,11 @@ use crate::{
     models::CommandStreamError,
     repositories::{
         command_inbox::{CommandInboxDb, InboxId},
-        command_log::{CommandLogDb, StoredCommand, StreamId},
+        command_log::{CommandLogDb, StoredCommand},
     },
     services::command_stream::{stream_state::to_envelope, CommandStreamConfig, StreamState},
 };
-use shine_game::replica::{decode_snapshot, Checkpoint, ReplayState, Replica};
+use shine_game::replica::{decode_snapshot, Checkpoint, ReplayState, Replica, StreamId};
 use tracing::instrument;
 
 /// What a sync did to a stream.

@@ -4,8 +4,9 @@
 
 use crate::{
     models::CommandStreamError,
-    repositories::command_log::{ConsistencyReport, StoredCommand, StoredSnapshot, StreamHead, StreamId},
+    repositories::command_log::{ConsistencyReport, StoredCommand, StoredSnapshot, StreamHead},
 };
+use shine_game::replica::StreamId;
 use std::future::Future;
 
 /// Access to the command-log data store: a stream's commands and snapshots.

@@ -1,7 +1,5 @@
-use crate::repositories::command_log::{
-    pg::{pg_command_log_db::PgCommandLogDb, PgCommandLogError},
-    StreamId,
-};
+use crate::repositories::command_log::pg::{pg_command_log_db::PgCommandLogDb, PgCommandLogError};
+use shine_game::replica::StreamId;
 use shine_infra::pg_query;
 
 pg_query!( pub Prune =>

@@ -1,8 +1,8 @@
 //! What the tests of the workers and of the registry share: a sink that records what is sent to each
 //! connection and helpers to read it.
 
-use crate::repositories::command_log::StreamId;
 use crate::services::command_stream::{StreamEgress, StreamMessage, WorkerConfig, WorkerHandle};
+use shine_game::replica::StreamId;
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, Mutex},

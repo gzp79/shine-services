@@ -1,5 +1,5 @@
-use crate::repositories::command_inbox::{redis::RedisCommandInboxDb, CommandInboxDb, InboxId, InboxWake, StreamId};
-use shine_game::replica::StreamKind;
+use crate::repositories::command_inbox::{redis::RedisCommandInboxDb, CommandInboxDb, InboxId, InboxWake};
+use shine_game::replica::{StreamId, StreamKind};
 use shine_infra::db::redis::{create_redis_pool, RedisConnectionPool};
 use shine_infra_testing::db::redis::get_redis_cns;
 use std::time::Duration;

@@ -1,9 +1,9 @@
 use crate::models::CommandStreamError;
 use crate::repositories::command_inbox::{InboxBatch, InboxId};
-use crate::repositories::command_log::{StoredCommand, StoredSnapshot, StreamId};
+use crate::repositories::command_log::{StoredCommand, StoredSnapshot};
 use shine_game::replica::{
     decode_command, encode_command, encode_snapshot, fold_chain_hash, Command, CommandEnvelope, CommandHeader,
-    ReplayState, Replica,
+    ReplayState, Replica, StreamId,
 };
 use uuid::Uuid;
 

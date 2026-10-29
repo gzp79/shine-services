@@ -1,8 +1,9 @@
 use crate::repositories::command_log::{
     pg::{pg_command_log_db::PgCommandLogDb, PgCommandLogError},
-    StoredSnapshot, StreamId,
+    StoredSnapshot,
 };
 use postgres_from_row::FromRow;
+use shine_game::replica::StreamId;
 use shine_infra::pg_query;
 use tokio_postgres::Row;
 

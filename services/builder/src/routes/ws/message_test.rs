@@ -1,11 +1,9 @@
 //! The JSON frames of the stream messages: what a client sends and what it is sent.
 
 use super::*;
-use crate::{
-    models::messages::{CommandFailure, StreamCommand, StreamMessage, StreamSnapshot, SubscribeFailure},
-    repositories::command_log::StreamId,
-};
+use crate::models::messages::{CommandFailure, StreamCommand, StreamMessage, StreamSnapshot, SubscribeFailure};
 use serde_json::json;
+use shine_game::replica::StreamId;
 use shine_test::test;
 
 fn stream(name: &str) -> StreamId {

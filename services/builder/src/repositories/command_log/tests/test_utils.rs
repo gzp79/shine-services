@@ -1,13 +1,13 @@
 use crate::{
     models::CommandStreamError,
     repositories::{
-        command_log::{pg::PgCommandLogDb, CommandLogDb, StoredCommand, StoredSnapshot, StreamHead, StreamId},
+        command_log::{pg::PgCommandLogDb, CommandLogDb, StoredCommand, StoredSnapshot, StreamHead},
         create_postgres_pool, DBConfig,
     },
 };
 use shine_game::replica::{
     decode_command, decode_snapshot, encode_command, encode_snapshot, stable_hash_of, ChatCommand, ChatState,
-    CommandEnvelope, CommandHeader, ReplayState, Replica, StreamKind,
+    CommandEnvelope, CommandHeader, ReplayState, Replica, StreamId, StreamKind,
 };
 use shine_infra::db::postgres::{self, PgConnectionPool};
 use shine_infra_testing::db::postgres::get_postgres_cns;

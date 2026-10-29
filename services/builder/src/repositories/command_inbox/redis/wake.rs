@@ -1,7 +1,8 @@
 use crate::repositories::command_inbox::{
     redis::{RedisCommandInboxDb, RedisCommandInboxError},
-    InboxWake, StreamId,
+    InboxWake,
 };
+use shine_game::replica::StreamId;
 use shine_infra::db::redis::RedisError;
 use tracing::instrument;
 

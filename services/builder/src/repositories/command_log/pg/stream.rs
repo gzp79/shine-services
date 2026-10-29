@@ -1,8 +1,9 @@
 use crate::repositories::command_log::{
     pg::{pg_command_log_db::PgCommandLogDb, PgCommandLogError},
-    StreamHead, StreamId,
+    StreamHead,
 };
 use postgres_from_row::FromRow;
+use shine_game::replica::StreamId;
 use shine_infra::{
     db::postgres::{PgConnection, PgRawConnection},
     pg_query,

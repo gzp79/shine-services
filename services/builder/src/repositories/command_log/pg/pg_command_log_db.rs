@@ -2,9 +2,10 @@ use crate::{
     models::CommandStreamError,
     repositories::command_log::{
         pg::{append, commands, consistency, prune, snapshot, stream, PgCommandLogError},
-        CommandLogDb, ConsistencyReport, StoredCommand, StoredSnapshot, StreamHead, StreamId,
+        CommandLogDb, ConsistencyReport, StoredCommand, StoredSnapshot, StreamHead,
     },
 };
+use shine_game::replica::StreamId;
 use shine_infra::db::postgres::{PgConnectionPool, PgPoolError, PgPooledConnection};
 use std::{sync::Arc, time::Duration};
 

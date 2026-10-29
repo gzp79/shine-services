@@ -2,9 +2,10 @@ use crate::{
     models::CommandStreamError,
     repositories::command_inbox::{
         redis::{inbox, wake, RedisCommandInboxError},
-        CommandInboxDb, InboxBatch, InboxId, InboxWake, StreamId,
+        CommandInboxDb, InboxBatch, InboxId, InboxWake,
     },
 };
+use shine_game::replica::StreamId;
 use shine_infra::db::redis::{RedisConnectionPool, RedisError, RedisPooledConnection};
 use uuid::Uuid;
 

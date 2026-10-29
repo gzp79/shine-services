@@ -1,4 +1,5 @@
-use crate::{models::CommandStreamError, repositories::command_log::StreamId};
+use crate::models::CommandStreamError;
+use shine_game::replica::StreamId;
 use uuid::Uuid;
 
 /// Decides if a stream may be opened and subscribed to.

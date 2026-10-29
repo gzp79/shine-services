@@ -1,7 +1,6 @@
 use crate::{
     app_state::AppState,
     models::messages::{DisconnectReason, HubEvent, HubMessage, PingEvent, StreamMessage, TopicKey},
-    repositories::command_log::StreamId,
     routes::ws::message::{stream_message_to_wire, PingRequest, WSMessageRequest, WSMessageResponse},
     services::{hub_metrics, HubService, MAX_COMMAND_BYTES},
 };
@@ -15,6 +14,7 @@ use axum::{
 };
 use futures::{Sink, SinkExt, Stream, StreamExt};
 use opentelemetry::trace::SpanContext;
+use shine_game::replica::StreamId;
 use shine_infra::{
     session::{CheckedCurrentUser, CurrentUser, SessionKey},
     telemetry::{current_span_context, label, link_span},

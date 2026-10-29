@@ -1,8 +1,9 @@
 use crate::repositories::command_log::{
     pg::{commands, pg_command_log_db::PgCommandLogDb, snapshot, stream, PgCommandLogError},
-    ConsistencyIssue, ConsistencyReport, StoredCommand, StreamId,
+    ConsistencyIssue, ConsistencyReport, StoredCommand,
 };
 use postgres_from_row::FromRow;
+use shine_game::replica::StreamId;
 use shine_infra::pg_query;
 
 #[derive(FromRow)]

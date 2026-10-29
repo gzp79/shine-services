@@ -3,13 +3,12 @@
 
 use crate::{
     models::messages::{CommandFailure, HubEvent, HubMessage, StreamEvent, StreamMessage, SubscribeFailure, TopicKey},
-    repositories::command_log::StreamId,
     services::{
         hub_test_utils::{barrier, connect, connect_on, create_test_hub, TestHub, TestHubOptions},
         StreamEgress,
     },
 };
-use shine_game::replica::StreamKind;
+use shine_game::replica::{StreamId, StreamKind};
 use shine_test::test;
 use std::sync::Arc;
 use tokio::sync::mpsc::error::TryRecvError;

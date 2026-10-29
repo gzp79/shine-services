@@ -12,7 +12,7 @@ use crate::{
         command_log::{
             pg::PgCommandLogDb,
             tests::test_utils::{all_commands, create_test_log, stream_id, TestLog},
-            CommandLogDb, StreamId,
+            CommandLogDb,
         },
     },
     services::command_stream::{
@@ -20,7 +20,9 @@ use crate::{
         CommandStreamConfig, CommandStreamService, StreamRegistry, WorkerConfig, MAX_COMMAND_BYTES,
     },
 };
-use shine_game::replica::{encode_command, ChatCommand, ChatState, PixelMapCommand, PixelMapState, ReplayState};
+use shine_game::replica::{
+    encode_command, ChatCommand, ChatState, PixelMapCommand, PixelMapState, ReplayState, StreamId,
+};
 use shine_test::test;
 use std::time::Duration;
 use tokio::time::{sleep, timeout};

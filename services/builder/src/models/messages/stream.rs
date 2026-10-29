@@ -1,7 +1,8 @@
 use crate::{
     models::messages::{ToTopic, TopicKey},
-    repositories::command_log::{StoredCommand, StoredSnapshot, StreamId},
+    repositories::command_log::{StoredCommand, StoredSnapshot},
 };
+use shine_game::replica::StreamId;
 use uuid::Uuid;
 
 /// A command as the subscribers see it. It has no inbox position: that stays on the server.

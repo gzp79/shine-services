@@ -2,12 +2,12 @@ use crate::{
     models::{messages::CommandFailure, CommandStreamError},
     repositories::{
         command_inbox::{CommandInboxDb, InboxWake},
-        command_log::{CommandLogDb, StreamId},
+        command_log::CommandLogDb,
     },
     services::command_stream::{spawn_worker, CommandStreamService, StreamEgress, WorkerConfig, WorkerHandle},
 };
 use futures::future::join_all;
-use shine_game::replica::{decode_command, ReplayState, StreamKind};
+use shine_game::replica::{decode_command, ReplayState, StreamId, StreamKind};
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, Mutex},

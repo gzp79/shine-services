@@ -1,8 +1,9 @@
 use crate::repositories::command_log::{
     pg::{pg_command_log_db::PgCommandLogDb, stream, PgCommandLogError},
-    StoredCommand, StreamHead, StreamId,
+    StoredCommand, StreamHead,
 };
 use postgres_types::ToSql;
+use shine_game::replica::StreamId;
 use shine_infra::{
     db::postgres::{PgValueTypeUnknown, ToPgType},
     pg_query,

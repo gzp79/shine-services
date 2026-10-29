@@ -1,7 +1,5 @@
-use crate::{
-    models::messages::{DisconnectReason, HubMessage, TopicKey},
-    repositories::command_log::StreamId,
-};
+use crate::models::messages::{DisconnectReason, HubMessage, TopicKey};
+use shine_game::replica::StreamId;
 use shine_infra::session::SessionKey;
 use tokio::sync::mpsc;
 use uuid::Uuid;

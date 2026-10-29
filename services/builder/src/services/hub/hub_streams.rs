@@ -1,4 +1,4 @@
-use crate::repositories::command_log::StreamId;
+use shine_game::replica::StreamId;
 use std::{collections::HashMap, collections::HashSet, sync::Mutex};
 use uuid::Uuid;
 

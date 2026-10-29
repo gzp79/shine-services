@@ -1,7 +1,8 @@
 use crate::{
     models::CommandStreamError,
-    repositories::command_inbox::{InboxBatch, InboxId, InboxWake, StreamId},
+    repositories::command_inbox::{InboxBatch, InboxId, InboxWake},
 };
+use shine_game::replica::StreamId;
 use std::future::Future;
 use uuid::Uuid;
 

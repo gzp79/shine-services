@@ -1,13 +1,13 @@
 use crate::{
     repositories::{
         command_inbox::CommandInboxDb,
-        command_log::{CommandLogDb, StoredCommand, StreamId},
+        command_log::{CommandLogDb, StoredCommand},
     },
     services::command_stream::{
         CommandStreamService, StreamCommand, StreamEgress, StreamMessage, StreamSnapshot, StreamState,
     },
 };
-use shine_game::replica::ReplayState;
+use shine_game::replica::{ReplayState, StreamId};
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::{
     sync::{mpsc, Notify},

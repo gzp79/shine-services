@@ -14,12 +14,12 @@ use crate::{
                 all_commands, append_range, create_test_log, replay, stream_id, stream_with_snapshots, ChatLog,
                 TestLog, KIND,
             },
-            CommandLogDb, StoredCommand, StoredSnapshot, StreamId,
+            CommandLogDb, StoredCommand, StoredSnapshot,
         },
     },
     services::command_stream::{CommandStreamConfig, CommandStreamService, StreamState},
 };
-use shine_game::replica::{decode_command, encode_command, ChatCommand, ChatState};
+use shine_game::replica::{decode_command, encode_command, ChatCommand, ChatState, StreamId};
 use shine_test::test;
 use uuid::Uuid;
 
