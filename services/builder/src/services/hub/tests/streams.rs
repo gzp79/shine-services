@@ -185,7 +185,7 @@ mod served {
         served
             .test
             .hub
-            .subscribe_stream(connection, stream_id.clone())
+            .subscribe_stream(connection, Uuid::new_v4(), stream_id.clone())
             .await
             .unwrap();
     }
@@ -335,7 +335,7 @@ async fn a_hub_without_streams_refuses_them() {
     let id = stream("s1");
 
     assert_eq!(
-        test.hub.subscribe_stream(connection, id.clone()).await,
+        test.hub.subscribe_stream(connection, Uuid::new_v4(), id.clone()).await,
         Err(SubscribeFailure::Failed)
     );
     assert_eq!(

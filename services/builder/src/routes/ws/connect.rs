@@ -249,7 +249,10 @@ async fn handle_stream_request(
             let Some(stream_id) = parse_stream_id(user_id, &stream_id) else {
                 return;
             };
-            match hub_service.subscribe_stream(connection_id, stream_id.clone()).await {
+            match hub_service
+                .subscribe_stream(connection_id, user_id, stream_id.clone())
+                .await
+            {
                 Ok(()) => ("stream_subscribe", "ok"),
                 Err(reason) => {
                     send_stream_response(replies, StreamMessage::SubscribeFailed { stream_id, reason });

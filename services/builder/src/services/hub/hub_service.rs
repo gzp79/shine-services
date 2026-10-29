@@ -262,22 +262,27 @@ impl HubService {
     /// The stream methods of the hub trust their caller: the transport has authenticated the user, and holds
     /// the id the hub gave its connection. Neither is ever taken from the client. What the client does send
     /// (stream id, command) is checked here and in the registry.
-    pub async fn subscribe_stream(&self, connection_id: Uuid, stream_id: StreamId) -> Result<(), SubscribeFailure> {
+    pub async fn subscribe_stream(
+        &self,
+        connection_id: Uuid,
+        user_id: Uuid,
+        stream_id: StreamId,
+    ) -> Result<(), SubscribeFailure> {
         let registry = self.inner.stream_registry.as_ref().ok_or(SubscribeFailure::Failed)?;
         let authorized = self
             .inner
             .stream_authorize_service
-            .is_authorized(&stream_id)
+            .is_authorized(user_id, &stream_id)
             .await
             .map_err(|err| {
                 tracing::warn!("[{connection_id}] Stream authorization failed: {err}");
                 SubscribeFailure::Failed
             })?;
         if !authorized {
+            tracing::info!("[{connection_id}] User {user_id} is not authorized for stream {stream_id}");
             return Err(SubscribeFailure::Unauthorized);
         }
         registry.open(&stream_id).await.map_err(|err| err.subscribe_failure())?;
-        // Known to the hub at once, so that what the connection does next sees it; the loop follows.
         self.inner.subscriptions.subscribe(connection_id, stream_id.clone());
         self.request_stream_subscribe(connection_id, stream_id)
             .map_err(|_| SubscribeFailure::Failed)
