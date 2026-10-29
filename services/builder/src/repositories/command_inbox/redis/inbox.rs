@@ -1,9 +1,6 @@
-use crate::{
-    models::CommandInboxError,
-    repositories::command_inbox::{
-        redis::{wake::WAKE_CHANNEL, RedisCommandInboxDb},
-        InboxBatch, InboxEntry, InboxId, StreamId,
-    },
+use crate::repositories::command_inbox::{
+    redis::{wake::WAKE_CHANNEL, RedisCommandInboxDb, RedisCommandInboxError},
+    InboxBatch, InboxEntry, InboxId, StreamId,
 };
 use redis::streams::{StreamId as StreamEntry, StreamRangeReply};
 use shine_infra::db::redis::RedisError;
@@ -19,7 +16,7 @@ pub async fn push(
     command_id: Uuid,
     user_id: Uuid,
     data: &str,
-) -> Result<InboxId, CommandInboxError> {
+) -> Result<InboxId, RedisCommandInboxError> {
     let key = RedisCommandInboxDb::stream_key(stream_id);
     let mut client = db.client().await?;
 
@@ -46,7 +43,7 @@ pub async fn push(
         .await
         .map_err(RedisError::RawError)?;
 
-    InboxId::parse(&id).ok_or_else(|| CommandInboxError::Malformed(format!("stream id {id:?}")))
+    InboxId::parse(&id).ok_or_else(|| RedisCommandInboxError::Malformed(format!("stream id {id:?}")))
 }
 
 #[instrument(level = "debug", skip_all, fields(stream_id = %stream_id, limit))]
@@ -55,7 +52,7 @@ pub async fn poll(
     stream_id: &StreamId,
     after: &InboxId,
     limit: usize,
-) -> Result<InboxBatch, CommandInboxError> {
+) -> Result<InboxBatch, RedisCommandInboxError> {
     let mut batch = InboxBatch {
         entries: Vec::new(),
         cursor: after.clone(),
@@ -92,7 +89,11 @@ pub async fn poll(
 }
 
 #[instrument(level = "debug", skip_all, fields(stream_id = %stream_id, up_to = %up_to))]
-pub async fn trim(db: &RedisCommandInboxDb, stream_id: &StreamId, up_to: &InboxId) -> Result<usize, CommandInboxError> {
+pub async fn trim(
+    db: &RedisCommandInboxDb,
+    stream_id: &StreamId,
+    up_to: &InboxId,
+) -> Result<usize, RedisCommandInboxError> {
     let mut client = db.client().await?;
     // MINID evicts the entries below the given id: one above `up_to` keeps `up_to` out.
     let removed: usize = redis::cmd("XTRIM")

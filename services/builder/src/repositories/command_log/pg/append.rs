@@ -1,12 +1,6 @@
-use crate::{
-    models::CommandLogError,
-    repositories::command_log::{
-        pg::{
-            pg_command_log_db::{db_error, PgCommandLogDb},
-            stream,
-        },
-        StoredCommand, StreamHead, StreamId,
-    },
+use crate::repositories::command_log::{
+    pg::{pg_command_log_db::PgCommandLogDb, stream, PgCommandLogError},
+    StoredCommand, StreamHead, StreamId,
 };
 use postgres_types::ToSql;
 use shine_infra::{
@@ -77,7 +71,7 @@ pub async fn append(
     stream_id: &StreamId,
     commands: &[StoredCommand],
     baseline_hash: u64,
-) -> Result<StreamHead, CommandLogError> {
+) -> Result<StreamHead, PgCommandLogError> {
     debug_assert!(
         commands.windows(2).all(|w| w[1].version == w[0].version + 1),
         "commands must be a dense, contiguous run of versions"
@@ -89,7 +83,7 @@ pub async fn append(
     let Some(first) = commands.first() else {
         return stream::head(db, stream_id)
             .await?
-            .ok_or(CommandLogError::StreamNotFound);
+            .ok_or(PgCommandLogError::StreamNotFound);
     };
     let first_version = first.version;
     let last_version = commands.last().map_or(first_version, |c| c.version);
@@ -103,10 +97,10 @@ pub async fn append(
         // statements take.
         let head: StreamHead = stream::get_head(db, &client, stream_id)
             .await?
-            .ok_or(CommandLogError::StreamNotFound)?;
+            .ok_or(PgCommandLogError::StreamNotFound)?;
 
         if head.version < first_version - 1 {
-            return Err(CommandLogError::Diverged { head });
+            return Err(PgCommandLogError::LogDiverged { head });
         }
         // The chain hash I can claim at head.version, if it falls within what I hold. When the head
         // is already ahead of my own tip, I have nothing of mine to compare: the caller sees it from
@@ -120,7 +114,7 @@ pub async fn append(
         };
         if let Some(expected) = my_hash_at_head {
             if expected != head.chain_hash {
-                return Err(CommandLogError::Diverged { head });
+                return Err(PgCommandLogError::LogDiverged { head });
             }
         }
 
@@ -132,14 +126,11 @@ pub async fn append(
             return Ok(head);
         };
         if new_first.version != head.version + 1 || new.windows(2).any(|w| w[1].version != w[0].version + 1) {
-            return Err(CommandLogError::Diverged { head });
+            return Err(PgCommandLogError::LogDiverged { head });
         }
 
-        let tx = client
-            .transaction(Some(IsolationLevel::ReadCommitted))
-            .await
-            .map_err(db_error)?;
-        tx.batch_execute(APPEND_TIMEOUTS).await.map_err(db_error)?;
+        let tx = client.transaction(Some(IsolationLevel::ReadCommitted)).await?;
+        tx.batch_execute(APPEND_TIMEOUTS).await?;
 
         // Idempotent: a concurrent attempt inserting the same rows at the same versions is harmless
         // (`ON CONFLICT DO NOTHING`); only advancing the head below needs a conflict check. No
@@ -149,8 +140,7 @@ pub async fn append(
         stmts
             .insert_commands
             .execute(&tx, kind, id, commands.as_slice())
-            .await
-            .map_err(db_error)?;
+            .await?;
 
         let new_version = new.last().map_or(head.version, |c| c.version);
         let new_chain_hash = new.last().map_or(head.chain_hash, |c| c.chain_hash);
@@ -165,19 +155,18 @@ pub async fn append(
                 new_version,
                 new_chain_hash as i64,
             )
-            .await
-            .map_err(db_error)?;
+            .await?;
 
         if moved == 1 {
-            tx.commit().await.map_err(db_error)?;
+            tx.commit().await?;
             return Ok(StreamHead {
                 version: new_version,
                 chain_hash: new_chain_hash,
             });
         }
-        tx.rollback().await.map_err(db_error)?;
+        tx.rollback().await?;
         if attempt == MAX_ATTEMPTS {
-            return Err(CommandLogError::Contention);
+            return Err(PgCommandLogError::Contention);
         }
         backoff.delay().await;
     }

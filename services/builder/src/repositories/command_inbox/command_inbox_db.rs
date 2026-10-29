@@ -1,5 +1,5 @@
 use crate::{
-    models::CommandInboxError,
+    models::CommandStreamError,
     repositories::command_inbox::{InboxBatch, InboxId, InboxWake, StreamId},
 };
 use std::future::Future;
@@ -18,7 +18,7 @@ pub trait CommandInboxDb: Clone + Send + Sync {
         command_id: Uuid,
         user_id: Uuid,
         data: &str,
-    ) -> impl Future<Output = Result<InboxId, CommandInboxError>> + Send;
+    ) -> impl Future<Output = Result<InboxId, CommandStreamError>> + Send;
 
     /// Reads up to `limit` entries after `after`, in order. Entries missing a field or holding a
     /// malformed one are skipped and logged; see `InboxBatch::cursor`.
@@ -27,7 +27,7 @@ pub trait CommandInboxDb: Clone + Send + Sync {
         stream_id: &StreamId,
         after: &InboxId,
         limit: usize,
-    ) -> impl Future<Output = Result<InboxBatch, CommandInboxError>> + Send;
+    ) -> impl Future<Output = Result<InboxBatch, CommandStreamError>> + Send;
 
     /// Removes the entries up to and including `up_to`, and returns how many there were. A trim point
     /// below an earlier one removes nothing, so instances trimming concurrently cannot undo each other.
@@ -35,21 +35,21 @@ pub trait CommandInboxDb: Clone + Send + Sync {
         &self,
         stream_id: &StreamId,
         up_to: &InboxId,
-    ) -> impl Future<Output = Result<usize, CommandInboxError>> + Send;
+    ) -> impl Future<Output = Result<usize, CommandStreamError>> + Send;
 
     /// Tells the listeners that the stream is persisted up to `version`.
     fn notify_persisted(
         &self,
         stream_id: &StreamId,
         version: i64,
-    ) -> impl Future<Output = Result<(), CommandInboxError>> + Send;
+    ) -> impl Future<Output = Result<(), CommandStreamError>> + Send;
 
     /// Calls `handler` for every wake of every stream, from a task shared with the other listeners of
     /// the connection: it must not block. At most one handler per connection pool.
-    fn listen<F>(&self, handler: F) -> impl Future<Output = Result<(), CommandInboxError>> + Send
+    fn listen<F>(&self, handler: F) -> impl Future<Output = Result<(), CommandStreamError>> + Send
     where
         F: Fn(InboxWake) + Send + Sync + 'static;
 
     /// Stops the handler of `listen`.
-    fn unlisten(&self) -> impl Future<Output = Result<(), CommandInboxError>> + Send;
+    fn unlisten(&self) -> impl Future<Output = Result<(), CommandStreamError>> + Send;
 }

@@ -1,8 +1,7 @@
 use crate::{
+    models::CommandStreamError,
     repositories::{command_inbox::CommandInboxDb, command_log::CommandLogDb},
-    services::command_stream::{
-        CommandStreamConfig, CommandStreamService, RegistryError, StreamEgress, StreamRegistry, WorkerConfig,
-    },
+    services::command_stream::{CommandStreamConfig, CommandStreamService, StreamEgress, StreamRegistry, WorkerConfig},
 };
 use shine_game::replica::{ChatState, PixelMapState};
 
@@ -13,7 +12,7 @@ pub fn standard_registry<I, L, E>(
     egress: &E,
     service_config: CommandStreamConfig,
     worker_config: WorkerConfig,
-) -> Result<StreamRegistry<I, L>, RegistryError>
+) -> Result<StreamRegistry<I, L>, CommandStreamError>
 where
     I: CommandInboxDb + 'static,
     L: CommandLogDb + 'static,

@@ -1,5 +1,5 @@
 use crate::{
-    models::CommandLogError,
+    models::CommandStreamError,
     repositories::command_log::{
         tests::test_utils::{
             all_commands, append_range, create_test_log, join, replay, seeded_stream, store_room, stream_id,
@@ -151,7 +151,7 @@ async fn appending_to_a_missing_stream_is_not_found_but_appending_nothing_is_not
     let room = ChatLog::new("a", 2);
 
     let result = append_range(&log.db, &stream_id(KIND), &room, 1, 2).await;
-    assert!(matches!(result, Err(CommandLogError::StreamNotFound)), "{result:?}");
+    assert!(matches!(result, Err(CommandStreamError::StreamNotFound)), "{result:?}");
 
     let (id, room) = seeded_stream(&log, 3).await;
     log.db.append(&id, &[], room.chain_hash_at(3)).await.unwrap();
@@ -199,7 +199,7 @@ async fn a_batch_that_leaves_a_gap_after_the_head_is_diverged() {
     let result = append_range(&log.db, &id, &longer, 5, 6).await;
 
     assert!(
-        matches!(&result, Err(CommandLogError::Diverged { head: seen }) if *seen == head),
+        matches!(&result, Err(CommandStreamError::LogDiverged { head: seen }) if *seen == head),
         "{result:?}"
     );
     assert_eq!(log.db.head(&id).await.unwrap().unwrap(), head);
@@ -216,7 +216,7 @@ async fn a_batch_continuing_from_a_wrong_baseline_is_diverged() {
     let result = log.db.append(&id, batch, 12345).await;
 
     assert!(
-        matches!(&result, Err(CommandLogError::Diverged { head: seen }) if *seen == head),
+        matches!(&result, Err(CommandStreamError::LogDiverged { head: seen }) if *seen == head),
         "{result:?}"
     );
     assert_eq!(log.db.head(&id).await.unwrap().unwrap(), head);
@@ -233,7 +233,7 @@ async fn a_different_history_is_diverged_however_it_overlaps_the_head() {
     for (first, last) in [(1, 3), (1, 5), (4, 5)] {
         let result = append_range(&log.db, &id, &other, first, last).await;
         assert!(
-            matches!(&result, Err(CommandLogError::Diverged { head: seen }) if *seen == head),
+            matches!(&result, Err(CommandStreamError::LogDiverged { head: seen }) if *seen == head),
             "{first}..={last}: {result:?}"
         );
     }
@@ -373,7 +373,7 @@ async fn a_snapshot_not_matching_the_command_at_its_version_is_diverged_and_not_
     for snapshot in [forged, beyond] {
         let result = log.db.try_store_snapshot(&id, &snapshot).await;
         assert!(
-            matches!(result, Err(CommandLogError::SnapshotDiverged)),
+            matches!(result, Err(CommandStreamError::SnapshotDiverged)),
             "version {}: {result:?}",
             snapshot.version
         );
@@ -391,7 +391,10 @@ async fn a_snapshot_of_a_stream_without_commands_is_diverged() {
 
     let result = log.db.try_store_snapshot(&id, &room.snapshot_at(1)).await;
 
-    assert!(matches!(result, Err(CommandLogError::SnapshotDiverged)), "{result:?}");
+    assert!(
+        matches!(result, Err(CommandStreamError::SnapshotDiverged)),
+        "{result:?}"
+    );
 }
 
 #[test]
@@ -429,7 +432,10 @@ async fn storing_a_snapshot_twice_is_ok_but_a_disagreeing_one_at_the_same_versio
     log.db.try_store_snapshot(&id, &stored).await.unwrap();
     let result = log.db.try_store_snapshot(&id, &disagreeing).await;
 
-    assert!(matches!(result, Err(CommandLogError::SnapshotDiverged)), "{result:?}");
+    assert!(
+        matches!(result, Err(CommandStreamError::SnapshotDiverged)),
+        "{result:?}"
+    );
     assert_eq!(log.db.latest_snapshot(&id, 5).await.unwrap(), Some(stored));
 }
 
@@ -531,7 +537,7 @@ async fn of_concurrent_writers_of_diverging_histories_exactly_one_wins() {
         assert!(
             results
                 .iter()
-                .any(|r| matches!(r, Err(CommandLogError::Diverged { .. }))),
+                .any(|r| matches!(r, Err(CommandStreamError::LogDiverged { .. }))),
             "round {round}: {results:?}"
         );
         let winner = &rooms[winners[0].0];

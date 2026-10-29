@@ -3,7 +3,7 @@
 #![allow(dead_code)]
 
 use crate::{
-    models::CommandLogError,
+    models::CommandStreamError,
     repositories::command_log::{ConsistencyReport, StoredCommand, StoredSnapshot, StreamHead, StreamId},
 };
 use std::future::Future;
@@ -11,10 +11,14 @@ use std::future::Future;
 /// Access to the command-log data store: a stream's commands and snapshots.
 pub trait CommandLogDb: Clone + Send + Sync {
     /// Creates the stream if it does not exist yet, and returns its head either way.
-    fn ensure_stream(&self, stream_id: &StreamId) -> impl Future<Output = Result<StreamHead, CommandLogError>> + Send;
+    fn ensure_stream(
+        &self,
+        stream_id: &StreamId,
+    ) -> impl Future<Output = Result<StreamHead, CommandStreamError>> + Send;
 
     /// The stream's head, or `None` if it does not exist. Never creates it.
-    fn head(&self, stream_id: &StreamId) -> impl Future<Output = Result<Option<StreamHead>, CommandLogError>> + Send;
+    fn head(&self, stream_id: &StreamId)
+        -> impl Future<Output = Result<Option<StreamHead>, CommandStreamError>> + Send;
 
     /// Stores the rows above the head and proves the overlap with it by chain hash. `commands` must
     /// be a dense, contiguous run of versions; `baseline_hash` is the chain hash through the version
@@ -25,14 +29,14 @@ pub trait CommandLogDb: Clone + Send + Sync {
     /// was already covered. If `head.version` is not beyond the last command, the batch is in the log
     /// exactly as sent. If it is beyond, the log is ahead of the batch and nothing of it could be
     /// compared: the caller has to catch up (`commands_after`) before it trusts the batch.
-    /// `Err(CommandLogError::Diverged { head })` if the batch does not match the log, with the head it
+    /// `Err(CommandStreamError::Diverged { head })` if the batch does not match the log, with the head it
     /// was compared with.
     fn append(
         &self,
         stream_id: &StreamId,
         commands: &[StoredCommand],
         baseline_hash: u64,
-    ) -> impl Future<Output = Result<StreamHead, CommandLogError>> + Send;
+    ) -> impl Future<Output = Result<StreamHead, CommandStreamError>> + Send;
 
     /// Returns the commands from the given version onwards, up to `limit` rows.
     fn commands_after(
@@ -40,39 +44,39 @@ pub trait CommandLogDb: Clone + Send + Sync {
         stream_id: &StreamId,
         after: i64,
         limit: i64,
-    ) -> impl Future<Output = Result<Vec<StoredCommand>, CommandLogError>> + Send;
+    ) -> impl Future<Output = Result<Vec<StoredCommand>, CommandStreamError>> + Send;
 
     /// The last `count` commands, ordered by version.
     fn last_commands(
         &self,
         stream_id: &StreamId,
         count: i64,
-    ) -> impl Future<Output = Result<Vec<StoredCommand>, CommandLogError>> + Send;
+    ) -> impl Future<Output = Result<Vec<StoredCommand>, CommandStreamError>> + Send;
 
     /// Stores a snapshot at `version`.
     ///
     /// # Return
     /// `Ok(())` whether it was newly stored or already covered by
-    /// an agreeing one; `Err(CommandLogError::SnapshotDiverged)` if its `chain_hash` does not match the
+    /// an agreeing one; `Err(CommandStreamError::SnapshotDiverged)` if its `chain_hash` does not match the
     /// command already durably stored at that version, or an existing snapshot there disagrees.
     fn try_store_snapshot(
         &self,
         stream_id: &StreamId,
         snapshot: &StoredSnapshot,
-    ) -> impl Future<Output = Result<(), CommandLogError>> + Send;
+    ) -> impl Future<Output = Result<(), CommandStreamError>> + Send;
 
     /// Returns the latest snapshot at or before the given version, if any.
     fn latest_snapshot(
         &self,
         stream_id: &StreamId,
         at_or_before: i64,
-    ) -> impl Future<Output = Result<Option<StoredSnapshot>, CommandLogError>> + Send;
+    ) -> impl Future<Output = Result<Option<StoredSnapshot>, CommandStreamError>> + Send;
 
     /// The version of the oldest stored snapshot, if there is one.
     fn oldest_snapshot_version(
         &self,
         stream_id: &StreamId,
-    ) -> impl Future<Output = Result<Option<i64>, CommandLogError>> + Send;
+    ) -> impl Future<Output = Result<Option<i64>, CommandStreamError>> + Send;
 
     /// Keeps the latest `kept_snapshot_count` snapshots and the commands from the oldest of them on, and deletes
     /// the rest in one transaction. Returns the version of the oldest kept snapshot (the horizon), or `None`.
@@ -80,7 +84,7 @@ pub trait CommandLogDb: Clone + Send + Sync {
         &self,
         stream_id: &StreamId,
         kept_snapshot_count: i64,
-    ) -> impl Future<Output = Result<Option<i64>, CommandLogError>> + Send;
+    ) -> impl Future<Output = Result<Option<i64>, CommandStreamError>> + Send;
 
     /// Verifies the stream from its stored rows, up to the head version read at the start:
     /// - the head agrees with the last command.
@@ -93,5 +97,5 @@ pub trait CommandLogDb: Clone + Send + Sync {
     fn check_consistency(
         &self,
         stream_id: &StreamId,
-    ) -> impl Future<Output = Result<ConsistencyReport, CommandLogError>> + Send;
+    ) -> impl Future<Output = Result<ConsistencyReport, CommandStreamError>> + Send;
 }

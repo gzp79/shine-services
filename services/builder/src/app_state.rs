@@ -3,7 +3,7 @@ use crate::{
     repositories::command_inbox::redis::RedisCommandInboxDb,
     repositories::command_log::pg::PgCommandLogDb,
     repositories::hub_registry::redis::RedisHubConnectionDb,
-    services::{standard_registry, CommandStreamConfig, HubService, WorkerConfig},
+    services::{standard_registry, CommandStreamConfig, HubService, StreamAuthorizeService, WorkerConfig},
     settings::{BuilderSettings, WsSettings},
 };
 use anyhow::{anyhow, Error as AnyError};
@@ -71,6 +71,7 @@ impl AppState {
                     WorkerConfig::default(),
                 )
             })?
+            .with_stream_authorize_service(StreamAuthorizeService::new)
             .build()
             .await?;
 

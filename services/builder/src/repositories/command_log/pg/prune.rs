@@ -1,9 +1,6 @@
-use crate::{
-    models::CommandLogError,
-    repositories::command_log::{
-        pg::pg_command_log_db::{db_error, PgCommandLogDb},
-        StreamId,
-    },
+use crate::repositories::command_log::{
+    pg::{pg_command_log_db::PgCommandLogDb, PgCommandLogError},
+    StreamId,
 };
 use shine_infra::pg_query;
 
@@ -39,7 +36,7 @@ pub async fn prune(
     db: &PgCommandLogDb,
     stream_id: &StreamId,
     kept_snapshot_count: i64,
-) -> Result<Option<i64>, CommandLogError> {
+) -> Result<Option<i64>, PgCommandLogError> {
     let client = db.client().await?;
     db.stmts()
         .prune
@@ -50,5 +47,5 @@ pub async fn prune(
             kept_snapshot_count.max(1),
         )
         .await
-        .map_err(db_error)
+        .map_err(PgCommandLogError::from)
 }

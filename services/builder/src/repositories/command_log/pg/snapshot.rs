@@ -1,9 +1,6 @@
-use crate::{
-    models::CommandLogError,
-    repositories::command_log::{
-        pg::pg_command_log_db::{db_error, PgCommandLogDb},
-        StoredSnapshot, StreamId,
-    },
+use crate::repositories::command_log::{
+    pg::{pg_command_log_db::PgCommandLogDb, PgCommandLogError},
+    StoredSnapshot, StreamId,
 };
 use postgres_from_row::FromRow;
 use shine_infra::pg_query;
@@ -89,7 +86,7 @@ pub async fn try_store_snapshot(
     db: &PgCommandLogDb,
     stream_id: &StreamId,
     snapshot: &StoredSnapshot,
-) -> Result<(), CommandLogError> {
+) -> Result<(), PgCommandLogError> {
     let client = db.client().await?;
     let stmts = db.stmts();
     let kind = stream_id.kind().as_str();
@@ -100,8 +97,7 @@ pub async fn try_store_snapshot(
     let latest_version = stmts
         .latest_snapshot_version
         .query_one(&client, kind, id)
-        .await
-        .map_err(db_error)?
+        .await?
         .version;
     if let Some(latest) = latest_version {
         if snapshot.version < latest {
@@ -112,20 +108,18 @@ pub async fn try_store_snapshot(
     let logged_chain_hash = stmts
         .command_chain_hash_at
         .query_opt(&client, kind, id, snapshot.version)
-        .await
-        .map_err(db_error)?;
+        .await?;
     match logged_chain_hash {
         Some(chain_hash) if chain_hash as u64 == snapshot.chain_hash => {}
         // Either no command is stored at this version at all, or it disagrees: either way the
         // claim does not match what is durably persisted.
-        _ => return Err(CommandLogError::SnapshotDiverged),
+        _ => return Err(PgCommandLogError::SnapshotDiverged),
     }
 
     if let Some(existing) = stmts
         .get_snapshot
         .query_opt(&client, kind, id, snapshot.version)
-        .await
-        .map_err(db_error)?
+        .await?
     {
         return agrees(&existing, snapshot);
     }
@@ -141,8 +135,7 @@ pub async fn try_store_snapshot(
             snapshot.chain_hash as i64,
             &snapshot.data,
         )
-        .await
-        .map_err(db_error)?;
+        .await?;
     if inserted == 1 {
         return Ok(());
     }
@@ -150,8 +143,7 @@ pub async fn try_store_snapshot(
     match stmts
         .get_snapshot
         .query_opt(&client, kind, id, snapshot.version)
-        .await
-        .map_err(db_error)?
+        .await?
     {
         Some(existing) => agrees(&existing, snapshot),
         // A newer snapshot already covers this version; our own claim was already checked above.
@@ -163,34 +155,33 @@ pub async fn latest_snapshot(
     db: &PgCommandLogDb,
     stream_id: &StreamId,
     at_or_before: i64,
-) -> Result<Option<StoredSnapshot>, CommandLogError> {
+) -> Result<Option<StoredSnapshot>, PgCommandLogError> {
     let client = db.client().await?;
     db.stmts()
         .latest_snapshot
         .query_opt(&client, stream_id.kind().as_str(), stream_id.id(), at_or_before)
         .await
-        .map_err(db_error)
+        .map_err(PgCommandLogError::from)
 }
 
 pub async fn oldest_snapshot_version(
     db: &PgCommandLogDb,
     stream_id: &StreamId,
-) -> Result<Option<i64>, CommandLogError> {
+) -> Result<Option<i64>, PgCommandLogError> {
     let client = db.client().await?;
     let row = db
         .stmts()
         .oldest_snapshot
         .query_one(&client, stream_id.kind().as_str(), stream_id.id())
-        .await
-        .map_err(db_error)?;
+        .await?;
     Ok(row.version)
 }
 
 /// `Ok(())` if an already-stored snapshot agrees with what this attempt would have stored.
-fn agrees(existing: &SnapshotHashRow, attempted: &StoredSnapshot) -> Result<(), CommandLogError> {
+fn agrees(existing: &SnapshotHashRow, attempted: &StoredSnapshot) -> Result<(), PgCommandLogError> {
     if existing.hash as u64 == attempted.hash && existing.chain_hash as u64 == attempted.chain_hash {
         Ok(())
     } else {
-        Err(CommandLogError::SnapshotDiverged)
+        Err(PgCommandLogError::SnapshotDiverged)
     }
 }

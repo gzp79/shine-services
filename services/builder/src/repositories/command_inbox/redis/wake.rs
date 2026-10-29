@@ -1,6 +1,6 @@
-use crate::{
-    models::CommandInboxError,
-    repositories::command_inbox::{redis::RedisCommandInboxDb, InboxWake, StreamId},
+use crate::repositories::command_inbox::{
+    redis::{RedisCommandInboxDb, RedisCommandInboxError},
+    InboxWake, StreamId,
 };
 use shine_infra::db::redis::RedisError;
 use tracing::instrument;
@@ -16,7 +16,7 @@ pub async fn notify_persisted(
     db: &RedisCommandInboxDb,
     stream_id: &StreamId,
     version: i64,
-) -> Result<(), CommandInboxError> {
+) -> Result<(), RedisCommandInboxError> {
     let mut client = db.client().await?;
     let _: i64 = redis::cmd("PUBLISH")
         .arg(WAKE_CHANNEL)
@@ -27,7 +27,7 @@ pub async fn notify_persisted(
     Ok(())
 }
 
-pub async fn listen<F>(db: &RedisCommandInboxDb, handler: F) -> Result<(), CommandInboxError>
+pub async fn listen<F>(db: &RedisCommandInboxDb, handler: F) -> Result<(), RedisCommandInboxError>
 where
     F: Fn(InboxWake) + Send + Sync + 'static,
 {
@@ -45,7 +45,7 @@ where
     Ok(())
 }
 
-pub async fn unlisten(db: &RedisCommandInboxDb) -> Result<(), CommandInboxError> {
+pub async fn unlisten(db: &RedisCommandInboxDb) -> Result<(), RedisCommandInboxError> {
     let client = db.client().await?;
     client.unlisten(WAKE_CHANNEL).await?;
     Ok(())

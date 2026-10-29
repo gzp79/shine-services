@@ -115,6 +115,7 @@ fn nack_reason(reason: CommandFailure) -> &'static str {
 fn subscribe_failure(reason: SubscribeFailure) -> &'static str {
     match reason {
         SubscribeFailure::Failed => "failed",
+        SubscribeFailure::Unauthorized => "unauthorized",
     }
 }
 

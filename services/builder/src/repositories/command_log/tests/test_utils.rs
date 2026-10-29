@@ -1,5 +1,5 @@
 use crate::{
-    models::CommandLogError,
+    models::CommandStreamError,
     repositories::{
         command_log::{pg::PgCommandLogDb, CommandLogDb, StoredCommand, StoredSnapshot, StreamHead, StreamId},
         create_postgres_pool, DBConfig,
@@ -181,7 +181,7 @@ pub async fn append_range(
     room: &ChatLog,
     first: i64,
     last: i64,
-) -> Result<StreamHead, CommandLogError> {
+) -> Result<StreamHead, CommandStreamError> {
     let (batch, baseline) = room.range(first, last);
     db.append(stream_id, batch, baseline).await
 }

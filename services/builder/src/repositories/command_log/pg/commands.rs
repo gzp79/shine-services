@@ -1,9 +1,6 @@
-use crate::{
-    models::CommandLogError,
-    repositories::command_log::{
-        pg::pg_command_log_db::{db_error, PgCommandLogDb},
-        StoredCommand, StreamId,
-    },
+use crate::repositories::command_log::{
+    pg::{pg_command_log_db::PgCommandLogDb, PgCommandLogError},
+    StoredCommand, StreamId,
 };
 use postgres_from_row::FromRow;
 use shine_infra::pg_query;
@@ -58,24 +55,24 @@ pub async fn commands_after(
     stream_id: &StreamId,
     after: i64,
     limit: i64,
-) -> Result<Vec<StoredCommand>, CommandLogError> {
+) -> Result<Vec<StoredCommand>, PgCommandLogError> {
     let client = db.client().await?;
     db.stmts()
         .commands_after
         .query(&client, stream_id.kind().as_str(), stream_id.id(), after, limit)
         .await
-        .map_err(db_error)
+        .map_err(PgCommandLogError::from)
 }
 
 pub async fn last_commands(
     db: &PgCommandLogDb,
     stream_id: &StreamId,
     count: i64,
-) -> Result<Vec<StoredCommand>, CommandLogError> {
+) -> Result<Vec<StoredCommand>, PgCommandLogError> {
     let client = db.client().await?;
     db.stmts()
         .last_commands
         .query(&client, stream_id.kind().as_str(), stream_id.id(), count)
         .await
-        .map_err(db_error)
+        .map_err(PgCommandLogError::from)
 }

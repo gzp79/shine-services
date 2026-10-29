@@ -1,7 +1,7 @@
 use crate::{
-    models::CommandInboxError,
+    models::CommandStreamError,
     repositories::command_inbox::{
-        redis::{inbox, wake},
+        redis::{inbox, wake, RedisCommandInboxError},
         CommandInboxDb, InboxBatch, InboxId, InboxWake, StreamId,
     },
 };
@@ -15,9 +15,9 @@ pub struct RedisCommandInboxDb {
 }
 
 impl RedisCommandInboxDb {
-    pub async fn new(redis: &RedisConnectionPool, ttl_seconds: u64) -> Result<Self, CommandInboxError> {
+    pub async fn new(redis: &RedisConnectionPool, ttl_seconds: u64) -> Result<Self, RedisCommandInboxError> {
         if ttl_seconds == 0 {
-            return Err(CommandInboxError::InvalidConfig(
+            return Err(RedisCommandInboxError::InvalidConfig(
                 "Command inbox ttl_seconds must be > 0",
             ));
         }
@@ -36,7 +36,7 @@ impl RedisCommandInboxDb {
         self.ttl_seconds
     }
 
-    pub async fn client(&self) -> Result<RedisPooledConnection<'_>, CommandInboxError> {
+    pub async fn client(&self) -> Result<RedisPooledConnection<'_>, RedisCommandInboxError> {
         Ok(self.pool.get().await.map_err(RedisError::PoolError)?)
     }
 }
@@ -48,30 +48,35 @@ impl CommandInboxDb for RedisCommandInboxDb {
         command_id: Uuid,
         user_id: Uuid,
         data: &str,
-    ) -> Result<InboxId, CommandInboxError> {
-        inbox::push(self, stream_id, command_id, user_id, data).await
+    ) -> Result<InboxId, CommandStreamError> {
+        Ok(inbox::push(self, stream_id, command_id, user_id, data).await?)
     }
 
-    async fn poll(&self, stream_id: &StreamId, after: &InboxId, limit: usize) -> Result<InboxBatch, CommandInboxError> {
-        inbox::poll(self, stream_id, after, limit).await
+    async fn poll(
+        &self,
+        stream_id: &StreamId,
+        after: &InboxId,
+        limit: usize,
+    ) -> Result<InboxBatch, CommandStreamError> {
+        Ok(inbox::poll(self, stream_id, after, limit).await?)
     }
 
-    async fn trim(&self, stream_id: &StreamId, up_to: &InboxId) -> Result<usize, CommandInboxError> {
-        inbox::trim(self, stream_id, up_to).await
+    async fn trim(&self, stream_id: &StreamId, up_to: &InboxId) -> Result<usize, CommandStreamError> {
+        Ok(inbox::trim(self, stream_id, up_to).await?)
     }
 
-    async fn notify_persisted(&self, stream_id: &StreamId, version: i64) -> Result<(), CommandInboxError> {
-        wake::notify_persisted(self, stream_id, version).await
+    async fn notify_persisted(&self, stream_id: &StreamId, version: i64) -> Result<(), CommandStreamError> {
+        Ok(wake::notify_persisted(self, stream_id, version).await?)
     }
 
-    async fn listen<F>(&self, handler: F) -> Result<(), CommandInboxError>
+    async fn listen<F>(&self, handler: F) -> Result<(), CommandStreamError>
     where
         F: Fn(InboxWake) + Send + Sync + 'static,
     {
-        wake::listen(self, handler).await
+        Ok(wake::listen(self, handler).await?)
     }
 
-    async fn unlisten(&self) -> Result<(), CommandInboxError> {
-        wake::unlisten(self).await
+    async fn unlisten(&self) -> Result<(), CommandStreamError> {
+        Ok(wake::unlisten(self).await?)
     }
 }

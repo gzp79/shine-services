@@ -1,5 +1,5 @@
 use crate::{
-    models::{CommandLogError, CommandStreamError},
+    models::CommandStreamError,
     repositories::{
         command_inbox::{CommandInboxDb, InboxId},
         command_log::{CommandLogDb, StoredCommand, StreamId},
@@ -178,7 +178,7 @@ impl<I: CommandInboxDb, L: CommandLogDb> CommandStreamService<I, L> {
                     tracing::warn!("[{}] Failed to prune the log: {err:#?}", state.stream_id());
                 }
             }
-            Err(CommandLogError::SnapshotDiverged) => {
+            Err(CommandStreamError::SnapshotDiverged) => {
                 tracing::error!(
                     "[{}] The state at version {} differs from the stored snapshot",
                     state.stream_id(),
@@ -254,8 +254,8 @@ impl<I: CommandInboxDb, L: CommandLogDb> CommandStreamService<I, L> {
             }
             // The log is past the batch, which could not be compared with it, or it holds other
             // commands where the batch has its own: other instances were first.
-            Ok(_) | Err(CommandLogError::Diverged { .. }) => self.catch_up(state, outcome).await,
-            Err(err) => Err(err.into()),
+            Ok(_) | Err(CommandStreamError::LogDiverged { .. }) => self.catch_up(state, outcome).await,
+            Err(err) => Err(err),
         }
     }
 

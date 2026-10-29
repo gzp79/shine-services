@@ -18,7 +18,7 @@ pub use self::{
     command_stream_service::{CommandStreamService, ReplayOutcome, SyncOutcome},
     stream_egress::StreamEgress,
     stream_kinds::standard_registry,
-    stream_registry::{RegistryError, StreamRegistry, StreamRegistryBuilder, MAX_COMMAND_BYTES},
+    stream_registry::{StreamRegistry, StreamRegistryBuilder, MAX_COMMAND_BYTES},
     stream_state::StreamState,
     stream_worker::{spawn_worker, WorkerConfig, WorkerHandle},
 };

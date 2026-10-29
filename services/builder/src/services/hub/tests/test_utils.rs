@@ -1,7 +1,7 @@
 use crate::models::messages::PingEvent;
 use crate::repositories::{command_inbox::redis::RedisCommandInboxDb, command_log::pg::PgCommandLogDb};
 use crate::services::command_stream::{standard_registry, CommandStreamConfig, WorkerConfig};
-use crate::services::{HubConfig, HubService};
+use crate::services::{HubConfig, HubService, StreamAuthorizeService};
 use crate::{
     models::messages::{DisconnectReason, HubEvent, HubMessage, TopicKey},
     repositories::hub_registry::{redis::RedisHubConnectionDb, HubConnectionDb, HubRegistry},
@@ -79,7 +79,8 @@ pub async fn create_test_hub(options: TestHubOptions) -> Option<TestHub> {
 
         let mut hub_builder = HubService::builder(hub_config)
             .with_session_service(session_service)
-            .with_hub_registry(registry.clone());
+            .with_hub_registry(registry.clone())
+            .with_stream_authorize_service(StreamAuthorizeService::new);
         if let Some((log_db, inbox_db, worker)) = options.streams {
             hub_builder = hub_builder
                 .with_stream_registry(|egress| {

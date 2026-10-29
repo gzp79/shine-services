@@ -2,7 +2,7 @@
 //! of stream are registered: the chat room and the pixel map.
 
 use crate::{
-    models::messages::CommandFailure,
+    models::{messages::CommandFailure, CommandStreamError},
     repositories::{
         command_inbox::{
             redis::RedisCommandInboxDb,
@@ -17,7 +17,7 @@ use crate::{
     },
     services::command_stream::{
         stream_test_utils::{kinds, quiet, versions_of, TestEgress, WAIT},
-        CommandStreamConfig, CommandStreamService, RegistryError, StreamRegistry, WorkerConfig, MAX_COMMAND_BYTES,
+        CommandStreamConfig, CommandStreamService, StreamRegistry, WorkerConfig, MAX_COMMAND_BYTES,
     },
 };
 use shine_game::replica::{encode_command, ChatCommand, ChatState, PixelMapCommand, PixelMapState, ReplayState};
@@ -111,7 +111,7 @@ async fn a_kind_registered_twice_fails_the_build() {
         .register::<ChatState, _>(service(), TestEgress::default(), quiet())
         .build();
 
-    assert!(matches!(result, Err(RegistryError::DuplicateKind(kind)) if kind == ChatState::KIND));
+    assert!(matches!(result, Err(CommandStreamError::DuplicateKind(kind)) if kind == ChatState::KIND));
 }
 
 // ---------------------------------------------------------------------------------------------

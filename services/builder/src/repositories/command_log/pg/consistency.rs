@@ -1,13 +1,6 @@
-use crate::{
-    models::CommandLogError,
-    repositories::command_log::{
-        pg::{
-            commands,
-            pg_command_log_db::{db_error, PgCommandLogDb},
-            snapshot, stream,
-        },
-        ConsistencyIssue, ConsistencyReport, StoredCommand, StreamId,
-    },
+use crate::repositories::command_log::{
+    pg::{commands, pg_command_log_db::PgCommandLogDb, snapshot, stream, PgCommandLogError},
+    ConsistencyIssue, ConsistencyReport, StoredCommand, StreamId,
 };
 use postgres_from_row::FromRow;
 use shine_infra::pg_query;
@@ -35,7 +28,7 @@ pg_query!( pub ListSnapshots =>
 pub async fn check_consistency(
     db: &PgCommandLogDb,
     stream_id: &StreamId,
-) -> Result<ConsistencyReport, CommandLogError> {
+) -> Result<ConsistencyReport, PgCommandLogError> {
     let Some(head) = stream::head(db, stream_id).await? else {
         return Ok(ConsistencyReport {
             checked_up_to_version: 0,
@@ -88,8 +81,7 @@ pub async fn check_consistency(
         .stmts()
         .list_snapshots
         .query(&client, stream_id.kind().as_str(), stream_id.id())
-        .await
-        .map_err(db_error)?;
+        .await?;
     for snapshot in snapshots {
         if snapshot.version > head.version {
             continue;

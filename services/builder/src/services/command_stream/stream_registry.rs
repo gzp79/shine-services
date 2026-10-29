@@ -1,8 +1,5 @@
 use crate::{
-    models::{
-        messages::{CommandFailure, SubscribeFailure},
-        CommandInboxError, CommandLogError,
-    },
+    models::{messages::CommandFailure, CommandStreamError},
     repositories::{
         command_inbox::{CommandInboxDb, InboxWake},
         command_log::{CommandLogDb, StreamId},
@@ -16,28 +13,10 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
-use thiserror::Error as ThisError;
 use uuid::Uuid;
 
 /// Longest command, as JSON text, that is queued.
 pub const MAX_COMMAND_BYTES: usize = 16 * 1024;
-
-#[derive(Debug, ThisError)]
-pub enum RegistryError {
-    #[error("The stream kind {0:?} is registered twice")]
-    DuplicateKind(StreamKind),
-    #[error(transparent)]
-    Log(#[from] CommandLogError),
-}
-
-impl RegistryError {
-    /// What a client is told when this is why it cannot subscribe.
-    pub fn subscribe_failure(&self) -> SubscribeFailure {
-        match self {
-            RegistryError::DuplicateKind(_) | RegistryError::Log(_) => SubscribeFailure::Failed,
-        }
-    }
-}
 
 /// What a kind of stream is to the registry. It is made by `register`, which is the only place that
 /// knows the type of the replayed state; here it is behind closures.
@@ -105,9 +84,9 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistryBuild
     }
 
     /// Fails if a kind was registered twice.
-    pub fn build(self) -> Result<StreamRegistry<I, L>, RegistryError> {
+    pub fn build(self) -> Result<StreamRegistry<I, L>, CommandStreamError> {
         if let Some(kind) = self.duplicate {
-            return Err(RegistryError::DuplicateKind(kind));
+            return Err(CommandStreamError::DuplicateKind(kind));
         }
         Ok(StreamRegistry {
             inner: Arc::new(Inner {
@@ -131,10 +110,10 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
     }
 
     /// Validates that the stream's known kind is registered before it is opened.
-    pub async fn open(&self, stream_id: &StreamId) -> Result<StreamKind, RegistryError> {
+    pub async fn open(&self, stream_id: &StreamId) -> Result<StreamKind, CommandStreamError> {
         let kind = stream_id.kind();
         if !self.inner.kinds.contains_key(&kind) {
-            return Err(RegistryError::Log(CommandLogError::StreamNotFound));
+            return Err(CommandStreamError::StreamNotFound);
         }
         Ok(kind)
     }
@@ -171,12 +150,12 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
     }
 
     /// Subscribes the connection to the stream, starting its worker if there is none.
-    pub fn subscribe(&self, connection_id: Uuid, stream_id: &StreamId) -> Result<(), RegistryError> {
+    pub fn subscribe(&self, connection_id: Uuid, stream_id: &StreamId) -> Result<(), CommandStreamError> {
         let entry = self
             .inner
             .kinds
             .get(&stream_id.kind())
-            .ok_or(RegistryError::Log(CommandLogError::StreamNotFound))?;
+            .ok_or(CommandStreamError::StreamNotFound)?;
         let mut state = self.inner.state.lock().unwrap();
 
         let running = state
@@ -266,7 +245,7 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
 
     /// Starts to wake the workers on the wakes of the inbox. A listener that reconnected may have missed
     /// wakes, so it wakes every worker.
-    pub async fn listen(&self) -> Result<(), CommandInboxError> {
+    pub async fn listen(&self) -> Result<(), CommandStreamError> {
         let registry = self.clone();
         self.inner
             .inbox
@@ -277,7 +256,7 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
             .await
     }
 
-    pub async fn unlisten(&self) -> Result<(), CommandInboxError> {
+    pub async fn unlisten(&self) -> Result<(), CommandStreamError> {
         self.inner.inbox.unlisten().await
     }
 

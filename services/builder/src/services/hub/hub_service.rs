@@ -4,7 +4,7 @@ use crate::{
             CommandFailure, DisconnectReason, HubEvent, HubMessage, StreamEvent, StreamMessage, SubscribeFailure,
             TopicKey,
         },
-        CommandInboxError, HubError,
+        CommandStreamError, HubError,
     },
     repositories::{
         command_inbox::redis::RedisCommandInboxDb,
@@ -12,7 +12,7 @@ use crate::{
         hub_registry::{redis::RedisHubConnectionDb, HubConnection, HubConnectionDb, HubRegistry},
     },
     services::{
-        command_stream::{RegistryError, StreamRegistry},
+        command_stream::StreamRegistry,
         hub::{
             hub_command::ControlCommand,
             hub_connections::{Connections, DeadConnection, RemovedConnection},
@@ -21,7 +21,7 @@ use crate::{
             hub_subscribers::Subscribers,
             tasks::{Heartbeat, SessionChecker, StreamDispatcher},
         },
-        StreamEgress,
+        StreamAuthorizeService, StreamEgress,
     },
 };
 use opentelemetry::trace::SpanContext;
@@ -77,8 +77,10 @@ pub enum HubServiceBuilderError {
     MissingSessionService,
     #[error("Missing hub registry")]
     MissingHubRegistry,
+    #[error("Missing stream authorize service")]
+    MissingStreamAuthorizeService,
     #[error(transparent)]
-    CommandInbox(#[from] CommandInboxError),
+    CommandInbox(#[from] CommandStreamError),
 }
 
 /// Construction-time resources shared by the hub and its stream egress.
@@ -91,6 +93,7 @@ pub struct HubServiceBuilder {
     session_service: Option<Arc<CurrentUserService>>,
     hub_registry: Option<RedisHubConnectionDb>,
     stream_registry: Option<StreamRegistry<RedisCommandInboxDb, PgCommandLogDb>>,
+    stream_authorize_service: Option<StreamAuthorizeService>,
 }
 
 impl HubServiceBuilder {
@@ -104,6 +107,7 @@ impl HubServiceBuilder {
             session_service: None,
             hub_registry: None,
             stream_registry: None,
+            stream_authorize_service: None,
         }
     }
 
@@ -119,9 +123,9 @@ impl HubServiceBuilder {
         self
     }
 
-    pub fn with_stream_registry<F>(mut self, stream_registry: F) -> Result<Self, RegistryError>
+    pub fn with_stream_registry<F>(mut self, stream_registry: F) -> Result<Self, CommandStreamError>
     where
-        F: FnOnce(&HubStreamEgress) -> Result<StreamRegistry<RedisCommandInboxDb, PgCommandLogDb>, RegistryError>,
+        F: FnOnce(&HubStreamEgress) -> Result<StreamRegistry<RedisCommandInboxDb, PgCommandLogDb>, CommandStreamError>,
     {
         let stream_egress = HubStreamEgress {
             connections: self.connections.clone(),
@@ -129,6 +133,15 @@ impl HubServiceBuilder {
         };
         self.stream_registry = Some(stream_registry(&stream_egress)?);
         Ok(self)
+    }
+
+    #[must_use]
+    pub fn with_stream_authorize_service<F>(mut self, stream_authorize_service: F) -> Self
+    where
+        F: FnOnce() -> StreamAuthorizeService,
+    {
+        self.stream_authorize_service = Some(stream_authorize_service());
+        self
     }
 
     pub async fn build(self) -> Result<HubService, HubServiceBuilderError> {
@@ -140,10 +153,13 @@ impl HubServiceBuilder {
             session_service,
             hub_registry,
             stream_registry,
+            stream_authorize_service,
         } = self;
 
         let session_service = session_service.ok_or(HubServiceBuilderError::MissingSessionService)?;
         let hub_registry = hub_registry.ok_or(HubServiceBuilderError::MissingHubRegistry)?;
+        let stream_authorize_service =
+            stream_authorize_service.ok_or(HubServiceBuilderError::MissingStreamAuthorizeService)?;
 
         let service = HubService {
             inner: Arc::new(Inner {
@@ -152,6 +168,7 @@ impl HubServiceBuilder {
                 subscribers: Subscribers::new(),
                 hub_registry,
                 stream_registry,
+                stream_authorize_service,
                 subscriptions: StreamSubscriptions::default(),
                 ping_enabled: config.ping_enabled,
             }),
@@ -213,6 +230,7 @@ struct Inner {
     subscribers: Subscribers,
     hub_registry: RedisHubConnectionDb,
     stream_registry: Option<StreamRegistry<RedisCommandInboxDb, PgCommandLogDb>>,
+    stream_authorize_service: StreamAuthorizeService,
     subscriptions: StreamSubscriptions,
     ping_enabled: bool,
 }
@@ -246,6 +264,18 @@ impl HubService {
     /// (stream id, command) is checked here and in the registry.
     pub async fn subscribe_stream(&self, connection_id: Uuid, stream_id: StreamId) -> Result<(), SubscribeFailure> {
         let registry = self.inner.stream_registry.as_ref().ok_or(SubscribeFailure::Failed)?;
+        let authorized = self
+            .inner
+            .stream_authorize_service
+            .is_authorized(&stream_id)
+            .await
+            .map_err(|err| {
+                tracing::warn!("[{connection_id}] Stream authorization failed: {err}");
+                SubscribeFailure::Failed
+            })?;
+        if !authorized {
+            return Err(SubscribeFailure::Unauthorized);
+        }
         registry.open(&stream_id).await.map_err(|err| err.subscribe_failure())?;
         // Known to the hub at once, so that what the connection does next sees it; the loop follows.
         self.inner.subscriptions.subscribe(connection_id, stream_id.clone());

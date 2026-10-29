@@ -1,9 +1,6 @@
-use crate::{
-    models::CommandLogError,
-    repositories::command_log::{
-        pg::pg_command_log_db::{db_error, PgCommandLogDb},
-        StreamHead, StreamId,
-    },
+use crate::repositories::command_log::{
+    pg::{pg_command_log_db::PgCommandLogDb, PgCommandLogError},
+    StreamHead, StreamId,
 };
 use postgres_from_row::FromRow;
 use shine_infra::{
@@ -42,18 +39,17 @@ pg_query!( pub GetHead =>
     sql = "SELECT version, chain_hash FROM cl_streams WHERE kind = $1 AND id = $2"
 );
 
-pub async fn ensure_stream(db: &PgCommandLogDb, stream_id: &StreamId) -> Result<StreamHead, CommandLogError> {
+pub async fn ensure_stream(db: &PgCommandLogDb, stream_id: &StreamId) -> Result<StreamHead, PgCommandLogError> {
     let client = db.client().await?;
     let head: StreamHead = db
         .stmts()
         .ensure_stream
         .query_one(&client, stream_id.kind().as_str(), stream_id.id())
-        .await
-        .map_err(db_error)?;
+        .await?;
     Ok(head)
 }
 
-pub async fn head(db: &PgCommandLogDb, stream_id: &StreamId) -> Result<Option<StreamHead>, CommandLogError> {
+pub async fn head(db: &PgCommandLogDb, stream_id: &StreamId) -> Result<Option<StreamHead>, PgCommandLogError> {
     let client = db.client().await?;
     get_head(db, &client, stream_id).await
 }
@@ -63,7 +59,7 @@ pub async fn get_head<T>(
     db: &PgCommandLogDb,
     client: &PgConnection<T>,
     stream_id: &StreamId,
-) -> Result<Option<StreamHead>, CommandLogError>
+) -> Result<Option<StreamHead>, PgCommandLogError>
 where
     T: PgRawConnection,
 {
@@ -71,5 +67,5 @@ where
         .get_head
         .query_opt(client, stream_id.kind().as_str(), stream_id.id())
         .await
-        .map_err(db_error)
+        .map_err(PgCommandLogError::from)
 }

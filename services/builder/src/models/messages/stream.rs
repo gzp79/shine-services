@@ -116,6 +116,8 @@ pub enum CommandFailure {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SubscribeFailure {
     Failed,
+    /// The stream may not be subscribed to by this connection.
+    Unauthorized,
 }
 
 /// A change of the stream subscriptions of a connection, for the internal consumers of the hub bus. It

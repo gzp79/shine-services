@@ -2,7 +2,7 @@
 //! the inbox listener will give a worker is simulated by calling `wake`.
 
 use crate::{
-    models::CommandInboxError,
+    models::CommandStreamError,
     repositories::{
         command_inbox::{
             redis::RedisCommandInboxDb,
@@ -397,33 +397,38 @@ impl CommandInboxDb for FlakyInbox {
         command_id: Uuid,
         user_id: Uuid,
         data: &str,
-    ) -> Result<InboxId, CommandInboxError> {
+    ) -> Result<InboxId, CommandStreamError> {
         self.inner.push(stream_id, command_id, user_id, data).await
     }
 
-    async fn poll(&self, stream_id: &StreamId, after: &InboxId, limit: usize) -> Result<InboxBatch, CommandInboxError> {
+    async fn poll(
+        &self,
+        stream_id: &StreamId,
+        after: &InboxId,
+        limit: usize,
+    ) -> Result<InboxBatch, CommandStreamError> {
         if self.fail.load(Ordering::Relaxed) {
-            return Err(CommandInboxError::InvalidConfig("injected failure"));
+            return Err(CommandStreamError::Corrupt("injected failure".to_string()));
         }
         self.inner.poll(stream_id, after, limit).await
     }
 
-    async fn trim(&self, stream_id: &StreamId, up_to: &InboxId) -> Result<usize, CommandInboxError> {
+    async fn trim(&self, stream_id: &StreamId, up_to: &InboxId) -> Result<usize, CommandStreamError> {
         self.inner.trim(stream_id, up_to).await
     }
 
-    async fn notify_persisted(&self, stream_id: &StreamId, version: i64) -> Result<(), CommandInboxError> {
+    async fn notify_persisted(&self, stream_id: &StreamId, version: i64) -> Result<(), CommandStreamError> {
         self.inner.notify_persisted(stream_id, version).await
     }
 
-    async fn listen<F>(&self, handler: F) -> Result<(), CommandInboxError>
+    async fn listen<F>(&self, handler: F) -> Result<(), CommandStreamError>
     where
         F: Fn(InboxWake) + Send + Sync + 'static,
     {
         self.inner.listen(handler).await
     }
 
-    async fn unlisten(&self) -> Result<(), CommandInboxError> {
+    async fn unlisten(&self) -> Result<(), CommandStreamError> {
         self.inner.unlisten().await
     }
 }
