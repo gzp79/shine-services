@@ -1,4 +1,4 @@
-use crate::replica::{CommandHeader, ReplayState, StableHash, StableHasher};
+use crate::replica::{CommandHeader, ReplayState, StableHash, StableHasher, StreamKind};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use uuid::Uuid;
@@ -77,7 +77,7 @@ impl StableHash for ChatCommand {
 impl ReplayState for ChatState {
     type Command = ChatCommand;
 
-    const KIND: &'static str = "chat";
+    const KIND: StreamKind = StreamKind::Chat;
 
     fn apply(&mut self, header: &CommandHeader, command: &ChatCommand) {
         match command {

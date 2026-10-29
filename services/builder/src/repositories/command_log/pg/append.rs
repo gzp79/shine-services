@@ -56,19 +56,19 @@ impl<'a> From<&'a StoredCommand> for CommandInput<'a> {
 // One round trip for the whole batch: the array of commands is unnested into rows instead of one
 // execute() per command.
 pg_query!( pub InsertCommands =>
-    in = stream_id: &str, commands: &[CommandInput<'_>];
+    in = kind: &str, id: &str, commands: &[CommandInput<'_>];
     sql = r#"
-        INSERT INTO cl_commands (stream_id, version, command_id, inbox_id, user_id, data, command_hash, chain_hash)
-        SELECT $1, (cmd).* FROM UNNEST($2::cl_command_input[]) AS cmd
-        ON CONFLICT (stream_id, version) DO NOTHING
+        INSERT INTO cl_commands (kind, id, version, command_id, inbox_id, user_id, data, command_hash, chain_hash)
+        SELECT $1, $2, (cmd).* FROM UNNEST($3::cl_command_input[]) AS cmd
+        ON CONFLICT (kind, id, version) DO NOTHING
     "#
 );
 
 pg_query!( pub CasHeadVersion =>
-    in = stream_id: &str, expected_version: i64, expected_chain_hash: i64, new_version: i64, new_chain_hash: i64;
+    in = kind: &str, id: &str, expected_version: i64, expected_chain_hash: i64, new_version: i64, new_chain_hash: i64;
     sql = r#"
-        UPDATE cl_streams SET version = $4, chain_hash = $5
-        WHERE stream_id = $1 AND version = $2 AND chain_hash = $3
+        UPDATE cl_streams SET version = $5, chain_hash = $6
+        WHERE kind = $1 AND id = $2 AND version = $3 AND chain_hash = $4
     "#
 );
 
@@ -83,7 +83,8 @@ pub async fn append(
         "commands must be a dense, contiguous run of versions"
     );
     let stmts = db.stmts();
-    let id = stream_id.as_str();
+    let kind = stream_id.kind().as_str();
+    let id = stream_id.id();
 
     let Some(first) = commands.first() else {
         return stream::head(db, stream_id)
@@ -100,7 +101,7 @@ pub async fn append(
         // Read and validate outside any transaction: a verify-only (or rejected) append never
         // needs to write at all, and the write below only needs the row for as long as its own
         // statements take.
-        let head: StreamHead = stream::get_head(db, &client, id)
+        let head: StreamHead = stream::get_head(db, &client, stream_id)
             .await?
             .ok_or(CommandLogError::StreamNotFound)?;
 
@@ -147,7 +148,7 @@ pub async fn append(
         let commands: Vec<CommandInput<'_>> = new.iter().map(CommandInput::from).collect();
         stmts
             .insert_commands
-            .execute(&tx, id, commands.as_slice())
+            .execute(&tx, kind, id, commands.as_slice())
             .await
             .map_err(db_error)?;
 
@@ -157,6 +158,7 @@ pub async fn append(
             .cas_head_version
             .execute(
                 &tx,
+                kind,
                 id,
                 head.version,
                 head.chain_hash as i64,
@@ -171,7 +173,6 @@ pub async fn append(
             return Ok(StreamHead {
                 version: new_version,
                 chain_hash: new_chain_hash,
-                ..head
             });
         }
         tx.rollback().await.map_err(db_error)?;

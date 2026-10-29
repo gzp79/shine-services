@@ -30,25 +30,25 @@ impl FromRow for StoredCommand {
 }
 
 pg_query!( pub CommandsAfter =>
-    in = stream_id: &str, after: i64, limit: i64;
+    in = kind: &str, id: &str, after: i64, limit: i64;
     out = StoredCommand;
     sql = r#"
         SELECT version, command_id, user_id, data, command_hash, chain_hash, inbox_id FROM cl_commands
-        WHERE stream_id = $1 AND version > $2
+        WHERE kind = $1 AND id = $2 AND version > $3
         ORDER BY version
-        LIMIT $3
+        LIMIT $4
     "#
 );
 
 pg_query!( pub LastCommands =>
-    in = stream_id: &str, count: i64;
+    in = kind: &str, id: &str, count: i64;
     out = StoredCommand;
     sql = r#"
         SELECT * FROM (
             SELECT version, command_id, user_id, data, command_hash, chain_hash, inbox_id FROM cl_commands
-            WHERE stream_id = $1
+            WHERE kind = $1 AND id = $2
             ORDER BY version DESC
-            LIMIT $2
+            LIMIT $3
         ) tail ORDER BY version
     "#
 );
@@ -62,7 +62,7 @@ pub async fn commands_after(
     let client = db.client().await?;
     db.stmts()
         .commands_after
-        .query(&client, stream_id.as_str(), after, limit)
+        .query(&client, stream_id.kind().as_str(), stream_id.id(), after, limit)
         .await
         .map_err(db_error)
 }
@@ -75,7 +75,7 @@ pub async fn last_commands(
     let client = db.client().await?;
     db.stmts()
         .last_commands
-        .query(&client, stream_id.as_str(), count)
+        .query(&client, stream_id.kind().as_str(), stream_id.id(), count)
         .await
         .map_err(db_error)
 }

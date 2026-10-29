@@ -7,14 +7,14 @@ use crate::{
 };
 use shine_game::replica::{
     decode_command, decode_snapshot, encode_command, encode_snapshot, stable_hash_of, ChatCommand, ChatState,
-    CommandEnvelope, CommandHeader, ReplayState, Replica,
+    CommandEnvelope, CommandHeader, ReplayState, Replica, StreamKind,
 };
 use shine_infra::db::postgres::{self, PgConnectionPool};
 use shine_infra_testing::db::postgres::get_postgres_cns;
 use tokio::{sync::OnceCell, task::JoinHandle};
 use uuid::Uuid;
 
-pub const KIND: &str = ChatState::KIND;
+pub const KIND: StreamKind = ChatState::KIND;
 
 static MIGRATED: OnceCell<()> = OnceCell::const_new();
 
@@ -70,8 +70,8 @@ pub async fn create_test_log() -> Option<TestLog> {
     Some(TestLog { db, pool })
 }
 
-pub fn stream_id() -> StreamId {
-    StreamId::parse(&format!("t-{}", Uuid::new_v4().simple())).unwrap()
+pub fn stream_id(kind: StreamKind) -> StreamId {
+    StreamId::new(kind, format!("t-{}", Uuid::new_v4().simple())).unwrap()
 }
 
 /// The log of a chat room, built the way the runtime builds it: every command is folded onto the
@@ -188,8 +188,8 @@ pub async fn append_range(
 
 /// A new stream holding all the commands of `room`.
 pub async fn store_room(log: &TestLog, room: &ChatLog) -> StreamId {
-    let id = stream_id();
-    log.db.ensure_stream(&id, KIND).await.unwrap();
+    let id = stream_id(ChatState::KIND);
+    log.db.ensure_stream(&id).await.unwrap();
     append_range(&log.db, &id, room, 1, room.commands.len() as i64)
         .await
         .unwrap();

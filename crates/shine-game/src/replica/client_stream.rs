@@ -110,7 +110,6 @@ impl<S: ReplayState> ClientStream<S> {
     pub fn subscribe_frame(&self) -> String {
         frame(&ClientMessage::StreamSubscribe {
             stream_id: self.stream_id.to_string(),
-            kind: S::KIND.to_string(),
         })
     }
 
@@ -167,7 +166,7 @@ impl<S: ReplayState> ClientStream<S> {
     }
 
     fn is_mine(&self, stream_id: &str) -> bool {
-        self.stream_id.as_str() == stream_id
+        StreamId::parse(stream_id).is_ok_and(|id| id == self.stream_id)
     }
 
     /// The server's state cannot be followed: ask for a new one.

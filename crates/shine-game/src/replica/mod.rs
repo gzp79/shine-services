@@ -18,6 +18,6 @@ pub use self::{
     replica::{ApplyError, ApplyOutcome, Checkpoint, CommandEnvelope, CommandHeader, Replica},
     stable_hash::{fold_chain_hash, stable_hash_of, StableHash, StableHasher},
     state::{Command, ReplayState},
-    stream_id::{StreamId, StreamIdError},
+    stream_id::{StreamId, StreamIdError, StreamKind},
     wire::{parse_server_message, ClientMessage, ServerMessage, WireCommand, WireSnapshot},
 };

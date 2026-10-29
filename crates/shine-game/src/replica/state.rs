@@ -1,4 +1,4 @@
-use crate::replica::{stable_hash_of, CommandHeader, StableHash};
+use crate::replica::{stable_hash_of, CommandHeader, StableHash, StreamKind};
 use serde::{de::DeserializeOwned, Serialize};
 use std::fmt;
 
@@ -17,8 +17,8 @@ impl<T: Clone + fmt::Debug + Serialize + DeserializeOwned + StableHash + Send + 
 pub trait ReplayState: Clone + Default + Serialize + DeserializeOwned + StableHash + Send + Sync + 'static {
     type Command: Command;
 
-    /// Stream kind name, stored with the stream and sent by the clients.
-    const KIND: &'static str;
+    /// Stream kind, which is part of every stream identity.
+    const KIND: StreamKind;
 
     /// Integrates the command. It is called only for the next version of the log (never with a gap or a
     /// repeat), and once called the command counts as integrated, whatever the state does with it.

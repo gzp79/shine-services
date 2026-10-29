@@ -39,48 +39,48 @@ struct VersionRow {
 }
 
 pg_query!( pub CommandChainHashAt =>
-    in = stream_id: &str, version: i64;
+    in = kind: &str, id: &str, version: i64;
     out = chain_hash: i64;
-    sql = "SELECT chain_hash FROM cl_commands WHERE stream_id = $1 AND version = $2"
+    sql = "SELECT chain_hash FROM cl_commands WHERE kind = $1 AND id = $2 AND version = $3"
 );
 
 pg_query!( pub InsertSnapshot =>
-    in = stream_id: &str, version: i64, hash: i64, chain_hash: i64, data: &[u8];
+    in = kind: &str, id: &str, version: i64, hash: i64, chain_hash: i64, data: &[u8];
     sql = r#"
-        INSERT INTO cl_snapshots (stream_id, version, hash, chain_hash, data)
-        SELECT $1, $2, $3, $4, $5
-        WHERE NOT EXISTS (SELECT 1 FROM cl_snapshots WHERE stream_id = $1 AND version > $2)
-        ON CONFLICT (stream_id, version) DO NOTHING
+        INSERT INTO cl_snapshots (kind, id, version, hash, chain_hash, data)
+        SELECT $1, $2, $3, $4, $5, $6
+        WHERE NOT EXISTS (SELECT 1 FROM cl_snapshots WHERE kind = $1 AND id = $2 AND version > $3)
+        ON CONFLICT (kind, id, version) DO NOTHING
     "#
 );
 
 pg_query!( pub GetSnapshot =>
-    in = stream_id: &str, version: i64;
+    in = kind: &str, id: &str, version: i64;
     out = SnapshotHashRow;
-    sql = "SELECT version, hash, chain_hash FROM cl_snapshots WHERE stream_id = $1 AND version = $2"
+    sql = "SELECT version, hash, chain_hash FROM cl_snapshots WHERE kind = $1 AND id = $2 AND version = $3"
 );
 
 pg_query!( pub LatestSnapshot =>
-    in = stream_id: &str, at_or_before: i64;
+    in = kind: &str, id: &str, at_or_before: i64;
     out = StoredSnapshot;
     sql = r#"
         SELECT version, hash, chain_hash, data FROM cl_snapshots
-        WHERE stream_id = $1 AND version <= $2
+        WHERE kind = $1 AND id = $2 AND version <= $3
         ORDER BY version DESC
         LIMIT 1
     "#
 );
 
 pg_query!( pub OldestSnapshot =>
-    in = stream_id: &str;
+    in = kind: &str, id: &str;
     out = VersionRow;
-    sql = "SELECT MIN(version) AS version FROM cl_snapshots WHERE stream_id = $1"
+    sql = "SELECT MIN(version) AS version FROM cl_snapshots WHERE kind = $1 AND id = $2"
 );
 
 pg_query!( pub LatestSnapshotVersion =>
-    in = stream_id: &str;
+    in = kind: &str, id: &str;
     out = VersionRow;
-    sql = "SELECT MAX(version) AS version FROM cl_snapshots WHERE stream_id = $1"
+    sql = "SELECT MAX(version) AS version FROM cl_snapshots WHERE kind = $1 AND id = $2"
 );
 
 /// Checks the snapshot's `chain_hash` against the command already durably stored at its
@@ -92,13 +92,14 @@ pub async fn try_store_snapshot(
 ) -> Result<(), CommandLogError> {
     let client = db.client().await?;
     let stmts = db.stmts();
-    let id = stream_id.as_str();
+    let kind = stream_id.kind().as_str();
+    let id = stream_id.id();
 
     // Never store a snapshot older than the current one: cheap and upfront, before touching the
     // command log at all, since an older snapshot would never be read back anyway.
     let latest_version = stmts
         .latest_snapshot_version
-        .query_one(&client, id)
+        .query_one(&client, kind, id)
         .await
         .map_err(db_error)?
         .version;
@@ -110,7 +111,7 @@ pub async fn try_store_snapshot(
 
     let logged_chain_hash = stmts
         .command_chain_hash_at
-        .query_opt(&client, id, snapshot.version)
+        .query_opt(&client, kind, id, snapshot.version)
         .await
         .map_err(db_error)?;
     match logged_chain_hash {
@@ -122,7 +123,7 @@ pub async fn try_store_snapshot(
 
     if let Some(existing) = stmts
         .get_snapshot
-        .query_opt(&client, id, snapshot.version)
+        .query_opt(&client, kind, id, snapshot.version)
         .await
         .map_err(db_error)?
     {
@@ -133,6 +134,7 @@ pub async fn try_store_snapshot(
         .insert_snapshot
         .execute(
             &client,
+            kind,
             id,
             snapshot.version,
             snapshot.hash as i64,
@@ -147,7 +149,7 @@ pub async fn try_store_snapshot(
     // Lost the insert race, or a newer snapshot exists (the `WHERE NOT EXISTS` guard blocked it).
     match stmts
         .get_snapshot
-        .query_opt(&client, id, snapshot.version)
+        .query_opt(&client, kind, id, snapshot.version)
         .await
         .map_err(db_error)?
     {
@@ -165,7 +167,7 @@ pub async fn latest_snapshot(
     let client = db.client().await?;
     db.stmts()
         .latest_snapshot
-        .query_opt(&client, stream_id.as_str(), at_or_before)
+        .query_opt(&client, stream_id.kind().as_str(), stream_id.id(), at_or_before)
         .await
         .map_err(db_error)
 }
@@ -178,7 +180,7 @@ pub async fn oldest_snapshot_version(
     let row = db
         .stmts()
         .oldest_snapshot
-        .query_one(&client, stream_id.as_str())
+        .query_one(&client, stream_id.kind().as_str(), stream_id.id())
         .await
         .map_err(db_error)?;
     Ok(row.version)

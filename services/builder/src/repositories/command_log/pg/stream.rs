@@ -20,7 +20,6 @@ impl FromRow for StreamHead {
 
     fn try_from_row(row: &Row) -> Result<Self, tokio_postgres::Error> {
         Ok(Self {
-            kind: row.try_get("kind")?,
             version: row.try_get("version")?,
             chain_hash: row.try_get::<_, i64>("chain_hash")? as u64,
         })
@@ -28,55 +27,49 @@ impl FromRow for StreamHead {
 }
 
 pg_query!( pub EnsureStream =>
-    in = stream_id: &str, kind: &str;
+    in = kind: &str, id: &str;
     out = StreamHead;
     sql = r#"
-        INSERT INTO cl_streams (stream_id, kind) VALUES ($1, $2)
-        ON CONFLICT (stream_id) DO UPDATE SET stream_id = cl_streams.stream_id
-        RETURNING kind, version, chain_hash
+        INSERT INTO cl_streams (kind, id) VALUES ($1, $2)
+        ON CONFLICT (kind, id) DO UPDATE SET id = cl_streams.id
+        RETURNING version, chain_hash
     "#
 );
 
 pg_query!( pub GetHead =>
-    in = stream_id: &str;
+    in = kind: &str, id: &str;
     out = StreamHead;
-    sql = "SELECT kind, version, chain_hash FROM cl_streams WHERE stream_id = $1"
+    sql = "SELECT version, chain_hash FROM cl_streams WHERE kind = $1 AND id = $2"
 );
 
-pub async fn ensure_stream(
-    db: &PgCommandLogDb,
-    stream_id: &StreamId,
-    kind: &str,
-) -> Result<StreamHead, CommandLogError> {
+pub async fn ensure_stream(db: &PgCommandLogDb, stream_id: &StreamId) -> Result<StreamHead, CommandLogError> {
     let client = db.client().await?;
     let head: StreamHead = db
         .stmts()
         .ensure_stream
-        .query_one(&client, stream_id.as_str(), kind)
+        .query_one(&client, stream_id.kind().as_str(), stream_id.id())
         .await
         .map_err(db_error)?;
-    if head.kind != kind {
-        return Err(CommandLogError::KindMismatch {
-            stored: head.kind,
-            requested: kind.to_string(),
-        });
-    }
     Ok(head)
 }
 
 pub async fn head(db: &PgCommandLogDb, stream_id: &StreamId) -> Result<Option<StreamHead>, CommandLogError> {
     let client = db.client().await?;
-    get_head(db, &client, stream_id.as_str()).await
+    get_head(db, &client, stream_id).await
 }
 
 /// Reads the head on a connection the caller already holds, e.g. to validate before opening a transaction.
 pub async fn get_head<T>(
     db: &PgCommandLogDb,
     client: &PgConnection<T>,
-    stream_id: &str,
+    stream_id: &StreamId,
 ) -> Result<Option<StreamHead>, CommandLogError>
 where
     T: PgRawConnection,
 {
-    db.stmts().get_head.query_opt(client, stream_id).await.map_err(db_error)
+    db.stmts()
+        .get_head
+        .query_opt(client, stream_id.kind().as_str(), stream_id.id())
+        .await
+        .map_err(db_error)
 }

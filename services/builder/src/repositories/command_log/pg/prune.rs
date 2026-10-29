@@ -8,21 +8,21 @@ use crate::{
 use shine_infra::pg_query;
 
 pg_query!( pub Prune =>
-    in = stream_id: &str, kept_snapshot_count: i64;
+    in = kind: &str, id: &str, kept_snapshot_count: i64;
     out = version: Option<i64>;
     sql = r#"
         WITH horizon AS (
-            SELECT version FROM cl_snapshots WHERE stream_id = $1
-            ORDER BY version DESC OFFSET ($2 - 1) LIMIT 1
+            SELECT version FROM cl_snapshots WHERE kind = $1 AND id = $2
+            ORDER BY version DESC OFFSET ($3 - 1) LIMIT 1
         ),
         old_snapshots AS (
             DELETE FROM cl_snapshots
-            WHERE stream_id = $1 AND version < (SELECT version FROM horizon)
+            WHERE kind = $1 AND id = $2 AND version < (SELECT version FROM horizon)
             RETURNING 1
         ),
         old_commands AS (
             DELETE FROM cl_commands
-            WHERE stream_id = $1 AND version < (SELECT version FROM horizon)
+            WHERE kind = $1 AND id = $2 AND version < (SELECT version FROM horizon)
             RETURNING 1
         )
         SELECT (SELECT version FROM horizon) AS version
@@ -43,7 +43,12 @@ pub async fn prune(
     let client = db.client().await?;
     db.stmts()
         .prune
-        .query_one(&client, stream_id.as_str(), kept_snapshot_count.max(1))
+        .query_one(
+            &client,
+            stream_id.kind().as_str(),
+            stream_id.id(),
+            kept_snapshot_count.max(1),
+        )
         .await
         .map_err(db_error)
 }

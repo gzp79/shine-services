@@ -2,6 +2,7 @@ use crate::repositories::command_inbox::{
     tests::test_utils::{create_test_inbox, next_wake_of, stream_id},
     CommandInboxDb, InboxEntry, InboxId, InboxWake,
 };
+use shine_game::replica::StreamKind;
 use shine_test::test;
 use uuid::Uuid;
 
@@ -23,7 +24,7 @@ async fn pushed_commands_are_polled_in_order_with_all_their_fields() {
     let Some(inbox) = create_test_inbox(60).await else {
         return;
     };
-    let id = stream_id();
+    let id = stream_id(StreamKind::Chat);
     let (first_command, first_user) = (Uuid::new_v4(), Uuid::new_v4());
     let (second_command, second_user) = (Uuid::new_v4(), Uuid::new_v4());
 
@@ -51,7 +52,7 @@ async fn polling_continues_after_the_cursor_in_pages_and_stops_at_the_end() {
     let Some(inbox) = create_test_inbox(60).await else {
         return;
     };
-    let id = stream_id();
+    let id = stream_id(StreamKind::Chat);
     let mut pushed = Vec::new();
     for i in 0..5 {
         pushed.push(
@@ -85,7 +86,11 @@ async fn a_stream_without_an_inbox_polls_empty_and_streams_do_not_see_each_other
     let Some(inbox) = create_test_inbox(60).await else {
         return;
     };
-    let (first, second, missing) = (stream_id(), stream_id(), stream_id());
+    let (first, second, missing) = (
+        stream_id(StreamKind::Chat),
+        stream_id(StreamKind::Chat),
+        stream_id(StreamKind::Chat),
+    );
     let in_first = inbox
         .db
         .push(&first, Uuid::new_v4(), Uuid::new_v4(), "first")
@@ -111,7 +116,7 @@ async fn entries_that_cannot_be_read_are_skipped_but_the_cursor_moves_past_them(
     let Some(inbox) = create_test_inbox(60).await else {
         return;
     };
-    let id = stream_id();
+    let id = stream_id(StreamKind::Chat);
     let (command, user) = (Uuid::new_v4(), Uuid::new_v4());
     let before = inbox.db.push(&id, command, user, "before").await.unwrap();
     inbox.raw_add(&id, &[("data", "no ids")]).await;
@@ -146,7 +151,7 @@ async fn trimming_removes_the_entries_up_to_and_including_the_given_one() {
     let Some(inbox) = create_test_inbox(60).await else {
         return;
     };
-    let id = stream_id();
+    let id = stream_id(StreamKind::Chat);
     let mut pushed = Vec::new();
     for i in 0..5 {
         pushed.push(
@@ -173,7 +178,7 @@ async fn trimming_is_monotonic_and_a_trimmed_inbox_keeps_accepting_commands() {
     let Some(inbox) = create_test_inbox(60).await else {
         return;
     };
-    let id = stream_id();
+    let id = stream_id(StreamKind::Chat);
     let mut pushed = Vec::new();
     for i in 0..4 {
         pushed.push(
@@ -214,7 +219,10 @@ async fn trimming_a_stream_without_an_inbox_removes_nothing() {
 
     let removed = inbox
         .db
-        .trim(&stream_id(), &InboxId::parse("99999999999999-0").unwrap())
+        .trim(
+            &stream_id(StreamKind::Chat),
+            &InboxId::parse("99999999999999-0").unwrap(),
+        )
         .await
         .unwrap();
 
@@ -226,7 +234,7 @@ async fn every_push_renews_the_expiry_of_the_inbox() {
     let Some(inbox) = create_test_inbox(600).await else {
         return;
     };
-    let id = stream_id();
+    let id = stream_id(StreamKind::Chat);
 
     inbox.db.push(&id, Uuid::new_v4(), Uuid::new_v4(), "a").await.unwrap();
     let after_first = inbox.ttl(&id).await;
@@ -248,7 +256,7 @@ async fn a_push_wakes_the_listeners_of_its_stream() {
         return;
     };
     let mut wakes = inbox.listen().await;
-    let id = stream_id();
+    let id = stream_id(StreamKind::Chat);
 
     inbox.db.push(&id, Uuid::new_v4(), Uuid::new_v4(), "a").await.unwrap();
 
@@ -262,7 +270,7 @@ async fn announcing_a_persisted_version_wakes_the_listeners_with_it() {
         return;
     };
     let mut wakes = inbox.listen().await;
-    let id = stream_id();
+    let id = stream_id(StreamKind::Chat);
 
     inbox.db.notify_persisted(&id, 42).await.unwrap();
 

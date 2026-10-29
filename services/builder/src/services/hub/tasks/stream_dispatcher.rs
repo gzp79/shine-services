@@ -40,8 +40,8 @@ impl StreamDispatcher {
                     }
                 };
                 match message {
-                    HubMessage::StreamEvent(StreamEvent::Subscribed { connection_id, stream_id, kind }) => {
-                        if let Err(err) = registry.subscribe(connection_id, &stream_id, &kind) {
+                    HubMessage::StreamEvent(StreamEvent::Subscribed { connection_id, stream_id }) => {
+                        if let Err(err) = registry.subscribe(connection_id, &stream_id) {
                             tracing::warn!("[{connection_id}] Failed to subscribe to stream {stream_id}: {err:#?}");
                             let reason = err.subscribe_failure();
                             service

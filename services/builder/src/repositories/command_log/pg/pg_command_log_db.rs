@@ -76,8 +76,8 @@ impl PgCommandLogDb {
 }
 
 impl CommandLogDb for PgCommandLogDb {
-    async fn ensure_stream(&self, stream_id: &StreamId, kind: &str) -> Result<StreamHead, CommandLogError> {
-        stream::ensure_stream(self, stream_id, kind).await
+    async fn ensure_stream(&self, stream_id: &StreamId) -> Result<StreamHead, CommandLogError> {
+        stream::ensure_stream(self, stream_id).await
     }
 
     async fn head(&self, stream_id: &StreamId) -> Result<Option<StreamHead>, CommandLogError> {

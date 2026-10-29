@@ -2,14 +2,14 @@
 
 use super::*;
 use crate::{
-    models::messages::{NackReason, StreamCommand, StreamMessage, StreamSnapshot, SubscribeFailure},
+    models::messages::{CommandFailure, StreamCommand, StreamMessage, StreamSnapshot, SubscribeFailure},
     repositories::command_log::StreamId,
 };
 use serde_json::json;
 use shine_test::test;
 
 fn stream(name: &str) -> StreamId {
-    StreamId::parse(name).unwrap()
+    StreamId::parse(&format!("chat:{name}")).unwrap()
 }
 
 fn frame(message: StreamMessage) -> serde_json::Value {
@@ -40,7 +40,7 @@ fn a_sync_carries_the_snapshot_and_the_commands() {
         json,
         json!({
             "type": "streamSync",
-            "streamId": "room-1",
+            "streamId": "chat:room-1",
             "snapshot": {"version": 8, "chainHash": "00000000000000ab", "stateHash": "ffffffffffffffff", "data": "AQID"},
             "commands": [{"version": 9, "commandId": command_id, "userId": user_id, "command": {"type": "add", "text": "hi"}}]
         })
@@ -57,7 +57,7 @@ fn a_sync_without_a_snapshot_has_a_null_one() {
 
     assert_eq!(
         json,
-        json!({"type": "streamSync", "streamId": "room-1", "snapshot": null, "commands": []})
+        json!({"type": "streamSync", "streamId": "chat:room-1", "snapshot": null, "commands": []})
     );
 }
 
@@ -83,29 +83,29 @@ fn the_other_stream_messages_have_their_own_frames() {
             version: 8,
             state_hash: 255
         }),
-        json!({"type": "streamCheckpoint", "streamId": "s", "version": 8, "stateHash": "00000000000000ff"})
+        json!({"type": "streamCheckpoint", "streamId": "chat:s", "version": 8, "stateHash": "00000000000000ff"})
     );
     assert_eq!(
         frame(StreamMessage::Reset { stream_id: stream("s") }),
-        json!({"type": "streamReset", "streamId": "s"})
+        json!({"type": "streamReset", "streamId": "chat:s"})
     );
     assert_eq!(
         frame(StreamMessage::Unsynced { stream_id: stream("s") }),
-        json!({"type": "streamUnsynced", "streamId": "s"})
+        json!({"type": "streamUnsynced", "streamId": "chat:s"})
     );
     assert_eq!(
-        frame(StreamMessage::Nack {
+        frame(StreamMessage::CommandFailed {
             stream_id: stream("s"),
             command_id,
-            reason: NackReason::NotSubscribed
+            reason: CommandFailure::NotSubscribed
         }),
-        json!({"type": "streamNack", "streamId": "s", "commandId": command_id, "reason": "notSubscribed"})
+        json!({"type": "streamNack", "streamId": "chat:s", "commandId": command_id, "reason": "notSubscribed"})
     );
     assert_eq!(
         frame(StreamMessage::SubscribeFailed {
             stream_id: stream("s"),
-            reason: SubscribeFailure::KindMismatch
+            reason: SubscribeFailure::Failed
         }),
-        json!({"type": "streamSubscribeFailed", "streamId": "s", "reason": "kindMismatch"})
+        json!({"type": "streamSubscribeFailed", "streamId": "chat:s", "reason": "failed"})
     );
 }

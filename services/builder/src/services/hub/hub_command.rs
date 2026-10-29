@@ -32,7 +32,6 @@ pub enum ControlCommand {
     SubscribeStream {
         connection_id: Uuid,
         stream_id: StreamId,
-        kind: String,
     },
     UnsubscribeStream {
         connection_id: Uuid,

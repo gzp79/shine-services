@@ -1,4 +1,5 @@
 use crate::repositories::command_inbox::{redis::RedisCommandInboxDb, CommandInboxDb, InboxId, InboxWake, StreamId};
+use shine_game::replica::StreamKind;
 use shine_infra::db::redis::{create_redis_pool, RedisConnectionPool};
 use shine_infra_testing::db::redis::get_redis_cns;
 use std::time::Duration;
@@ -98,8 +99,8 @@ pub async fn create_test_inbox(ttl_seconds: u64) -> Option<TestInbox> {
     Some(TestInbox { db, redis })
 }
 
-pub fn stream_id() -> StreamId {
-    StreamId::parse(&format!("t-{}", Uuid::new_v4().simple())).unwrap()
+pub fn stream_id(kind: StreamKind) -> StreamId {
+    StreamId::new(kind, format!("t-{}", Uuid::new_v4().simple())).unwrap()
 }
 
 /// The next wake of `stream_id`; wakes of other streams are skipped.

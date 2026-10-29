@@ -19,9 +19,9 @@ struct SnapshotRow {
 }
 
 pg_query!( pub ListSnapshots =>
-    in = stream_id: &str;
+    in = kind: &str, id: &str;
     out = SnapshotRow;
-    sql = "SELECT version, chain_hash FROM cl_snapshots WHERE stream_id = $1 ORDER BY version"
+    sql = "SELECT version, chain_hash FROM cl_snapshots WHERE kind = $1 AND id = $2 ORDER BY version"
 );
 
 /// Independently re-verifies the stream from its stored rows, outside any transaction and
@@ -87,7 +87,7 @@ pub async fn check_consistency(
     let snapshots = db
         .stmts()
         .list_snapshots
-        .query(&client, stream_id.as_str())
+        .query(&client, stream_id.kind().as_str(), stream_id.id())
         .await
         .map_err(db_error)?;
     for snapshot in snapshots {

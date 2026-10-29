@@ -1,7 +1,8 @@
 use crate::{
     models::{
         messages::{
-            DisconnectReason, HubEvent, HubMessage, NackReason, StreamEvent, StreamMessage, SubscribeFailure, TopicKey,
+            CommandFailure, DisconnectReason, HubEvent, HubMessage, StreamEvent, StreamMessage, SubscribeFailure,
+            TopicKey,
         },
         CommandInboxError, HubError,
     },
@@ -242,32 +243,13 @@ impl HubService {
     ///
     /// The stream methods of the hub trust their caller: the transport has authenticated the user, and holds
     /// the id the hub gave its connection. Neither is ever taken from the client. What the client does send
-    /// (stream id, kind, command) is checked here and in the registry.
-    pub async fn subscribe_stream(
-        &self,
-        connection_id: Uuid,
-        stream_id: StreamId,
-        requested_kind: &str,
-    ) -> Result<(), SubscribeFailure> {
+    /// (stream id, command) is checked here and in the registry.
+    pub async fn subscribe_stream(&self, connection_id: Uuid, stream_id: StreamId) -> Result<(), SubscribeFailure> {
         let registry = self.inner.stream_registry.as_ref().ok_or(SubscribeFailure::Failed)?;
-        // The connection's own subscription decides first: its stream may not have a worker yet, nor be in the log.
-        if self
-            .inner
-            .subscriptions
-            .kind_of(connection_id, &stream_id)
-            .is_some_and(|kind| kind != requested_kind)
-        {
-            return Err(SubscribeFailure::KindMismatch);
-        }
-        let kind = registry
-            .open(&stream_id, requested_kind)
-            .await
-            .map_err(|err| err.subscribe_failure())?;
+        registry.open(&stream_id).await.map_err(|err| err.subscribe_failure())?;
         // Known to the hub at once, so that what the connection does next sees it; the loop follows.
-        self.inner
-            .subscriptions
-            .subscribe(connection_id, stream_id.clone(), kind.clone());
-        self.request_stream_subscribe(connection_id, stream_id, kind)
+        self.inner.subscriptions.subscribe(connection_id, stream_id.clone());
+        self.request_stream_subscribe(connection_id, stream_id)
             .map_err(|_| SubscribeFailure::Failed)
     }
 
@@ -285,11 +267,13 @@ impl HubService {
         stream_id: &StreamId,
         command_id: Uuid,
         command: &str,
-    ) -> Result<(), NackReason> {
-        let kind = self.inner.subscriptions.kind_of(connection_id, stream_id);
-        match (kind, self.inner.stream_registry.as_ref()) {
-            (Some(kind), Some(registry)) => registry.push(stream_id, &kind, user_id, command_id, command).await,
-            _ => Err(NackReason::NotSubscribed),
+    ) -> Result<(), CommandFailure> {
+        match (
+            self.inner.subscriptions.contains(connection_id, stream_id),
+            self.inner.stream_registry.as_ref(),
+        ) {
+            (true, Some(registry)) => registry.push(stream_id, user_id, command_id, command).await,
+            _ => Err(CommandFailure::NotSubscribed),
         }
     }
 
@@ -355,13 +339,8 @@ impl HubService {
 
     /// Subscribes the connection to a stream, or asks for it to be synced again if it already is.
     /// Ignored by the loop when the connection is no longer registered.
-    pub fn request_stream_subscribe(
-        &self,
-        connection_id: Uuid,
-        stream_id: StreamId,
-        kind: String,
-    ) -> Result<(), HubError> {
-        self.send_control(ControlCommand::SubscribeStream { connection_id, stream_id, kind })
+    pub fn request_stream_subscribe(&self, connection_id: Uuid, stream_id: StreamId) -> Result<(), HubError> {
+        self.send_control(ControlCommand::SubscribeStream { connection_id, stream_id })
     }
 
     pub fn request_stream_unsubscribe(&self, connection_id: Uuid, stream_id: StreamId) -> Result<(), HubError> {
@@ -590,10 +569,10 @@ impl HubService {
                 self.process_registry_change(user_id).await;
                 true
             }
-            ControlCommand::SubscribeStream { connection_id, stream_id, kind } => {
+            ControlCommand::SubscribeStream { connection_id, stream_id } => {
                 // A subscribe that comes after the connection is gone must not start anything.
                 if self.inner.connections.contains(connection_id).await {
-                    self.publish_internal(StreamEvent::Subscribed { connection_id, stream_id, kind })
+                    self.publish_internal(StreamEvent::Subscribed { connection_id, stream_id })
                         .await;
                 } else {
                     self.inner.subscriptions.remove_connection(connection_id);

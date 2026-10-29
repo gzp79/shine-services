@@ -1,8 +1,8 @@
-use crate::models::messages::{NackReason, StreamCommand, StreamMessage, SubscribeFailure};
+use crate::models::messages::{CommandFailure, StreamCommand, StreamMessage, SubscribeFailure};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use validator::{Validate, ValidationErrors};
+use validator::Validate;
 
 #[derive(Clone, Debug, Deserialize, Validate)]
 #[serde(rename_all = "camelCase")]
@@ -18,7 +18,6 @@ pub struct PingRequest {
 pub enum WSMessageRequest {
     StreamSubscribe {
         stream_id: String,
-        kind: String,
     },
     StreamUnsubscribe {
         stream_id: String,
@@ -29,15 +28,6 @@ pub enum WSMessageRequest {
         command: serde_json::Value,
     },
     Ping(PingRequest),
-}
-
-impl Validate for WSMessageRequest {
-    fn validate(&self) -> Result<(), ValidationErrors> {
-        match self {
-            Self::Ping(ping) => ping.validate(),
-            _ => Ok(()),
-        }
-    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -114,18 +104,16 @@ fn wire_command(command: &StreamCommand) -> WireStreamCommand {
     }
 }
 
-fn nack_reason(reason: NackReason) -> &'static str {
+fn nack_reason(reason: CommandFailure) -> &'static str {
     match reason {
-        NackReason::NotSubscribed => "notSubscribed",
-        NackReason::Invalid => "invalid",
-        NackReason::Failed => "failed",
+        CommandFailure::NotSubscribed => "notSubscribed",
+        CommandFailure::Invalid => "invalid",
+        CommandFailure::Failed => "failed",
     }
 }
 
 fn subscribe_failure(reason: SubscribeFailure) -> &'static str {
     match reason {
-        SubscribeFailure::UnknownKind => "unknownKind",
-        SubscribeFailure::KindMismatch => "kindMismatch",
         SubscribeFailure::Failed => "failed",
     }
 }
@@ -155,7 +143,7 @@ pub fn stream_message_to_wire(message: &StreamMessage) -> WSMessageResponse {
         },
         StreamMessage::Reset { .. } => WSMessageResponse::StreamReset { stream_id },
         StreamMessage::Unsynced { .. } => WSMessageResponse::StreamUnsynced { stream_id },
-        StreamMessage::Nack { command_id, reason, .. } => WSMessageResponse::StreamNack {
+        StreamMessage::CommandFailed { command_id, reason, .. } => WSMessageResponse::StreamNack {
             stream_id,
             command_id: *command_id,
             reason: nack_reason(*reason),

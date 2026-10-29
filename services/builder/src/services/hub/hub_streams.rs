@@ -1,23 +1,22 @@
 use crate::repositories::command_log::StreamId;
-use std::{collections::HashMap, sync::Mutex};
+use std::{collections::HashMap, collections::HashSet, sync::Mutex};
 use uuid::Uuid;
 
-/// The streams each connection is subscribed to, and their kinds: what the hub needs to tell whether a command
-/// of a connection is for a stream it is in. It is changed when a transport subscribes or unsubscribes, so
-/// what a connection does next sees it, and cleared when the connection is gone.
+/// The streams each connection is subscribed to. It is changed when a transport subscribes or
+/// unsubscribes, so what a connection does next sees it, and cleared when the connection is gone.
 #[derive(Default)]
 pub struct StreamSubscriptions {
-    by_connection: Mutex<HashMap<Uuid, HashMap<StreamId, String>>>,
+    by_connection: Mutex<HashMap<Uuid, HashSet<StreamId>>>,
 }
 
 impl StreamSubscriptions {
-    pub fn subscribe(&self, connection_id: Uuid, stream_id: StreamId, kind: String) {
+    pub fn subscribe(&self, connection_id: Uuid, stream_id: StreamId) {
         self.by_connection
             .lock()
             .unwrap()
             .entry(connection_id)
             .or_default()
-            .insert(stream_id, kind);
+            .insert(stream_id);
     }
 
     pub fn unsubscribe(&self, connection_id: Uuid, stream_id: &StreamId) {
@@ -30,14 +29,12 @@ impl StreamSubscriptions {
         }
     }
 
-    /// The kind of the stream, if the connection is subscribed to it.
-    pub fn kind_of(&self, connection_id: Uuid, stream_id: &StreamId) -> Option<String> {
+    pub fn contains(&self, connection_id: Uuid, stream_id: &StreamId) -> bool {
         self.by_connection
             .lock()
             .unwrap()
             .get(&connection_id)
-            .and_then(|streams| streams.get(stream_id))
-            .cloned()
+            .is_some_and(|streams| streams.contains(stream_id))
     }
 
     pub fn remove_connection(&self, connection_id: Uuid) {

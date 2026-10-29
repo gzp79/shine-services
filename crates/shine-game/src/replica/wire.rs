@@ -62,7 +62,6 @@ pub enum ServerMessage {
 pub enum ClientMessage {
     StreamSubscribe {
         stream_id: String,
-        kind: String,
     },
     StreamUnsubscribe {
         stream_id: String,

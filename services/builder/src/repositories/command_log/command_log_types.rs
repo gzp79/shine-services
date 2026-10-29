@@ -6,7 +6,6 @@ use uuid::Uuid;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StreamHead {
-    pub kind: String,
     /// Highest persisted version.
     pub version: i64,
     /// Chain hash, folded by the appender over each command's envelope.

@@ -2,20 +2,21 @@
 //! the connection's lifecycle, and it reaches the internal subscribers only.
 
 use crate::{
-    models::messages::{HubEvent, HubMessage, NackReason, StreamEvent, StreamMessage, SubscribeFailure, TopicKey},
+    models::messages::{CommandFailure, HubEvent, HubMessage, StreamEvent, StreamMessage, SubscribeFailure, TopicKey},
     repositories::command_log::StreamId,
     services::{
         hub_test_utils::{barrier, connect, connect_on, create_test_hub, TestHub, TestHubOptions},
         StreamEgress,
     },
 };
+use shine_game::replica::StreamKind;
 use shine_test::test;
 use std::sync::Arc;
 use tokio::sync::mpsc::error::TryRecvError;
 use uuid::Uuid;
 
 fn stream(name: &str) -> StreamId {
-    StreamId::parse(name).unwrap()
+    StreamId::new(StreamKind::Chat, name).unwrap()
 }
 
 /// What is queued on a bus subscription right now.
@@ -33,9 +34,7 @@ fn describe(messages: &[HubMessage]) -> Vec<String> {
         .map(|message| match message {
             HubMessage::Hub(HubEvent::UserConnected { .. }) => "connected".to_string(),
             HubMessage::Hub(HubEvent::UserDisconnected { .. }) => "disconnected".to_string(),
-            HubMessage::StreamEvent(StreamEvent::Subscribed { stream_id, kind, .. }) => {
-                format!("subscribed:{stream_id}:{kind}")
-            }
+            HubMessage::StreamEvent(StreamEvent::Subscribed { stream_id, .. }) => format!("subscribed:{stream_id}"),
             HubMessage::StreamEvent(StreamEvent::Unsubscribed { stream_id, .. }) => format!("unsubscribed:{stream_id}"),
             other => format!("{other:?}"),
         })
@@ -50,15 +49,13 @@ async fn a_subscribe_reaches_the_internal_subscribers_and_never_the_sockets() {
     let mut internal = test.hub.subscribe(vec![TopicKey::Stream]).await;
     let (connection, mut socket) = connect_on(&test.hub, Uuid::new_v4(), 8, vec![TopicKey::Hub, TopicKey::Ping]);
 
-    test.hub
-        .request_stream_subscribe(connection, stream("s1"), "chat".to_string())
-        .unwrap();
+    test.hub.request_stream_subscribe(connection, stream("s1")).unwrap();
     test.hub.request_stream_unsubscribe(connection, stream("s1")).unwrap();
     barrier(&test.hub, &mut test.events).await;
 
     assert_eq!(
         describe(&drain(&mut internal)),
-        vec!["subscribed:s1:chat".to_string(), "unsubscribed:s1".to_string()]
+        vec!["subscribed:chat:s1".to_string(), "unsubscribed:chat:s1".to_string()]
     );
     // The socket got the lifecycle event of its own connection, and nothing about the streams.
     while let Ok(message) = socket.try_recv() {
@@ -73,9 +70,7 @@ async fn a_subscribe_of_a_connection_that_is_not_registered_is_ignored() {
     };
     let mut internal = test.hub.subscribe(vec![TopicKey::Stream]).await;
 
-    test.hub
-        .request_stream_subscribe(Uuid::new_v4(), stream("s1"), "chat".to_string())
-        .unwrap();
+    test.hub.request_stream_subscribe(Uuid::new_v4(), stream("s1")).unwrap();
     test.hub
         .request_stream_unsubscribe(Uuid::new_v4(), stream("s1"))
         .unwrap();
@@ -93,24 +88,20 @@ async fn a_subscribe_is_ordered_with_the_lifecycle_of_its_connection() {
     let mut internal = test.hub.subscribe(vec![TopicKey::Hub, TopicKey::Stream]).await;
     let (connection, _socket) = connect(&test.hub, user, 8);
 
-    test.hub
-        .request_stream_subscribe(connection, stream("s1"), "chat".to_string())
-        .unwrap();
+    test.hub.request_stream_subscribe(connection, stream("s1")).unwrap();
     test.hub.request_disconnection(user, connection).unwrap();
     // Too late: the connection is gone.
-    test.hub
-        .request_stream_subscribe(connection, stream("s2"), "chat".to_string())
-        .unwrap();
+    test.hub.request_stream_subscribe(connection, stream("s2")).unwrap();
     barrier(&test.hub, &mut test.events).await;
 
     // The sentinel connection of the barrier follows; what matters is what comes first.
     let seen = describe(&drain(&mut internal));
     assert_eq!(
         seen[..3],
-        ["connected", "subscribed:s1:chat", "disconnected"],
+        ["connected", "subscribed:chat:s1", "disconnected"],
         "{seen:?}"
     );
-    assert!(!seen.iter().any(|m| m == "subscribed:s2:chat"), "{seen:?}");
+    assert!(!seen.iter().any(|m| m == "subscribed:chat:s2"), "{seen:?}");
 }
 
 #[test(serial = "hub-service")]
@@ -147,7 +138,7 @@ mod served {
         },
         services::{command_stream::WorkerConfig, hub_test_utils::Egress},
     };
-    use shine_game::replica::{encode_command, ChatCommand, ChatState, PixelMapCommand, PixelMapState, ReplayState};
+    use shine_game::replica::{encode_command, ChatCommand, ChatState, PixelMapCommand, PixelMapState};
     use shine_test::test;
     use std::time::Duration;
     use tokio::time::timeout;
@@ -190,11 +181,11 @@ mod served {
         .expect("a stream message")
     }
 
-    async fn subscribe(served: &Served, connection: Uuid, stream_id: &StreamId, kind: &str) {
+    async fn subscribe(served: &Served, connection: Uuid, stream_id: &StreamId) {
         served
             .test
             .hub
-            .subscribe_stream(connection, stream_id.clone(), kind)
+            .subscribe_stream(connection, stream_id.clone())
             .await
             .unwrap();
     }
@@ -206,16 +197,15 @@ mod served {
     #[test(serial = "hub-service")]
     async fn a_connection_subscribes_through_the_hub_and_gets_the_commands_of_two_kinds() {
         let Some(mut served) = served().await else { return };
-        let (chat, map) = (stream("chat-1"), stream("map-1"));
         let (chat, map) = (
-            StreamId::parse(&format!("{chat}-{}", Uuid::new_v4().simple())).unwrap(),
-            StreamId::parse(&format!("{map}-{}", Uuid::new_v4().simple())).unwrap(),
+            StreamId::new(StreamKind::Chat, format!("chat-{}", Uuid::new_v4().simple())).unwrap(),
+            StreamId::new(StreamKind::PixelMap, format!("map-{}", Uuid::new_v4().simple())).unwrap(),
         );
         let (connection, mut socket) = connect(&served.test.hub, Uuid::new_v4(), 32);
         barrier(&served.test.hub, &mut served.test.events).await;
 
-        subscribe(&served, connection, &chat, ChatState::KIND).await;
-        subscribe(&served, connection, &map, PixelMapState::KIND).await;
+        subscribe(&served, connection, &chat).await;
+        subscribe(&served, connection, &map).await;
         let mut synced = [
             next_stream_message(&mut socket).await,
             next_stream_message(&mut socket).await,
@@ -257,10 +247,10 @@ mod served {
     async fn a_disconnect_releases_the_workers_of_the_connection() {
         let Some(mut served) = served().await else { return };
         let user = Uuid::new_v4();
-        let id = StreamId::parse(&format!("room-{}", Uuid::new_v4().simple())).unwrap();
+        let id = StreamId::new(StreamKind::Chat, format!("room-{}", Uuid::new_v4().simple())).unwrap();
         let (connection, mut socket) = connect(&served.test.hub, user, 32);
         barrier(&served.test.hub, &mut served.test.events).await;
-        subscribe(&served, connection, &id, ChatState::KIND).await;
+        subscribe(&served, connection, &id).await;
         next_stream_message(&mut socket).await;
         let streams = served.test.hub.stream_registry().unwrap().clone();
         assert_eq!(streams.worker_count(), 1);
@@ -283,7 +273,7 @@ mod served {
         let (connection, _socket) = connect(&served.test.hub, user, 32);
         barrier(&served.test.hub, &mut served.test.events).await;
         let hub = &served.test.hub;
-        let id = StreamId::parse(&format!("canvas-{}", Uuid::new_v4().simple())).unwrap();
+        let id = StreamId::new(StreamKind::PixelMap, format!("canvas-{}", Uuid::new_v4().simple())).unwrap();
         let off_the_map = encode_command::<PixelMapState>(&PixelMapCommand::Paint { x: 99, y: 0, color: 1 }).unwrap();
         let send = |stream: &StreamId, command: String| {
             let hub = hub.clone();
@@ -294,33 +284,34 @@ mod served {
             }
         };
 
-        // Before the subscribe, and with a kind nobody serves.
-        assert_eq!(send(&id, chat_command("early")).await, Err(NackReason::NotSubscribed));
+        // Before the subscribe.
         assert_eq!(
-            hub.subscribe_stream(connection, id.clone(), "nothing").await,
-            Err(SubscribeFailure::UnknownKind)
+            send(&id, chat_command("early")).await,
+            Err(CommandFailure::NotSubscribed)
         );
-        subscribe(&served, connection, &id, PixelMapState::KIND).await;
-        // The kind of the stream decides what is valid, and what it can be opened as.
-        assert_eq!(send(&id, off_the_map).await, Err(NackReason::Invalid));
-        assert_eq!(send(&id, chat_command("not a paint")).await, Err(NackReason::Invalid));
+        subscribe(&served, connection, &id).await;
+        // The kind in the stream identity decides what is valid.
+        assert_eq!(send(&id, off_the_map).await, Err(CommandFailure::Invalid));
         assert_eq!(
-            hub.subscribe_stream(connection, id.clone(), ChatState::KIND).await,
-            Err(SubscribeFailure::KindMismatch)
+            send(&id, chat_command("not a paint")).await,
+            Err(CommandFailure::Invalid)
         );
         // After the unsubscribe, with no waiting for the loop in between.
         hub.unsubscribe_stream(connection, id.clone()).unwrap();
-        assert_eq!(send(&id, chat_command("late")).await, Err(NackReason::NotSubscribed));
+        assert_eq!(
+            send(&id, chat_command("late")).await,
+            Err(CommandFailure::NotSubscribed)
+        );
     }
 
     #[test(serial = "hub-service")]
     async fn a_connection_that_is_gone_is_not_subscribed_to_anything() {
         let Some(mut served) = served().await else { return };
         let user = Uuid::new_v4();
-        let id = StreamId::parse(&format!("room-{}", Uuid::new_v4().simple())).unwrap();
+        let id = StreamId::new(StreamKind::Chat, format!("room-{}", Uuid::new_v4().simple())).unwrap();
         let (connection, mut socket) = connect(&served.test.hub, user, 32);
         barrier(&served.test.hub, &mut served.test.events).await;
-        subscribe(&served, connection, &id, ChatState::KIND).await;
+        subscribe(&served, connection, &id).await;
         next_stream_message(&mut socket).await;
 
         served.test.hub.request_disconnection(user, connection).unwrap();
@@ -331,7 +322,7 @@ mod served {
             .hub
             .send_stream_command(connection, user, &id, Uuid::new_v4(), &chat_command("ghost"))
             .await;
-        assert_eq!(result, Err(NackReason::NotSubscribed));
+        assert_eq!(result, Err(CommandFailure::NotSubscribed));
     }
 }
 
@@ -344,13 +335,13 @@ async fn a_hub_without_streams_refuses_them() {
     let id = stream("s1");
 
     assert_eq!(
-        test.hub.subscribe_stream(connection, id.clone(), "chat").await,
+        test.hub.subscribe_stream(connection, id.clone()).await,
         Err(SubscribeFailure::Failed)
     );
     assert_eq!(
         test.hub
             .send_stream_command(connection, Uuid::new_v4(), &id, Uuid::new_v4(), "{}")
             .await,
-        Err(NackReason::NotSubscribed)
+        Err(CommandFailure::NotSubscribed)
     );
 }

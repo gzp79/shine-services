@@ -82,8 +82,7 @@ fn client_messages_use_the_camel_case_wire_keys() {
     let command_id = Uuid::from_u128(7);
 
     let subscribe = serde_json::to_value(ClientMessage::StreamSubscribe {
-        stream_id: "s".into(),
-        kind: "pixel-map".into(),
+        stream_id: "pixel-map:s".into(),
     })
     .unwrap();
     let command = serde_json::to_value(ClientMessage::StreamCommand {
@@ -93,10 +92,7 @@ fn client_messages_use_the_camel_case_wire_keys() {
     })
     .unwrap();
 
-    assert_eq!(
-        subscribe,
-        json!({"type": "streamSubscribe", "streamId": "s", "kind": "pixel-map"})
-    );
+    assert_eq!(subscribe, json!({"type": "streamSubscribe", "streamId": "pixel-map:s"}));
     assert_eq!(
         command,
         json!({"type": "streamCommand", "streamId": "s", "commandId": command_id, "command": {"type": "paint"}})

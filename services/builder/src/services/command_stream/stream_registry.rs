@@ -1,6 +1,6 @@
 use crate::{
     models::{
-        messages::{NackReason, SubscribeFailure},
+        messages::{CommandFailure, SubscribeFailure},
         CommandInboxError, CommandLogError,
     },
     repositories::{
@@ -10,7 +10,7 @@ use crate::{
     services::command_stream::{spawn_worker, CommandStreamService, StreamEgress, WorkerConfig, WorkerHandle},
 };
 use futures::future::join_all;
-use shine_game::replica::{decode_command, ReplayState};
+use shine_game::replica::{decode_command, ReplayState, StreamKind};
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
@@ -24,12 +24,8 @@ pub const MAX_COMMAND_BYTES: usize = 16 * 1024;
 
 #[derive(Debug, ThisError)]
 pub enum RegistryError {
-    #[error("Unknown stream kind {0:?}")]
-    UnknownKind(String),
     #[error("The stream kind {0:?} is registered twice")]
-    DuplicateKind(String),
-    #[error("The stream is of kind {stored:?}, not {requested:?}")]
-    KindMismatch { stored: String, requested: String },
+    DuplicateKind(StreamKind),
     #[error(transparent)]
     Log(#[from] CommandLogError),
 }
@@ -38,8 +34,6 @@ impl RegistryError {
     /// What a client is told when this is why it cannot subscribe.
     pub fn subscribe_failure(&self) -> SubscribeFailure {
         match self {
-            RegistryError::UnknownKind(_) => SubscribeFailure::UnknownKind,
-            RegistryError::KindMismatch { .. } => SubscribeFailure::KindMismatch,
             RegistryError::DuplicateKind(_) | RegistryError::Log(_) => SubscribeFailure::Failed,
         }
     }
@@ -62,8 +56,7 @@ struct State {
 struct Inner<I: CommandInboxDb, L: CommandLogDb> {
     inbox: I,
     log: L,
-    /// Fixed at startup, so it needs no lock.
-    kinds: HashMap<String, KindEntry>,
+    kinds: HashMap<StreamKind, KindEntry>,
     state: Mutex<State>,
 }
 
@@ -86,8 +79,8 @@ impl<I: CommandInboxDb, L: CommandLogDb> Clone for StreamRegistry<I, L> {
 pub struct StreamRegistryBuilder<I: CommandInboxDb, L: CommandLogDb> {
     inbox: I,
     log: L,
-    kinds: HashMap<String, KindEntry>,
-    duplicate: Option<String>,
+    kinds: HashMap<StreamKind, KindEntry>,
+    duplicate: Option<StreamKind>,
 }
 
 impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistryBuilder<I, L> {
@@ -105,8 +98,8 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistryBuild
                 decode_command::<S>(data).is_ok_and(|command| S::is_well_formed(&command))
             }),
         };
-        if self.kinds.insert(S::KIND.to_string(), entry).is_some() {
-            self.duplicate.get_or_insert_with(|| S::KIND.to_string());
+        if self.kinds.insert(S::KIND, entry).is_some() {
+            self.duplicate.get_or_insert(S::KIND);
         }
         self
     }
@@ -137,50 +130,20 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
         }
     }
 
-    /// Checks that a connection may subscribe to the stream as `requested`, and returns its kind. The
-    /// kind of an existing stream is the one it was created with; a new stream takes the requested one.
-    pub async fn open(&self, stream_id: &StreamId, requested: &str) -> Result<String, RegistryError> {
-        // A worker that is running has the say: the stream may not be in the log yet, as the worker creates it.
-        let running = self
-            .inner
-            .state
-            .lock()
-            .unwrap()
-            .workers
-            .get(stream_id)
-            .filter(|worker| !worker.is_finished())
-            .map(|worker| worker.kind());
-        if let Some(running) = running {
-            return if running == requested {
-                Ok(running.to_string())
-            } else {
-                Err(RegistryError::KindMismatch {
-                    stored: running.to_string(),
-                    requested: requested.to_string(),
-                })
-            };
-        }
-        let kind = match self.inner.log.head(stream_id).await? {
-            Some(head) if head.kind != requested => {
-                return Err(RegistryError::KindMismatch {
-                    stored: head.kind,
-                    requested: requested.to_string(),
-                })
-            }
-            Some(head) => head.kind,
-            None => requested.to_string(),
-        };
+    /// Validates that the stream's known kind is registered before it is opened.
+    pub async fn open(&self, stream_id: &StreamId) -> Result<StreamKind, RegistryError> {
+        let kind = stream_id.kind();
         if !self.inner.kinds.contains_key(&kind) {
-            return Err(RegistryError::UnknownKind(kind));
+            return Err(RegistryError::Log(CommandLogError::StreamNotFound));
         }
         Ok(kind)
     }
 
     /// Whether `data` is a command of the kind that its worker will take.
-    pub fn validate(&self, kind: &str, data: &str) -> bool {
+    pub fn validate(&self, kind: StreamKind, data: &str) -> bool {
         self.inner
             .kinds
-            .get(kind)
+            .get(&kind)
             .is_some_and(|entry| (entry.is_valid_command)(data))
     }
 
@@ -189,13 +152,12 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
     pub async fn push(
         &self,
         stream_id: &StreamId,
-        kind: &str,
         user_id: Uuid,
         command_id: Uuid,
         command: &str,
-    ) -> Result<(), NackReason> {
-        if command.len() > MAX_COMMAND_BYTES || !self.validate(kind, command) {
-            return Err(NackReason::Invalid);
+    ) -> Result<(), CommandFailure> {
+        if command.len() > MAX_COMMAND_BYTES || !self.validate(stream_id.kind(), command) {
+            return Err(CommandFailure::Invalid);
         }
         self.inner
             .inbox
@@ -204,18 +166,17 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
             .map(|_| ())
             .map_err(|err| {
                 tracing::warn!("[{stream_id}] Failed to queue a command: {err:#?}");
-                NackReason::Failed
+                CommandFailure::Failed
             })
     }
 
-    /// Subscribes the connection to the stream, starting its worker if there is none. The kind comes
-    /// from `open`.
-    pub fn subscribe(&self, connection_id: Uuid, stream_id: &StreamId, kind: &str) -> Result<(), RegistryError> {
+    /// Subscribes the connection to the stream, starting its worker if there is none.
+    pub fn subscribe(&self, connection_id: Uuid, stream_id: &StreamId) -> Result<(), RegistryError> {
         let entry = self
             .inner
             .kinds
-            .get(kind)
-            .ok_or_else(|| RegistryError::UnknownKind(kind.to_string()))?;
+            .get(&stream_id.kind())
+            .ok_or(RegistryError::Log(CommandLogError::StreamNotFound))?;
         let mut state = self.inner.state.lock().unwrap();
 
         let running = state

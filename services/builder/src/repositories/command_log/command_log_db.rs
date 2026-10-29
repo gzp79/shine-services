@@ -10,13 +10,8 @@ use std::future::Future;
 
 /// Access to the command-log data store: a stream's commands and snapshots.
 pub trait CommandLogDb: Clone + Send + Sync {
-    /// Creates the stream if it does not exist yet, and returns its head either way. Errs if the
-    /// stream exists under a different `kind`.
-    fn ensure_stream(
-        &self,
-        stream_id: &StreamId,
-        kind: &str,
-    ) -> impl Future<Output = Result<StreamHead, CommandLogError>> + Send;
+    /// Creates the stream if it does not exist yet, and returns its head either way.
+    fn ensure_stream(&self, stream_id: &StreamId) -> impl Future<Output = Result<StreamHead, CommandLogError>> + Send;
 
     /// The stream's head, or `None` if it does not exist. Never creates it.
     fn head(&self, stream_id: &StreamId) -> impl Future<Output = Result<Option<StreamHead>, CommandLogError>> + Send;

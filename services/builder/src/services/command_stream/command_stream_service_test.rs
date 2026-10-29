@@ -103,7 +103,7 @@ fn strs(values: &[&str]) -> Vec<String> {
 #[test]
 async fn a_new_stream_loads_empty() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id();
+    let id = stream_id(KIND);
 
     let state = fx.load(&id).await;
 
@@ -131,17 +131,6 @@ async fn a_stream_loads_from_its_latest_snapshot_and_the_commands_after_it() {
     );
 }
 
-#[test]
-async fn a_stream_of_another_kind_does_not_load() {
-    let Some(fx) = fixture().await else { return };
-    let id = stream_id();
-    fx.log.db.ensure_stream(&id, "other").await.unwrap();
-
-    let result = fx.service.load::<ChatState>(&id).await;
-
-    assert!(result.is_err(), "{KIND} over a stream of another kind");
-}
-
 // ---------------------------------------------------------------------------------------------
 // Sequencing
 // ---------------------------------------------------------------------------------------------
@@ -149,7 +138,7 @@ async fn a_stream_of_another_kind_does_not_load() {
 #[test]
 async fn commands_get_dense_versions_in_inbox_order_and_are_stored_and_the_inbox_is_trimmed() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id();
+    let id = stream_id(KIND);
     let mut state = fx.load(&id).await;
     fx.send(&id, "a").await;
     fx.send(&id, "b").await;
@@ -172,7 +161,7 @@ async fn commands_get_dense_versions_in_inbox_order_and_are_stored_and_the_inbox
 #[test]
 async fn a_loaded_stream_continues_after_its_head() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id();
+    let id = stream_id(KIND);
     let mut first = fx.load(&id).await;
     fx.send(&id, "a").await;
     fx.send(&id, "b").await;
@@ -191,7 +180,7 @@ async fn a_loaded_stream_continues_after_its_head() {
 #[test]
 async fn command_ids_are_the_clients_own_so_a_repeated_one_gets_a_version_each() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id();
+    let id = stream_id(KIND);
     let mut state = fx.load(&id).await;
     let command_id = fx.send(&id, "same").await;
     fx.send_as(&id, command_id, "same").await;
@@ -209,7 +198,7 @@ async fn command_ids_are_the_clients_own_so_a_repeated_one_gets_a_version_each()
 #[test]
 async fn an_entry_that_cannot_be_decoded_is_skipped_without_blocking_the_rest() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id();
+    let id = stream_id(KIND);
     let mut state = fx.load(&id).await;
     let (command, user) = (Uuid::new_v4().to_string(), Uuid::new_v4().to_string());
     fx.inbox
@@ -229,7 +218,7 @@ async fn an_entry_that_cannot_be_decoded_is_skipped_without_blocking_the_rest() 
 #[test]
 async fn the_persisted_version_is_announced_to_the_other_instances() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id();
+    let id = stream_id(KIND);
     let mut state = fx.load(&id).await;
     let mut wakes = fx.inbox.listen().await;
     fx.send(&id, "a").await;
@@ -253,7 +242,7 @@ async fn the_persisted_version_is_announced_to_the_other_instances() {
 #[test]
 async fn an_instance_behind_adopts_what_the_others_persisted_and_sequences_its_own_command_after_it() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id();
+    let id = stream_id(KIND);
     let mut ahead = fx.load(&id).await;
     let mut behind = fx.load(&id).await;
     for text in ["a", "b", "c"] {
@@ -276,7 +265,7 @@ async fn an_instance_behind_adopts_what_the_others_persisted_and_sequences_its_o
 #[test]
 async fn a_batch_overlapping_commands_of_the_others_is_resequenced_after_them() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id();
+    let id = stream_id(KIND);
     let mut ahead = fx.load(&id).await;
     let mut behind = fx.load(&id).await;
     fx.send(&id, "a").await;
@@ -295,7 +284,7 @@ async fn a_batch_overlapping_commands_of_the_others_is_resequenced_after_them() 
 #[test]
 async fn a_waiting_command_that_another_instance_stored_is_not_appended_again() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id();
+    let id = stream_id(KIND);
     let mut ahead = fx.load(&id).await;
     let mut behind = fx.load(&id).await;
     // Reads the inbox but persists nothing: `x` waits in `behind`.
@@ -324,7 +313,7 @@ async fn a_waiting_command_that_another_instance_stored_is_not_appended_again() 
 #[test]
 async fn a_waiting_command_is_kept_when_the_stored_one_with_its_id_is_another_command() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id();
+    let id = stream_id(KIND);
     let mut ahead = fx.load(&id).await;
     let mut behind = fx.load(&id).await;
     let reads_only = CommandStreamService::new(
@@ -350,7 +339,7 @@ async fn a_waiting_command_is_kept_when_the_stored_one_with_its_id_is_another_co
 #[test]
 async fn inbox_entries_that_are_stored_but_not_trimmed_are_not_taken_again() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id();
+    let id = stream_id(KIND);
     let mut first = fx.load(&id).await;
     fx.send(&id, "x").await;
     fx.send(&id, "y").await;
@@ -385,7 +374,7 @@ async fn inbox_entries_that_are_stored_but_not_trimmed_are_not_taken_again() {
 #[test]
 async fn an_idle_instance_adopts_what_the_others_persisted() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id();
+    let id = stream_id(KIND);
     let mut busy = fx.load(&id).await;
     let mut idle = fx.load(&id).await;
     fx.send(&id, "a").await;
@@ -404,7 +393,7 @@ async fn instances_sequencing_the_same_inbox_at_once_agree() {
     let Some(fx) = fixture().await else { return };
 
     for round in 0..8 {
-        let id = stream_id();
+        let id = stream_id(KIND);
         let mut first = fx.load(&id).await;
         let mut second = fx.load(&id).await;
         let expected: Vec<String> = (0..6).map(|i| format!("m{i}")).collect();
@@ -445,16 +434,20 @@ async fn instances_sequencing_the_same_inbox_at_once_agree() {
 #[test]
 async fn a_log_contradicting_the_confirmed_history_makes_the_stream_reload() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id();
+    let id = stream_id(KIND);
     let seed = ChatLog::new("seed", 3);
-    fx.log.db.ensure_stream(&id, KIND).await.unwrap();
+    fx.log.db.ensure_stream(&id).await.unwrap();
     append_range(&fx.log.db, &id, &seed, 1, 3).await.unwrap();
     let mut state = fx.load(&id).await;
     // The log is replaced behind the instance's back by another history that is longer.
     fx.log
         .exec(&format!(
-            "UPDATE cl_streams SET version = 0, chain_hash = 0 WHERE stream_id = '{id}';
-             DELETE FROM cl_commands WHERE stream_id = '{id}';"
+            "UPDATE cl_streams SET version = 0, chain_hash = 0 WHERE kind = '{}' AND id = '{}';
+             DELETE FROM cl_commands WHERE kind = '{}' AND id = '{}';",
+            id.kind(),
+            id.id(),
+            id.kind(),
+            id.id(),
         ))
         .await;
     let other = ChatLog::new("other", 4);
@@ -479,7 +472,7 @@ async fn a_log_contradicting_the_confirmed_history_makes_the_stream_reload() {
 #[test]
 async fn replaying_brings_the_replica_up_to_the_confirmed_version() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id();
+    let id = stream_id(KIND);
     let mut state = fx.load(&id).await;
     for text in ["a", "b", "c", "d", "e"] {
         fx.send(&id, text).await;
@@ -502,7 +495,7 @@ async fn replaying_brings_the_replica_up_to_the_confirmed_version() {
 #[test]
 async fn a_checkpoint_stores_its_snapshot_and_the_tail_continues_after_it() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id();
+    let id = stream_id(KIND);
     let service = fx.snapshotting(4, 3);
     let mut state = fx.load(&id).await;
     for i in 0..10 {
@@ -534,7 +527,7 @@ async fn a_checkpoint_stores_its_snapshot_and_the_tail_continues_after_it() {
 #[test]
 async fn instances_reaching_the_same_checkpoint_both_keep_it() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id();
+    let id = stream_id(KIND);
     let service = fx.snapshotting(4, 3);
     let mut first = fx.load(&id).await;
     let mut second = fx.load(&id).await;
@@ -556,7 +549,7 @@ async fn instances_reaching_the_same_checkpoint_both_keep_it() {
 #[test]
 async fn a_snapshot_disagreeing_with_the_stored_one_makes_the_stream_reload() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id();
+    let id = stream_id(KIND);
     let service = fx.snapshotting(4, 3);
     let mut state = fx.load(&id).await;
     for i in 0..4 {
@@ -582,7 +575,7 @@ async fn a_snapshot_disagreeing_with_the_stored_one_makes_the_stream_reload() {
 #[test]
 async fn only_the_latest_snapshots_are_kept_and_an_instance_behind_the_rest_reloads() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id();
+    let id = stream_id(KIND);
     let service = fx.snapshotting(2, 2);
     let mut state = fx.load(&id).await;
     let mut behind = fx.load(&id).await;

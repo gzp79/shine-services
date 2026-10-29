@@ -2,7 +2,7 @@
 //! of stream are registered: the chat room and the pixel map.
 
 use crate::{
-    models::messages::{NackReason, SubscribeFailure},
+    models::messages::CommandFailure,
     repositories::{
         command_inbox::{
             redis::RedisCommandInboxDb,
@@ -66,15 +66,15 @@ impl Harness {
     }
 
     /// Opens and subscribes a new connection, and waits for its sync.
-    async fn join(&self, stream: &StreamId, kind: &str) -> Uuid {
+    async fn join(&self, stream: &StreamId) -> Uuid {
         let connection = Uuid::new_v4();
-        self.join_as(connection, stream, kind).await;
+        self.join_as(connection, stream).await;
         connection
     }
 
-    async fn join_as(&self, connection: Uuid, stream: &StreamId, kind: &str) {
-        let kind = self.registry.open(stream, kind).await.unwrap();
-        self.registry.subscribe(connection, stream, &kind).unwrap();
+    async fn join_as(&self, connection: Uuid, stream: &StreamId) {
+        self.registry.open(stream).await.unwrap();
+        self.registry.subscribe(connection, stream).unwrap();
         self.egress
             .wait(connection, |m| m.iter().any(|message| message.stream_id() == stream))
             .await;
@@ -119,32 +119,13 @@ async fn a_kind_registered_twice_fails_the_build() {
 // ---------------------------------------------------------------------------------------------
 
 #[test]
-async fn a_new_stream_opens_with_a_registered_kind_and_an_unknown_kind_does_not() {
+async fn a_new_stream_opens_with_its_registered_kind() {
     let Some(h) = harness(quiet()).await else { return };
 
     assert_eq!(
-        h.registry.open(&stream_id(), ChatState::KIND).await.unwrap(),
+        h.registry.open(&stream_id(ChatState::KIND)).await.unwrap(),
         ChatState::KIND
     );
-    let unknown = h.registry.open(&stream_id(), "nothing").await;
-    assert!(matches!(unknown, Err(RegistryError::UnknownKind(kind)) if kind == "nothing"));
-}
-
-#[test]
-async fn an_existing_stream_opens_only_as_its_own_kind() {
-    let Some(h) = harness(quiet()).await else { return };
-    let id = stream_id();
-    h.join(&id, ChatState::KIND).await;
-
-    let same = h.registry.open(&id, ChatState::KIND).await;
-    let other = h.registry.open(&id, PixelMapState::KIND).await;
-
-    assert_eq!(same.unwrap(), ChatState::KIND);
-    assert!(matches!(
-        other,
-        Err(RegistryError::KindMismatch { stored, requested })
-            if stored == ChatState::KIND && requested == PixelMapState::KIND
-    ));
 }
 
 #[test]
@@ -161,33 +142,16 @@ async fn commands_are_checked_by_the_kind_of_their_stream() {
         "not well formed"
     );
     assert!(!h.registry.validate(ChatState::KIND, &paint), "not a chat command");
-    assert!(!h.registry.validate("nothing", &chat), "unknown kind");
-}
-
-#[test]
-async fn the_reasons_a_stream_cannot_be_opened_are_what_a_client_is_told() {
-    let Some(h) = harness(quiet()).await else { return };
-    let id = stream_id();
-    h.join(&id, ChatState::KIND).await;
-
-    let unknown = h.registry.open(&stream_id(), "nothing").await.unwrap_err();
-    let mismatch = h.registry.open(&id, PixelMapState::KIND).await.unwrap_err();
-
-    assert_eq!(unknown.subscribe_failure(), SubscribeFailure::UnknownKind);
-    assert_eq!(mismatch.subscribe_failure(), SubscribeFailure::KindMismatch);
 }
 
 #[test]
 async fn a_valid_command_is_queued_in_the_inbox_of_its_stream() {
     let Some(h) = harness(quiet()).await else { return };
-    let id = stream_id();
+    let id = stream_id(ChatState::KIND);
     let (command_id, user_id) = (Uuid::new_v4(), Uuid::new_v4());
     let data = encode_command::<ChatState>(&ChatCommand::Add { text: "hi".into() }).unwrap();
 
-    h.registry
-        .push(&id, ChatState::KIND, user_id, command_id, &data)
-        .await
-        .unwrap();
+    h.registry.push(&id, user_id, command_id, &data).await.unwrap();
 
     let queued = h.inbox.db.poll(&id, &InboxId::START, 10).await.unwrap().entries;
     assert_eq!(queued.len(), 1);
@@ -197,27 +161,29 @@ async fn a_valid_command_is_queued_in_the_inbox_of_its_stream() {
 #[test]
 async fn a_command_that_is_not_valid_for_the_kind_is_refused_and_not_queued() {
     let Some(h) = harness(quiet()).await else { return };
-    let id = stream_id();
+    let id = stream_id(ChatState::KIND);
     let paint = encode_command::<PixelMapState>(&PixelMapCommand::Paint { x: 1, y: 1, color: 1 }).unwrap();
     let off_the_map = encode_command::<PixelMapState>(&PixelMapCommand::Paint { x: 90, y: 1, color: 1 }).unwrap();
     let too_long = encode_command::<ChatState>(&ChatCommand::Add {
         text: "a".repeat(MAX_COMMAND_BYTES + 1),
     })
     .unwrap();
-    let push = |kind: &'static str, command: String| {
+    let push = |command: String| {
         let (registry, id) = (h.registry.clone(), id.clone());
-        async move { registry.push(&id, kind, Uuid::nil(), Uuid::new_v4(), &command).await }
+        async move { registry.push(&id, Uuid::nil(), Uuid::new_v4(), &command).await }
     };
 
     let results = [
-        push(ChatState::KIND, paint.clone()).await,
-        push(PixelMapState::KIND, off_the_map).await,
-        push(ChatState::KIND, "{not json".to_string()).await,
-        push(ChatState::KIND, too_long).await,
-        push("nothing", paint).await,
+        push(paint).await,
+        push(off_the_map).await,
+        push("{not json".to_string()).await,
+        push(too_long).await,
     ];
 
-    assert!(results.iter().all(|r| *r == Err(NackReason::Invalid)), "{results:?}");
+    assert!(
+        results.iter().all(|r| *r == Err(CommandFailure::Invalid)),
+        "{results:?}"
+    );
     assert!(h
         .inbox
         .db
@@ -235,12 +201,12 @@ async fn a_command_that_is_not_valid_for_the_kind_is_refused_and_not_queued() {
 #[test]
 async fn subscribers_of_a_stream_share_one_worker_and_streams_have_their_own() {
     let Some(h) = harness(quiet()).await else { return };
-    let (a, b) = (stream_id(), stream_id());
+    let (a, b) = (stream_id(ChatState::KIND), stream_id(PixelMapState::KIND));
 
-    let first = h.join(&a, ChatState::KIND).await;
-    let second = h.join(&a, ChatState::KIND).await;
+    let first = h.join(&a).await;
+    let second = h.join(&a).await;
     assert_eq!(h.registry.worker_count(), 1);
-    h.join(&b, ChatState::KIND).await;
+    h.join(&b).await;
     assert_eq!(h.registry.worker_count(), 2);
 
     // One worker serves both: a single wake delivers to both.
@@ -252,21 +218,11 @@ async fn subscribers_of_a_stream_share_one_worker_and_streams_have_their_own() {
 }
 
 #[test]
-async fn subscribing_to_an_unregistered_kind_fails() {
-    let Some(h) = harness(quiet()).await else { return };
-
-    let result = h.registry.subscribe(Uuid::new_v4(), &stream_id(), "nothing");
-
-    assert!(matches!(result, Err(RegistryError::UnknownKind(_))));
-    assert_eq!(h.registry.worker_count(), 0);
-}
-
-#[test]
 async fn a_wake_reaches_the_worker_of_its_stream() {
     let Some(h) = harness(quiet()).await else { return };
-    let (a, b) = (stream_id(), stream_id());
-    let in_a = h.join(&a, ChatState::KIND).await;
-    let in_b = h.join(&b, ChatState::KIND).await;
+    let (a, b) = (stream_id(ChatState::KIND), stream_id(PixelMapState::KIND));
+    let in_a = h.join(&a).await;
+    let in_b = h.join(&b).await;
     h.push_chat(&a, "for a").await;
     h.push_chat(&b, "for b").await;
 
@@ -285,8 +241,8 @@ async fn a_wake_reaches_the_worker_of_its_stream() {
 async fn the_inbox_wakes_the_workers_without_anyone_calling_wake() {
     let Some(h) = harness(quiet()).await else { return };
     h.registry.listen().await.unwrap();
-    let id = stream_id();
-    let connection = h.join(&id, ChatState::KIND).await;
+    let id = stream_id(ChatState::KIND);
+    let connection = h.join(&id).await;
 
     h.push_chat(&id, "a").await;
     h.push_chat(&id, "b").await;
@@ -299,9 +255,9 @@ async fn the_inbox_wakes_the_workers_without_anyone_calling_wake() {
 async fn streams_of_different_kinds_work_side_by_side_for_one_connection() {
     let Some(h) = harness(quiet()).await else { return };
     h.registry.listen().await.unwrap();
-    let (chat, map) = (stream_id(), stream_id());
-    let connection = h.join(&chat, ChatState::KIND).await;
-    h.join_as(connection, &map, PixelMapState::KIND).await;
+    let (chat, map) = (stream_id(ChatState::KIND), stream_id(PixelMapState::KIND));
+    let connection = h.join(&chat).await;
+    h.join_as(connection, &map).await;
 
     h.push_chat(&chat, "hello").await;
     h.push_paint(&map, 1, 1, 5).await;
@@ -313,8 +269,6 @@ async fn streams_of_different_kinds_work_side_by_side_for_one_connection() {
         })
         .await;
     assert_eq!(all_commands(&h.log.db, &map).await.len(), 2);
-    assert_eq!(h.log.db.head(&chat).await.unwrap().unwrap().kind, ChatState::KIND);
-    assert_eq!(h.log.db.head(&map).await.unwrap().unwrap().kind, PixelMapState::KIND);
     h.registry.unlisten().await.unwrap();
 }
 
@@ -325,9 +279,9 @@ async fn streams_of_different_kinds_work_side_by_side_for_one_connection() {
 #[test]
 async fn a_disconnect_releases_every_stream_of_the_connection() {
     let Some(h) = harness(short_grace()).await else { return };
-    let (chat, map) = (stream_id(), stream_id());
-    let connection = h.join(&chat, ChatState::KIND).await;
-    h.join_as(connection, &map, PixelMapState::KIND).await;
+    let (chat, map) = (stream_id(ChatState::KIND), stream_id(ChatState::KIND));
+    let connection = h.join(&chat).await;
+    h.join_as(connection, &map).await;
     assert_eq!(h.registry.worker_count(), 2);
 
     h.registry.disconnect(connection);
@@ -338,9 +292,9 @@ async fn a_disconnect_releases_every_stream_of_the_connection() {
 #[test]
 async fn an_unsubscribe_releases_only_that_stream_and_a_stream_can_be_joined_again_after_its_worker_ended() {
     let Some(h) = harness(short_grace()).await else { return };
-    let (a, b) = (stream_id(), stream_id());
-    let connection = h.join(&a, ChatState::KIND).await;
-    h.join_as(connection, &b, ChatState::KIND).await;
+    let (a, b) = (stream_id(ChatState::KIND), stream_id(ChatState::KIND));
+    let connection = h.join(&a).await;
+    h.join_as(connection, &b).await;
 
     h.registry.unsubscribe(connection, &a);
     h.registry.unsubscribe(connection, &a);
@@ -348,7 +302,7 @@ async fn an_unsubscribe_releases_only_that_stream_and_a_stream_can_be_joined_aga
     wait_for_workers(&h.registry, 1).await;
     // A is gone; joining it again starts a new worker.
     let again = Uuid::new_v4();
-    h.join_as(again, &a, ChatState::KIND).await;
+    h.join_as(again, &a).await;
     assert_eq!(kinds(&h.egress.messages(again)), vec!["sync:0"]);
     assert_eq!(h.registry.worker_count(), 2);
 }
@@ -356,8 +310,8 @@ async fn an_unsubscribe_releases_only_that_stream_and_a_stream_can_be_joined_aga
 #[test]
 async fn ended_workers_are_not_running_and_a_purge_forgets_them() {
     let Some(h) = harness(short_grace()).await else { return };
-    let id = stream_id();
-    let connection = h.join(&id, ChatState::KIND).await;
+    let id = stream_id(ChatState::KIND);
+    let connection = h.join(&id).await;
 
     h.registry.unsubscribe(connection, &id);
 
@@ -370,9 +324,9 @@ async fn ended_workers_are_not_running_and_a_purge_forgets_them() {
 #[test]
 async fn a_shutdown_persists_what_is_waiting_and_ends_every_worker() {
     let Some(h) = harness(quiet()).await else { return };
-    let (a, b) = (stream_id(), stream_id());
-    h.join(&a, ChatState::KIND).await;
-    h.join(&b, PixelMapState::KIND).await;
+    let (a, b) = (stream_id(ChatState::KIND), stream_id(PixelMapState::KIND));
+    h.join(&a).await;
+    h.join(&b).await;
     h.push_chat(&a, "waiting").await;
     h.push_paint(&b, 3, 3, 3).await;
 

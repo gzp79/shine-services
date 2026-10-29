@@ -62,7 +62,14 @@ impl<I: CommandInboxDb, L: CommandLogDb> CommandStreamService<I, L> {
     /// replayed.
     #[instrument(level = "debug", skip_all, fields(stream_id = %stream_id))]
     pub async fn load<S: ReplayState>(&self, stream_id: &StreamId) -> Result<StreamState<S>, CommandStreamError> {
-        let head = self.log.ensure_stream(stream_id, S::KIND).await?;
+        if stream_id.kind() != S::KIND {
+            return Err(CommandStreamError::Corrupt(format!(
+                "stream kind {} cannot load {} state",
+                stream_id.kind(),
+                S::KIND
+            )));
+        }
+        let head = self.log.ensure_stream(stream_id).await?;
         let snapshot = self.log.latest_snapshot(stream_id, head.version).await?;
         let (mut replica, mut after) = match &snapshot {
             Some(snapshot) => {

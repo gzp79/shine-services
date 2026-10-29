@@ -40,7 +40,7 @@ pub async fn push(
         .ignore()
         .cmd("PUBLISH")
         .arg(WAKE_CHANNEL)
-        .arg(stream_id.as_str())
+        .arg(stream_id.to_string())
         .ignore()
         .query_async(&mut *client)
         .await

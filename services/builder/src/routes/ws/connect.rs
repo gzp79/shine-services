@@ -219,12 +219,20 @@ async fn serve_socket<S, R, E>(
     }
 }
 
-/// Answers the client of a socket on its own egress channel. This does not go through the hub, which may not
-/// have registered the connection yet when the client's first frame arrives, and would lose the answer.
-fn reply(replies: &mpsc::WeakSender<HubMessage>, message: StreamMessage) {
+fn send_stream_response(replies: &mpsc::WeakSender<HubMessage>, message: StreamMessage) {
     // A channel that is gone, or full, means the client is going away or is too slow: no answer is needed.
     if let Some(tx) = replies.upgrade() {
         let _ = tx.try_send(HubMessage::StreamMessage(Arc::new(message)));
+    }
+}
+
+fn parse_stream_id(user_id: Uuid, stream_id: &str) -> Option<StreamId> {
+    match StreamId::parse(stream_id) {
+        Ok(stream_id) => Some(stream_id),
+        Err(_) => {
+            tracing::trace!("[{user_id}] Invalid stream id: {stream_id}");
+            None
+        }
     }
 }
 
@@ -236,60 +244,53 @@ async fn handle_stream_request(
     user_id: Uuid,
     connection_id: Uuid,
 ) {
-    if let Err(errors) = request.validate() {
-        tracing::trace!("[{user_id}] Validation errors: {errors:#?}");
-        return;
-    }
-
     let (kind, outcome) = match request {
-        WSMessageRequest::StreamSubscribe { stream_id, kind } => {
-            let outcome = match StreamId::parse(&stream_id) {
-                Err(_) => "invalid",
-                Ok(stream_id) => match hub_service
-                    .subscribe_stream(connection_id, stream_id.clone(), &kind)
-                    .await
-                {
-                    Ok(()) => "ok",
-                    Err(reason) => {
-                        reply(replies, StreamMessage::SubscribeFailed { stream_id, reason });
-                        "refused"
-                    }
-                },
+        WSMessageRequest::StreamSubscribe { stream_id } => {
+            let Some(stream_id) = parse_stream_id(user_id, &stream_id) else {
+                return;
             };
-            ("stream_subscribe", outcome)
+            match hub_service.subscribe_stream(connection_id, stream_id.clone()).await {
+                Ok(()) => ("stream_subscribe", "ok"),
+                Err(reason) => {
+                    send_stream_response(replies, StreamMessage::SubscribeFailed { stream_id, reason });
+                    ("stream_subscribe", "refused")
+                }
+            }
         }
         WSMessageRequest::StreamUnsubscribe { stream_id } => {
-            let outcome = match StreamId::parse(&stream_id) {
-                Err(_) => "invalid",
-                Ok(stream_id) => match hub_service.unsubscribe_stream(connection_id, stream_id) {
-                    Ok(()) => "ok",
-                    Err(_) => "failed",
-                },
+            let Some(stream_id) = parse_stream_id(user_id, &stream_id) else {
+                return;
+            };
+            let outcome = match hub_service.unsubscribe_stream(connection_id, stream_id) {
+                Ok(()) => "ok",
+                Err(_) => "failed",
             };
             ("stream_unsubscribe", outcome)
         }
         WSMessageRequest::StreamCommand { stream_id, command_id, command } => {
-            let outcome = match StreamId::parse(&stream_id) {
-                Err(_) => "invalid",
-                Ok(stream_id) => {
-                    let sent = hub_service
-                        .send_stream_command(connection_id, user_id, &stream_id, command_id, &command.to_string())
-                        .await;
-                    match sent {
-                        Ok(()) => "ok",
-                        Err(reason) => {
-                            reply(replies, StreamMessage::Nack { stream_id, command_id, reason });
-                            "refused"
-                        }
-                    }
-                }
+            let Some(stream_id) = parse_stream_id(user_id, &stream_id) else {
+                return;
             };
-            ("stream_command", outcome)
+            let sent = hub_service
+                .send_stream_command(connection_id, user_id, &stream_id, command_id, &command.to_string())
+                .await;
+            match sent {
+                Ok(()) => ("stream_command", "ok"),
+                Err(reason) => {
+                    send_stream_response(replies, StreamMessage::CommandFailed { stream_id, command_id, reason });
+                    ("stream_command", "refused")
+                }
+            }
         }
-        WSMessageRequest::Ping(PingRequest { id, user_id }) => {
+        WSMessageRequest::Ping(ping) => {
             let outcome = if !hub_service.ping_enabled() {
                 "disabled"
             } else {
+                if let Err(errors) = ping.validate() {
+                    tracing::trace!("[{user_id}] Validation errors: {errors:#?}");
+                    return;
+                }
+                let PingRequest { id, user_id } = ping;
                 let message = HubMessage::Ping(PingEvent { id });
                 match match user_id {
                     Some(user_id) => hub_service.send_to_user(user_id, message).await,

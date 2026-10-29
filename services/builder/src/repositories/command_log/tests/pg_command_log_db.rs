@@ -19,34 +19,26 @@ use uuid::Uuid;
 #[test]
 async fn a_new_stream_is_empty_and_ensuring_it_again_keeps_its_head() {
     let Some(log) = create_test_log().await else { return };
-    let id = stream_id();
+    let id = stream_id(KIND);
 
-    let head = log.db.ensure_stream(&id, KIND).await.unwrap();
-    assert_eq!(
-        head,
-        StreamHead {
-            kind: KIND.to_string(),
-            version: 0,
-            chain_hash: 0
-        }
-    );
+    let head = log.db.ensure_stream(&id).await.unwrap();
+    assert_eq!(head, StreamHead { version: 0, chain_hash: 0 });
     assert_eq!(log.db.head(&id).await.unwrap(), Some(head));
 
     let room = ChatLog::new("a", 3);
     append_range(&log.db, &id, &room, 1, 3).await.unwrap();
-    let head = log.db.ensure_stream(&id, KIND).await.unwrap();
+    let head = log.db.ensure_stream(&id).await.unwrap();
     assert_eq!((head.version, head.chain_hash), (3, room.chain_hash_at(3)));
 }
 
 #[test]
 async fn an_append_returns_the_head_the_stream_is_left_at() {
     let Some(log) = create_test_log().await else { return };
-    let id = stream_id();
+    let id = stream_id(KIND);
     let room = ChatLog::new("a", 10);
     let longer = ChatLog::new("a", 14);
-    log.db.ensure_stream(&id, KIND).await.unwrap();
+    log.db.ensure_stream(&id).await.unwrap();
     let head_at = |room: &ChatLog, version: i64| StreamHead {
-        kind: KIND.to_string(),
         version,
         chain_hash: room.chain_hash_at(version),
     };
@@ -67,9 +59,9 @@ async fn an_append_returns_the_head_the_stream_is_left_at() {
 #[test]
 async fn appended_batches_continue_the_chain_and_read_back() {
     let Some(log) = create_test_log().await else { return };
-    let id = stream_id();
+    let id = stream_id(KIND);
     let room = ChatLog::new("a", 50);
-    log.db.ensure_stream(&id, KIND).await.unwrap();
+    log.db.ensure_stream(&id).await.unwrap();
 
     append_range(&log.db, &id, &room, 1, 10).await.unwrap();
     append_range(&log.db, &id, &room, 11, 49).await.unwrap();
@@ -140,7 +132,7 @@ async fn a_healthy_stream_is_consistent() {
 #[test]
 async fn a_missing_stream_reads_as_empty_and_is_never_created_by_reading() {
     let Some(log) = create_test_log().await else { return };
-    let id = stream_id();
+    let id = stream_id(KIND);
 
     assert_eq!(log.db.head(&id).await.unwrap(), None);
     assert!(log.db.commands_after(&id, 0, 10).await.unwrap().is_empty());
@@ -158,28 +150,12 @@ async fn appending_to_a_missing_stream_is_not_found_but_appending_nothing_is_not
     let Some(log) = create_test_log().await else { return };
     let room = ChatLog::new("a", 2);
 
-    let result = append_range(&log.db, &stream_id(), &room, 1, 2).await;
+    let result = append_range(&log.db, &stream_id(KIND), &room, 1, 2).await;
     assert!(matches!(result, Err(CommandLogError::StreamNotFound)), "{result:?}");
 
     let (id, room) = seeded_stream(&log, 3).await;
     log.db.append(&id, &[], room.chain_hash_at(3)).await.unwrap();
     assert_eq!(log.db.head(&id).await.unwrap().unwrap().version, 3);
-}
-
-#[test]
-async fn a_stream_cannot_be_ensured_as_another_kind() {
-    let Some(log) = create_test_log().await else { return };
-    let id = stream_id();
-    log.db.ensure_stream(&id, KIND).await.unwrap();
-
-    let result = log.db.ensure_stream(&id, "other").await;
-
-    match result {
-        Err(CommandLogError::KindMismatch { stored, requested }) => {
-            assert_eq!((stored.as_str(), requested.as_str()), (KIND, "other"));
-        }
-        other => panic!("expected a kind mismatch, got {other:?}"),
-    }
 }
 
 #[test]
@@ -303,10 +279,10 @@ async fn resending_covered_commands_is_ok_and_a_partly_covered_batch_stores_only
 #[test]
 async fn a_command_with_a_forged_chain_hash_is_stored_and_found_by_the_consistency_check() {
     let Some(log) = create_test_log().await else { return };
-    let id = stream_id();
+    let id = stream_id(KIND);
     let mut room = ChatLog::new("a", 4);
     room.commands[3].chain_hash ^= 0xdead;
-    log.db.ensure_stream(&id, KIND).await.unwrap();
+    log.db.ensure_stream(&id).await.unwrap();
 
     append_range(&log.db, &id, &room, 1, 4).await.unwrap();
 
@@ -318,10 +294,11 @@ async fn a_command_with_a_forged_chain_hash_is_stored_and_found_by_the_consisten
 async fn stored_commands_cannot_be_updated() {
     let Some(log) = create_test_log().await else { return };
     let (id, room) = seeded_stream(&log, 3).await;
+    let (kind, stream_id) = (id.kind().as_str(), id.id());
 
     let rejected = log
         .rejects(&format!(
-            "UPDATE cl_commands SET data = '{{}}' WHERE stream_id = '{id}' AND version = 2"
+            "UPDATE cl_commands SET data = '{{}}' WHERE kind = '{kind}' AND id = '{stream_id}' AND version = 2"
         ))
         .await;
 
@@ -332,10 +309,10 @@ async fn stored_commands_cannot_be_updated() {
 #[test]
 async fn the_inbox_position_of_a_command_is_kept_when_there_is_one_and_is_not_part_of_the_chain() {
     let Some(log) = create_test_log().await else { return };
-    let id = stream_id();
+    let id = stream_id(KIND);
     let mut room = ChatLog::new("a", 4);
     room.commands[2].inbox_id = None;
-    log.db.ensure_stream(&id, KIND).await.unwrap();
+    log.db.ensure_stream(&id).await.unwrap();
 
     append_range(&log.db, &id, &room, 1, 4).await.unwrap();
 
@@ -408,8 +385,8 @@ async fn a_snapshot_not_matching_the_command_at_its_version_is_diverged_and_not_
 #[test]
 async fn a_snapshot_of_a_stream_without_commands_is_diverged() {
     let Some(log) = create_test_log().await else { return };
-    let id = stream_id();
-    log.db.ensure_stream(&id, KIND).await.unwrap();
+    let id = stream_id(KIND);
+    log.db.ensure_stream(&id).await.unwrap();
     let room = ChatLog::new("a", 1);
 
     let result = log.db.try_store_snapshot(&id, &room.snapshot_at(1)).await;
@@ -489,9 +466,9 @@ async fn snapshot_data_round_trips_byte_for_byte() {
 #[test]
 async fn concurrent_identical_appends_all_succeed_and_store_once() {
     let Some(log) = create_test_log().await else { return };
-    let id = stream_id();
+    let id = stream_id(KIND);
     let room = Arc::new(ChatLog::new("a", 20));
-    log.db.ensure_stream(&id, KIND).await.unwrap();
+    log.db.ensure_stream(&id).await.unwrap();
 
     let appends = (0..8)
         .map(|_| {
@@ -510,9 +487,9 @@ async fn concurrent_identical_appends_all_succeed_and_store_once() {
 #[test]
 async fn concurrent_appends_of_different_lengths_of_one_history_converge_on_the_longest() {
     let Some(log) = create_test_log().await else { return };
-    let id = stream_id();
+    let id = stream_id(KIND);
     let room = Arc::new(ChatLog::new("a", 30));
-    log.db.ensure_stream(&id, KIND).await.unwrap();
+    log.db.ensure_stream(&id).await.unwrap();
 
     let appends = [5, 30, 12, 21, 30, 8]
         .into_iter()
@@ -536,9 +513,9 @@ async fn of_concurrent_writers_of_diverging_histories_exactly_one_wins() {
     let Some(log) = create_test_log().await else { return };
 
     for round in 0..5 {
-        let id = stream_id();
+        let id = stream_id(KIND);
         let rooms = [Arc::new(ChatLog::new("a", 10)), Arc::new(ChatLog::new("b", 10))];
-        log.db.ensure_stream(&id, KIND).await.unwrap();
+        log.db.ensure_stream(&id).await.unwrap();
 
         let writers = rooms
             .iter()
@@ -572,43 +549,16 @@ async fn of_concurrent_writers_of_diverging_histories_exactly_one_wins() {
 #[test]
 async fn concurrently_ensuring_a_new_stream_creates_it_once() {
     let Some(log) = create_test_log().await else { return };
-    let id = stream_id();
+    let id = stream_id(KIND);
 
     let ensures = (0..8)
         .map(|_| {
             let (db, id) = (log.db.clone(), id.clone());
-            tokio::spawn(async move { db.ensure_stream(&id, KIND).await })
+            tokio::spawn(async move { db.ensure_stream(&id).await })
         })
         .collect();
     for result in join(ensures).await {
         assert_eq!(result.unwrap().version, 0);
-    }
-}
-
-#[test]
-async fn of_concurrent_ensures_with_different_kinds_the_first_kind_wins() {
-    let Some(log) = create_test_log().await else { return };
-    let id = stream_id();
-
-    let ensures = (0..8)
-        .map(|i| {
-            let (db, id) = (log.db.clone(), id.clone());
-            let kind = if i % 2 == 0 { "kind-a" } else { "kind-b" };
-            tokio::spawn(async move { (kind, db.ensure_stream(&id, kind).await) })
-        })
-        .collect();
-    let results = join(ensures).await;
-
-    let stored = log.db.head(&id).await.unwrap().unwrap().kind;
-    for (kind, result) in results {
-        match result {
-            Ok(head) => assert_eq!((kind, head.kind.as_str()), (stored.as_str(), stored.as_str())),
-            Err(CommandLogError::KindMismatch { stored: seen, requested }) => {
-                assert_eq!((seen, requested.as_str()), (stored.clone(), kind));
-                assert_ne!(kind, stored);
-            }
-            Err(err) => panic!("{kind}: {err:?}"),
-        }
     }
 }
 
@@ -697,9 +647,9 @@ async fn appending_while_pruning_loses_nothing_after_the_horizon() {
 #[test]
 async fn a_consistency_check_during_appends_never_sees_a_torn_stream() {
     let Some(log) = create_test_log().await else { return };
-    let id = stream_id();
+    let id = stream_id(KIND);
     let room = Arc::new(ChatLog::new("a", 200));
-    log.db.ensure_stream(&id, KIND).await.unwrap();
+    log.db.ensure_stream(&id).await.unwrap();
 
     let writer = {
         let (db, id, room) = (log.db.clone(), id.clone(), room.clone());
@@ -805,8 +755,9 @@ async fn a_pruned_stream_is_consistent() {
 async fn a_missing_command_is_a_gap() {
     let Some(log) = create_test_log().await else { return };
     let (id, _) = seeded_stream(&log, 6).await;
+    let (kind, stream_id) = (id.kind().as_str(), id.id());
     log.exec(&format!(
-        "DELETE FROM cl_commands WHERE stream_id = '{id}' AND version = 4"
+        "DELETE FROM cl_commands WHERE kind = '{kind}' AND id = '{stream_id}' AND version = 4"
     ))
     .await;
 
@@ -820,8 +771,9 @@ async fn a_missing_command_is_a_gap() {
 async fn a_snapshot_off_the_log_is_drift() {
     let Some(log) = create_test_log().await else { return };
     let (id, _) = stream_with_snapshots(&log, 6, &[5]).await;
+    let (kind, stream_id) = (id.kind().as_str(), id.id());
     log.exec(&format!(
-        "UPDATE cl_snapshots SET chain_hash = chain_hash # 1 WHERE stream_id = '{id}'"
+        "UPDATE cl_snapshots SET chain_hash = chain_hash # 1 WHERE kind = '{kind}' AND id = '{stream_id}'"
     ))
     .await;
 
@@ -834,8 +786,9 @@ async fn a_snapshot_off_the_log_is_drift() {
 async fn a_head_off_the_last_command_is_a_mismatch() {
     let Some(log) = create_test_log().await else { return };
     let (id, room) = seeded_stream(&log, 6).await;
+    let (kind, stream_id) = (id.kind().as_str(), id.id());
     log.exec(&format!(
-        "UPDATE cl_streams SET chain_hash = chain_hash # 1 WHERE stream_id = '{id}'"
+        "UPDATE cl_streams SET chain_hash = chain_hash # 1 WHERE kind = '{kind}' AND id = '{stream_id}'"
     ))
     .await;
 
@@ -854,10 +807,11 @@ async fn a_head_off_the_last_command_is_a_mismatch() {
 async fn every_issue_is_reported_in_a_single_pass() {
     let Some(log) = create_test_log().await else { return };
     let (id, room) = stream_with_snapshots(&log, 8, &[2]).await;
+    let (kind, stream_id) = (id.kind().as_str(), id.id());
     log.exec(&format!(
-        "DELETE FROM cl_commands WHERE stream_id = '{id}' AND version = 5;
-         UPDATE cl_snapshots SET chain_hash = chain_hash # 1 WHERE stream_id = '{id}';
-         UPDATE cl_streams SET chain_hash = chain_hash # 1 WHERE stream_id = '{id}';"
+        "DELETE FROM cl_commands WHERE kind = '{kind}' AND id = '{stream_id}' AND version = 5;
+         UPDATE cl_snapshots SET chain_hash = chain_hash # 1 WHERE kind = '{kind}' AND id = '{stream_id}';
+         UPDATE cl_streams SET chain_hash = chain_hash # 1 WHERE kind = '{kind}' AND id = '{stream_id}';"
     ))
     .await;
 

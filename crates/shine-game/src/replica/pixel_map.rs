@@ -1,4 +1,4 @@
-use crate::replica::{CommandHeader, ReplayState, StableHash, StableHasher};
+use crate::replica::{CommandHeader, ReplayState, StableHash, StableHasher, StreamKind};
 use serde::{Deserialize, Serialize};
 
 /// Size of the map, in pixels. Constants of the kind: every replica and client must agree on them.
@@ -57,7 +57,7 @@ impl StableHash for PixelMapCommand {
 impl ReplayState for PixelMapState {
     type Command = PixelMapCommand;
 
-    const KIND: &'static str = "pixel-map";
+    const KIND: StreamKind = StreamKind::PixelMap;
 
     fn apply(&mut self, _header: &CommandHeader, command: &PixelMapCommand) {
         match command {

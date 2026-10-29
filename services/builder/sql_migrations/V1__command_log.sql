@@ -9,14 +9,16 @@ CREATE TYPE cl_command_input AS (
 );
 
 CREATE TABLE cl_streams (
-    stream_id VARCHAR(64) NOT NULL PRIMARY KEY,
     kind VARCHAR(64) NOT NULL,
+    id VARCHAR(64) NOT NULL,
     version BIGINT NOT NULL DEFAULT 0 CHECK (version >= 0),
-    chain_hash BIGINT NOT NULL DEFAULT 0
+    chain_hash BIGINT NOT NULL DEFAULT 0,
+    PRIMARY KEY (kind, id)
 );
 
 CREATE TABLE cl_commands (
-    stream_id VARCHAR(64) NOT NULL REFERENCES cl_streams (stream_id) ON DELETE CASCADE,
+    kind VARCHAR(64) NOT NULL,
+    id VARCHAR(64) NOT NULL,
     version BIGINT NOT NULL CHECK (version > 0),
     command_id UUID NOT NULL,
     inbox_id TEXT,
@@ -24,7 +26,8 @@ CREATE TABLE cl_commands (
     data TEXT NOT NULL,
     command_hash BIGINT NOT NULL,
     chain_hash BIGINT NOT NULL,
-    PRIMARY KEY (stream_id, version)
+    PRIMARY KEY (kind, id, version),
+    FOREIGN KEY (kind, id) REFERENCES cl_streams (kind, id) ON DELETE CASCADE
 );
 
 CREATE OR REPLACE FUNCTION cl_commands_immutable()
@@ -40,11 +43,12 @@ FOR EACH ROW
 EXECUTE FUNCTION cl_commands_immutable();
 
 CREATE TABLE cl_snapshots (
-    stream_id VARCHAR(64) NOT NULL,
+    kind VARCHAR(64) NOT NULL,
+    id VARCHAR(64) NOT NULL,
     version BIGINT NOT NULL,
     hash BIGINT NOT NULL,
     chain_hash BIGINT NOT NULL,
     data BYTEA NOT NULL,
-    PRIMARY KEY (stream_id, version),
-    FOREIGN KEY (stream_id, version) REFERENCES cl_commands (stream_id, version) ON DELETE CASCADE
+    PRIMARY KEY (kind, id, version),
+    FOREIGN KEY (kind, id, version) REFERENCES cl_commands (kind, id, version) ON DELETE CASCADE
 );

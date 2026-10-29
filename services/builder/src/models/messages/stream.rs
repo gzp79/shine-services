@@ -70,13 +70,11 @@ pub enum StreamMessage {
     Reset { stream_id: StreamId },
     /// The stream cannot be served now. The subscriber is dropped and has to subscribe again.
     Unsynced { stream_id: StreamId },
-    /// A command of the connection was not accepted.
-    Nack {
+    CommandFailed {
         stream_id: StreamId,
         command_id: Uuid,
-        reason: NackReason,
+        reason: CommandFailure,
     },
-    /// The connection could not be subscribed to the stream.
     SubscribeFailed {
         stream_id: StreamId,
         reason: SubscribeFailure,
@@ -91,15 +89,21 @@ impl StreamMessage {
             | StreamMessage::Checkpoint { stream_id, .. }
             | StreamMessage::Reset { stream_id }
             | StreamMessage::Unsynced { stream_id }
-            | StreamMessage::Nack { stream_id, .. }
+            | StreamMessage::CommandFailed { stream_id, .. }
             | StreamMessage::SubscribeFailed { stream_id, .. } => stream_id,
         }
     }
 }
 
+impl ToTopic for StreamMessage {
+    fn topic(&self) -> TopicKey {
+        TopicKey::Stream
+    }
+}
+
 /// Why a command of a connection was not accepted.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum NackReason {
+pub enum CommandFailure {
     /// The connection is not subscribed to the stream.
     NotSubscribed,
     /// The command does not decode, or is not well formed, for the kind of the stream.
@@ -111,30 +115,15 @@ pub enum NackReason {
 /// Why a connection could not be subscribed to a stream.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SubscribeFailure {
-    UnknownKind,
-    KindMismatch,
     Failed,
-}
-
-impl ToTopic for StreamMessage {
-    fn topic(&self) -> TopicKey {
-        TopicKey::Stream
-    }
 }
 
 /// A change of the stream subscriptions of a connection, for the internal consumers of the hub bus. It
 /// is never sent to the sockets.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StreamEvent {
-    Subscribed {
-        connection_id: Uuid,
-        stream_id: StreamId,
-        kind: String,
-    },
-    Unsubscribed {
-        connection_id: Uuid,
-        stream_id: StreamId,
-    },
+    Subscribed { connection_id: Uuid, stream_id: StreamId },
+    Unsubscribed { connection_id: Uuid, stream_id: StreamId },
 }
 
 impl ToTopic for StreamEvent {
