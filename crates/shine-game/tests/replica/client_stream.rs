@@ -1,8 +1,8 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::{json, Value};
 use shine_game::replica::{
-    encode_snapshot, ClientStream, CommandEnvelope, PixelMapCommand, PixelMapState, Replica, StreamId, StreamStatus,
-    SubmitError, PIXEL_MAP_WIDTH,
+    encode_snapshot, ClientStream, CommandEnvelope, PixelMapCommand, PixelMapState, Replica, StreamId, StreamKind,
+    StreamStatus, SubmitError, PIXEL_MAP_WIDTH,
 };
 use shine_test::test;
 use uuid::Uuid;
@@ -62,18 +62,18 @@ impl Server {
     }
 
     fn sync(&self, snapshot: Option<Value>, tail_from: usize) -> String {
-        json!({"type": "streamSync", "streamId": "s", "snapshot": snapshot, "commands": self.entries[tail_from..]})
+        json!({"type": "streamSync", "streamId": "pixel-map:s", "snapshot": snapshot, "commands": self.entries[tail_from..]})
             .to_string()
     }
 
     fn commands(&self, from: usize) -> String {
-        json!({"type": "streamCommands", "streamId": "s", "commands": self.entries[from..]}).to_string()
+        json!({"type": "streamCommands", "streamId": "pixel-map:s", "commands": self.entries[from..]}).to_string()
     }
 
     fn checkpoint(&self) -> String {
         let checkpoint = self.replica.checkpoint();
         json!({
-            "type": "streamCheckpoint", "streamId": "s", "version": checkpoint.version,
+            "type": "streamCheckpoint", "streamId": "pixel-map:s", "version": checkpoint.version,
             "stateHash": format!("{:016x}", checkpoint.state_hash)
         })
         .to_string()
@@ -81,7 +81,7 @@ impl Server {
 }
 
 fn client() -> ClientStream<PixelMapState> {
-    ClientStream::new(StreamId::parse("s").unwrap(), id(ME))
+    ClientStream::new(StreamId::new(StreamKind::PixelMap, "s").unwrap(), id(ME))
 }
 
 fn live_client(server: &Server) -> ClientStream<PixelMapState> {
@@ -92,7 +92,7 @@ fn live_client(server: &Server) -> ClientStream<PixelMapState> {
 }
 
 fn nack(command: u128, reason: &str) -> String {
-    json!({"type": "streamNack", "streamId": "s", "commandId": id(command), "reason": reason}).to_string()
+    json!({"type": "streamNack", "streamId": "pixel-map:s", "commandId": id(command), "reason": reason}).to_string()
 }
 
 fn frame_type(frame: &str) -> String {
@@ -111,13 +111,10 @@ fn command_id_of(frame: &str) -> Uuid {
 }
 
 #[test]
-fn the_subscribe_frame_names_the_stream_and_the_kind() {
+fn the_subscribe_frame_names_the_stream() {
     let frame: Value = serde_json::from_str(&client().subscribe_frame()).unwrap();
 
-    assert_eq!(
-        frame,
-        json!({"type": "streamSubscribe", "streamId": "s", "kind": "pixel-map"})
-    );
+    assert_eq!(frame, json!({"type": "streamSubscribe", "streamId": "pixel-map:s"}));
 }
 
 #[test]
@@ -189,7 +186,7 @@ fn a_local_command_is_shown_at_once_and_stays_pending() {
 
     let sent: Value = serde_json::from_str(&frame).unwrap();
     assert_eq!(sent["type"], "streamCommand");
-    assert_eq!(sent["streamId"], "s");
+    assert_eq!(sent["streamId"], "pixel-map:s");
     assert_eq!(sent["commandId"], json!(id(1)));
     assert_eq!(sent["command"], json!({"type": "paint", "x": 4, "y": 5, "color": 9}));
     assert_eq!(at(&client.view(), 4, 5), 9);
@@ -296,7 +293,7 @@ fn a_reset_waits_for_the_next_sync_and_keeps_the_view() {
     let mut client = live_client(&server);
     client.submit(id(1), paint(2, 2, 6)).unwrap();
 
-    client.handle_message(&json!({"type": "streamReset", "streamId": "s"}).to_string());
+    client.handle_message(&json!({"type": "streamReset", "streamId": "pixel-map:s"}).to_string());
 
     assert_eq!(client.status(), StreamStatus::Waiting);
     assert_eq!(at(&client.view(), 1, 1), 5);
@@ -313,7 +310,7 @@ fn unsynced_stops_submits_and_keeps_the_pending_for_a_later_sync() {
     let mut client = live_client(&server);
     client.submit(id(1), paint(2, 2, 6)).unwrap();
 
-    client.handle_message(&json!({"type": "streamUnsynced", "streamId": "s"}).to_string());
+    client.handle_message(&json!({"type": "streamUnsynced", "streamId": "pixel-map:s"}).to_string());
 
     assert_eq!(client.status(), StreamStatus::Unsynced);
     assert_eq!(client.submit(id(2), paint(0, 0, 1)), Err(SubmitError::NotLive));
@@ -329,7 +326,7 @@ fn a_subscribe_failure_leaves_the_stream_unsynced() {
     let mut client = client();
 
     client.handle_message(
-        &json!({"type": "streamSubscribeFailed", "streamId": "s", "reason": "kindMismatch"}).to_string(),
+        &json!({"type": "streamSubscribeFailed", "streamId": "pixel-map:s", "reason": "kindMismatch"}).to_string(),
     );
 
     assert_eq!(client.status(), StreamStatus::Unsynced);
@@ -419,8 +416,8 @@ fn garbage_and_foreign_streams_are_ignored() {
     for text in [
         "{not json".to_string(),
         json!({"type": "nope"}).to_string(),
-        json!({"type": "streamReset", "streamId": "other"}).to_string(),
-        json!({"type": "streamCommands", "streamId": "other", "commands": []}).to_string(),
+        json!({"type": "streamReset", "streamId": "pixel-map:other"}).to_string(),
+        json!({"type": "streamCommands", "streamId": "not-a-stream-id", "commands": []}).to_string(),
     ] {
         assert!(client.handle_message(&text).is_empty());
     }
