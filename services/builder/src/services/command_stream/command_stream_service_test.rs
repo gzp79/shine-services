@@ -3,21 +3,14 @@
 
 use crate::{
     repositories::{
-        command_inbox::{
-            redis::RedisCommandInboxDb,
-            tests::{create_test_inbox, next_wake_of, TestInbox},
-            CommandInboxDb, InboxId,
-        },
-        command_log::{
-            pg::PgCommandLogDb,
-            tests::{
-                create_test_log, fetch_all_commands, persist_command_logs, replay_chat, seed_chat_log_and_snapshots,
-                stream_id, ChatLog, TestLog,
-            },
-            CommandLogDb, StoredCommand, StoredSnapshot,
-        },
+        command_inbox::{redis::RedisCommandInboxDb, CommandInboxDb, InboxId},
+        command_log::{pg::PgCommandLogDb, CommandLogDb, StoredCommand, StoredSnapshot},
     },
     services::command_stream::{CommandStreamConfig, CommandStreamService, StreamState},
+    testing::command_stream::{
+        create_test_inbox, create_test_log, fetch_all_commands, persist_chat_logs, replay_chat,
+        seed_chat_log_and_snapshots, stream_id, wait_inbox_wake, ChatLog, TestInbox, TestLog,
+    },
 };
 use shine_game::replica::{decode_command, encode_command, ChatCommand, ChatState, ReplayState, StreamId};
 use shine_test::test;
@@ -227,7 +220,7 @@ async fn the_persisted_version_is_announced_to_the_other_instances() {
     fx.service.sync(&mut state).await.unwrap();
 
     loop {
-        let wake = next_wake_of(&mut wakes, &id).await;
+        let wake = wait_inbox_wake(&mut wakes, &id).await;
         if let crate::repositories::command_inbox::InboxWake::Stream { persisted: Some(version), .. } = wake {
             assert_eq!(version, 2);
             break;
@@ -437,7 +430,7 @@ async fn a_log_contradicting_the_confirmed_history_makes_the_stream_reload() {
     let id = stream_id(ChatState::KIND);
     let seed = ChatLog::new("seed", 3);
     fx.log.db.ensure_stream(&id).await.unwrap();
-    persist_command_logs(&fx.log.db, &id, &seed, 1, 3).await.unwrap();
+    persist_chat_logs(&fx.log.db, &id, &seed, 1, 3).await.unwrap();
     let mut state = fx.load(&id).await;
     // The log is replaced behind the instance's back by another history that is longer.
     fx.log
@@ -451,7 +444,7 @@ async fn a_log_contradicting_the_confirmed_history_makes_the_stream_reload() {
         ))
         .await;
     let other = ChatLog::new("other", 4);
-    persist_command_logs(&fx.log.db, &id, &other, 1, 4).await.unwrap();
+    persist_chat_logs(&fx.log.db, &id, &other, 1, 4).await.unwrap();
     fx.send(&id, "mine").await;
 
     let outcome = fx.service.sync(&mut state).await.unwrap();

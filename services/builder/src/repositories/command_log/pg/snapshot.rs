@@ -26,7 +26,7 @@ impl FromRow for StoredSnapshot {
 
 #[derive(FromRow)]
 struct SnapshotHashRow {
-    version: i64,
+    //version: i64,
     hash: i64,
     chain_hash: i64,
 }

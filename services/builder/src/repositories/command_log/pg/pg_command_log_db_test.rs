@@ -1,15 +1,13 @@
 use crate::{
     models::CommandStreamError,
-    repositories::command_log::{
-        tests::{
-            create_test_log, fetch_all_commands, persist_command_logs, replay_chat, seed_chat_log_and_snapshots,
-            seeded_chat_log, stream_id, ChatLog,
-        },
-        CommandLogDb, ConsistencyIssue, StoredCommand, StoredSnapshot, StreamHead,
+    repositories::command_log::{CommandLogDb, ConsistencyIssue, StoredCommand, StoredSnapshot, StreamHead},
+    testing::command_stream::{
+        create_test_log, fetch_all_commands, persist_chat_logs, replay_chat, seed_chat_log_and_snapshots,
+        seeded_chat_log, stream_id, ChatLog,
     },
 };
 use shine_core::tokio::join;
-use shine_game::replica::{ChatState, ReplayState, StreamKind::Chat};
+use shine_game::replica::{ChatState, ReplayState};
 use shine_test::test;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -28,7 +26,7 @@ async fn a_new_stream_is_empty_and_ensuring_it_again_keeps_its_head() {
     assert_eq!(log.db.head(&id).await.unwrap(), Some(head));
 
     let room = ChatLog::new("a", 3);
-    persist_command_logs(&log.db, &id, &room, 1, 3).await.unwrap();
+    persist_chat_logs(&log.db, &id, &room, 1, 3).await.unwrap();
     let head = log.db.ensure_stream(&id).await.unwrap();
     assert_eq!((head.version, head.chain_hash), (3, room.chain_hash_at(3)));
 }
@@ -45,10 +43,10 @@ async fn an_append_returns_the_head_the_stream_is_left_at() {
         chain_hash: room.chain_hash_at(version),
     };
 
-    let stored = persist_command_logs(&log.db, &id, &room, 1, 10).await.unwrap();
-    let covered = persist_command_logs(&log.db, &id, &room, 1, 10).await.unwrap();
-    let partly_covered = persist_command_logs(&log.db, &id, &room, 6, 10).await.unwrap();
-    let extended = persist_command_logs(&log.db, &id, &longer, 8, 14).await.unwrap();
+    let stored = persist_chat_logs(&log.db, &id, &room, 1, 10).await.unwrap();
+    let covered = persist_chat_logs(&log.db, &id, &room, 1, 10).await.unwrap();
+    let partly_covered = persist_chat_logs(&log.db, &id, &room, 6, 10).await.unwrap();
+    let extended = persist_chat_logs(&log.db, &id, &longer, 8, 14).await.unwrap();
     let nothing = log.db.append(&id, &[], longer.chain_hash_at(14)).await.unwrap();
 
     assert_eq!(stored, head_at(&room, 10), "newly stored");
@@ -65,9 +63,9 @@ async fn appended_batches_continue_the_chain_and_read_back() {
     let room = ChatLog::new("a", 50);
     log.db.ensure_stream(&id).await.unwrap();
 
-    persist_command_logs(&log.db, &id, &room, 1, 10).await.unwrap();
-    persist_command_logs(&log.db, &id, &room, 11, 49).await.unwrap();
-    persist_command_logs(&log.db, &id, &room, 50, 50).await.unwrap();
+    persist_chat_logs(&log.db, &id, &room, 1, 10).await.unwrap();
+    persist_chat_logs(&log.db, &id, &room, 11, 49).await.unwrap();
+    persist_chat_logs(&log.db, &id, &room, 50, 50).await.unwrap();
 
     let head = log.db.head(&id).await.unwrap().unwrap();
     assert_eq!((head.version, head.chain_hash), (50, room.chain_hash_at(50)));
@@ -152,7 +150,7 @@ async fn appending_to_a_missing_stream_is_not_found_but_appending_nothing_is_not
     let Some(log) = create_test_log().await else { return };
     let room = ChatLog::new("a", 2);
 
-    let result = persist_command_logs(&log.db, &stream_id(ChatState::KIND), &room, 1, 2).await;
+    let result = persist_chat_logs(&log.db, &stream_id(ChatState::KIND), &room, 1, 2).await;
     assert!(matches!(result, Err(CommandStreamError::StreamNotFound)), "{result:?}");
 
     let (id, room) = seeded_chat_log(&log, 3).await;
@@ -197,7 +195,7 @@ async fn a_batch_that_leaves_a_gap_after_the_head_is_diverged() {
     let longer = ChatLog::new("seed", 6);
     let head = log.db.head(&id).await.unwrap().unwrap();
 
-    let result = persist_command_logs(&log.db, &id, &longer, 5, 6).await;
+    let result = persist_chat_logs(&log.db, &id, &longer, 5, 6).await;
 
     assert!(
         matches!(&result, Err(CommandStreamError::LogDiverged { head: seen }) if *seen == head),
@@ -232,7 +230,7 @@ async fn a_different_history_is_diverged_however_it_overlaps_the_head() {
 
     // From the start, ending at the head, and extending the head from a foreign baseline.
     for (first, last) in [(1, 3), (1, 5), (4, 5)] {
-        let result = persist_command_logs(&log.db, &id, &other, first, last).await;
+        let result = persist_chat_logs(&log.db, &id, &other, first, last).await;
         assert!(
             matches!(&result, Err(CommandStreamError::LogDiverged { head: seen }) if *seen == head),
             "{first}..={last}: {result:?}"
@@ -250,7 +248,7 @@ async fn a_batch_ending_behind_the_head_is_unverified_and_returns_the_head_beyon
 
     // The head is ahead of this batch's tip, so there is nothing of the batch to compare it with:
     // the caller learns it from the returned head being beyond the batch.
-    let head = persist_command_logs(&log.db, &id, &other, 1, 3).await.unwrap();
+    let head = persist_chat_logs(&log.db, &id, &other, 1, 3).await.unwrap();
 
     assert_eq!((head.version, head.chain_hash), (5, seed.chain_hash_at(5)));
     assert_eq!(fetch_all_commands(&log.db, &id).await, seed.commands);
@@ -262,14 +260,14 @@ async fn resending_covered_commands_is_ok_and_a_partly_covered_batch_stores_only
     let (id, room) = seeded_chat_log(&log, 5).await;
     let head = log.db.head(&id).await.unwrap().unwrap();
 
-    persist_command_logs(&log.db, &id, &room, 1, 5).await.unwrap();
-    persist_command_logs(&log.db, &id, &room, 3, 5).await.unwrap();
-    persist_command_logs(&log.db, &id, &room, 5, 5).await.unwrap();
+    persist_chat_logs(&log.db, &id, &room, 1, 5).await.unwrap();
+    persist_chat_logs(&log.db, &id, &room, 3, 5).await.unwrap();
+    persist_chat_logs(&log.db, &id, &room, 5, 5).await.unwrap();
     assert_eq!(log.db.head(&id).await.unwrap().unwrap(), head);
     assert_eq!(fetch_all_commands(&log.db, &id).await, room.commands);
 
     let longer = ChatLog::new("seed", 8);
-    persist_command_logs(&log.db, &id, &longer, 3, 8).await.unwrap();
+    persist_chat_logs(&log.db, &id, &longer, 3, 8).await.unwrap();
     assert_eq!(fetch_all_commands(&log.db, &id).await, longer.commands);
     assert_eq!(
         log.db.head(&id).await.unwrap().unwrap().chain_hash,
@@ -285,7 +283,7 @@ async fn a_command_with_a_forged_chain_hash_is_stored_and_found_by_the_consisten
     room.commands[3].chain_hash ^= 0xdead;
     log.db.ensure_stream(&id).await.unwrap();
 
-    persist_command_logs(&log.db, &id, &room, 1, 4).await.unwrap();
+    persist_chat_logs(&log.db, &id, &room, 1, 4).await.unwrap();
 
     let report = log.db.check_consistency(&id).await.unwrap();
     assert_eq!(report.issues, vec![ConsistencyIssue::CommandChainBroken { version: 4 }]);
@@ -315,7 +313,7 @@ async fn the_inbox_position_of_a_command_is_kept_when_there_is_one_and_is_not_pa
     room.commands[2].inbox_id = None;
     log.db.ensure_stream(&id).await.unwrap();
 
-    persist_command_logs(&log.db, &id, &room, 1, 4).await.unwrap();
+    persist_chat_logs(&log.db, &id, &room, 1, 4).await.unwrap();
 
     assert_eq!(fetch_all_commands(&log.db, &id).await, room.commands);
     assert_eq!(log.db.last_commands(&id, 2).await.unwrap(), room.commands[2..]);
@@ -480,7 +478,7 @@ async fn concurrent_identical_appends_all_succeed_and_store_once() {
     let appends = (0..8)
         .map(|_| {
             let (db, id, room) = (log.db.clone(), id.clone(), room.clone());
-            tokio::spawn(async move { persist_command_logs(&db, &id, &room, 1, 20).await })
+            tokio::spawn(async move { persist_chat_logs(&db, &id, &room, 1, 20).await })
         })
         .collect();
     for result in join(appends).await {
@@ -502,7 +500,7 @@ async fn concurrent_appends_of_different_lengths_of_one_history_converge_on_the_
         .into_iter()
         .map(|last| {
             let (db, id, room) = (log.db.clone(), id.clone(), room.clone());
-            tokio::spawn(async move { persist_command_logs(&db, &id, &room, 1, last).await })
+            tokio::spawn(async move { persist_chat_logs(&db, &id, &room, 1, last).await })
         })
         .collect();
     for result in join(appends).await {
@@ -528,7 +526,7 @@ async fn of_concurrent_writers_of_diverging_histories_exactly_one_wins() {
             .iter()
             .map(|room| {
                 let (db, id, room) = (log.db.clone(), id.clone(), room.clone());
-                tokio::spawn(async move { persist_command_logs(&db, &id, &room, 1, 10).await })
+                tokio::spawn(async move { persist_chat_logs(&db, &id, &room, 1, 10).await })
             })
             .collect();
         let results = join(writers).await;
@@ -542,11 +540,7 @@ async fn of_concurrent_writers_of_diverging_histories_exactly_one_wins() {
             "round {round}: {results:?}"
         );
         let winner = &rooms[winners[0].0];
-        assert_eq!(
-            fetch_all_commands(&log.db, &id).await,
-            winner.commands,
-            "round {round}"
-        );
+        assert_eq!(fetch_all_commands(&log.db, &id).await, winner.commands, "round {round}");
         let head = log.db.head(&id).await.unwrap().unwrap();
         assert_eq!(head.chain_hash, winner.chain_hash_at(10), "round {round}");
         assert_eq!(
@@ -631,7 +625,7 @@ async fn appending_while_pruning_loses_nothing_after_the_horizon() {
         let (db, id, room) = (log.db.clone(), id.clone(), longer.clone());
         tokio::spawn(async move {
             for first in (13..=30).step_by(3) {
-                persist_command_logs(&db, &id, &room, first, first + 2).await.unwrap();
+                persist_chat_logs(&db, &id, &room, first, first + 2).await.unwrap();
             }
         })
     };
@@ -670,7 +664,7 @@ async fn a_consistency_check_during_appends_never_sees_a_torn_stream() {
         let (db, id, room) = (log.db.clone(), id.clone(), room.clone());
         tokio::spawn(async move {
             for first in (1..=200).step_by(5) {
-                persist_command_logs(&db, &id, &room, first, first + 4).await.unwrap();
+                persist_chat_logs(&db, &id, &room, first, first + 4).await.unwrap();
             }
         })
     };
@@ -730,7 +724,7 @@ async fn a_pruned_stream_keeps_its_head_and_stays_appendable() {
     log.db.prune(&id, 1).await.unwrap();
 
     assert_eq!(log.db.head(&id).await.unwrap().unwrap(), head);
-    persist_command_logs(&log.db, &id, &longer, 13, 15).await.unwrap();
+    persist_chat_logs(&log.db, &id, &longer, 13, 15).await.unwrap();
     assert_eq!(log.db.head(&id).await.unwrap().unwrap().version, 15);
     assert_eq!(fetch_all_commands(&log.db, &id).await, longer.commands[8..]);
 }

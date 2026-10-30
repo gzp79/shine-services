@@ -1,13 +1,8 @@
 use super::*;
 use crate::{
-    repositories::{
-        command_inbox::tests::test_utils::create_test_inbox,
-        command_log::{
-            tests::{create_test_log, persist_command_logs, seeded_chat_log, stream_id, ChatLog},
-            CommandLogDb,
-        },
-    },
-    services::command_stream::{stream_test_utils::TestEgress, CommandStreamConfig, PersistResult, PersistenceWorker},
+    repositories::command_log::CommandLogDb,
+    services::command_stream::{CommandStreamConfig, PersistResult, PersistenceWorker},
+    testing::command_stream::{create_test_inbox, create_test_log, persist_chat_logs, stream_id, ChatLog, TestEgress},
 };
 use shine_game::replica::{ChatState, ReplayState};
 use shine_test::test;
@@ -100,9 +95,7 @@ async fn actor_adopts_a_reload_and_invalidates_optimistic_history() {
     actor.append_optimistic(optimistic.commands.clone());
 
     let canonical = ChatLog::new("other", 2);
-    persist_command_logs(&log.db, &stream_id, &canonical, 1, 2)
-        .await
-        .unwrap();
+    persist_chat_logs(&log.db, &stream_id, &canonical, 1, 2).await.unwrap();
     assert!(actor.persist_optimistic().await.unwrap());
 
     let result = actor.recv_persistence().await.unwrap();

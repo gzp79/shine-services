@@ -1,10 +1,9 @@
 use crate::repositories::command_inbox::{redis::RedisCommandInboxDb, CommandInboxDb, InboxId, InboxWake};
-use shine_game::replica::{StreamId, StreamKind};
+use shine_game::replica::StreamId;
 use shine_infra::db::redis::{create_redis_pool, RedisConnectionPool};
 use shine_infra_testing::db::redis::get_redis_cns;
 use std::time::Duration;
 use tokio::{sync::mpsc, time::timeout};
-use uuid::Uuid;
 
 const WAKE_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -76,8 +75,7 @@ impl TestInbox {
             .unwrap();
     }
 
-    /// Listens on the inbox's wake channel. The channel is shared by every stream (and every test), so
-    /// the receiver is used through `next_wake_of`.
+    /// Listens on the inbox's wake channel. The channel is shared by every stream (and every test)
     pub async fn listen(&self) -> mpsc::UnboundedReceiver<InboxWake> {
         let (tx, rx) = mpsc::unbounded_channel();
         self.db
@@ -99,12 +97,8 @@ pub async fn create_test_inbox(ttl_seconds: u64) -> Option<TestInbox> {
     Some(TestInbox { db, redis })
 }
 
-pub fn stream_id(kind: StreamKind) -> StreamId {
-    StreamId::new(kind, format!("t-{}", Uuid::new_v4().simple())).unwrap()
-}
-
 /// The next wake of `stream_id`; wakes of other streams are skipped.
-pub async fn next_wake_of(rx: &mut mpsc::UnboundedReceiver<InboxWake>, stream_id: &StreamId) -> InboxWake {
+pub async fn wait_inbox_wake(rx: &mut mpsc::UnboundedReceiver<InboxWake>, stream_id: &StreamId) -> InboxWake {
     timeout(WAKE_TIMEOUT, async {
         loop {
             let wake = rx.recv().await.expect("the listener is open");

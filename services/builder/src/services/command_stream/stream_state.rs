@@ -107,7 +107,7 @@ impl<S: ReplayState> StreamState<S> {
             .position(|command| command.version > self.replica.version())
             .unwrap_or(self.tail.len());
         for command in &self.tail[start..] {
-            let envelope = to_envelope::<S>(command)?;
+            let envelope = command.to_envelope::<S>()?;
             self.replica
                 .apply_next(&envelope)
                 .map_err(|err| CommandStreamError::Corrupt(format!("command {}: {err}", command.version)))?;
@@ -233,19 +233,4 @@ impl<S: ReplayState> StreamState<S> {
         self.tail.push(command);
         Ok(())
     }
-}
-
-pub fn to_envelope<S: ReplayState>(command: &StoredCommand) -> Result<CommandEnvelope<S::Command>, CommandStreamError> {
-    let decoded = decode_command::<S>(&command.data)
-        .map_err(|err| CommandStreamError::Corrupt(format!("command {}: {err}", command.version)))?;
-    Ok(CommandEnvelope {
-        header: CommandHeader {
-            version: command.version,
-            command_id: command.command_id,
-            user_id: command.user_id,
-            chain_hash: command.chain_hash,
-        },
-        command: decoded,
-        command_hash: command.command_hash,
-    })
 }

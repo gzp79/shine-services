@@ -1,10 +1,13 @@
 use crate::{
     models::CommandStreamError,
     repositories::{
-        command_inbox::{CommandInboxDb, InboxId},
+        command_inbox::CommandInboxDb,
         command_log::{CommandLogDb, StoredCommand, StoredSnapshot},
     },
-    services::command_stream::{stream_state::to_envelope, CommandStreamConfig},
+    services::command_stream::{
+        stream_log_service::{AppendOutcome, SnapshotOutcome, StreamLogService},
+        CommandStreamConfig,
+    },
 };
 use shine_game::replica::{decode_snapshot, encode_snapshot, Checkpoint, ReplayState, Replica, StreamId};
 use std::sync::Arc;
@@ -107,9 +110,7 @@ where
     L: CommandLogDb,
 {
     stream_id: StreamId,
-    inbox: I,
-    log: L,
-    config: CommandStreamConfig,
+    service: StreamLogService<I, L>,
     replica: Replica<S>,
 }
 
@@ -120,11 +121,13 @@ where
     L: CommandLogDb + 'static,
 {
     pub fn new(stream_id: StreamId, inbox: I, log: L, config: CommandStreamConfig) -> Self {
+        Self::with_service(stream_id, StreamLogService::new(inbox, log, config))
+    }
+
+    pub fn with_service(stream_id: StreamId, service: StreamLogService<I, L>) -> Self {
         Self {
             stream_id,
-            inbox,
-            log,
-            config,
+            service,
             replica: Replica::new(),
         }
     }
@@ -183,34 +186,36 @@ where
                 )
                 .await;
         }
-        let Some(last) = job.commands.last() else {
+        if job.commands.is_empty() {
             return PersistResult::Advanced {
                 generation,
                 canonical: Arc::from([]),
                 snapshot: None,
                 checkpoint: None,
             };
-        };
+        }
         let proposed = job.commands.clone();
 
         let canonical = match self
-            .log
-            .append(&self.stream_id, &job.commands, job.baseline_chain_hash)
+            .service
+            .append(
+                &self.stream_id,
+                &job.commands,
+                job.baseline_version,
+                job.baseline_chain_hash,
+            )
             .await
         {
-            Ok(head) if head.version == last.version && head.chain_hash == last.chain_hash => job.commands,
-            Ok(_) | Err(CommandStreamError::LogDiverged { .. }) => match self.catch_up().await {
-                Ok(commands) if !commands.is_empty() => commands.into(),
-                Ok(_) => {
-                    return self
-                        .reload(
-                            generation,
-                            "the command log advanced without a readable continuation".to_string(),
-                        )
-                        .await;
-                }
-                Err(error) => return PersistResult::Failed { generation, error },
-            },
+            Ok(AppendOutcome::Stored) => job.commands,
+            Ok(AppendOutcome::Behind { canonical }) if !canonical.is_empty() => canonical.into(),
+            Ok(AppendOutcome::Behind { .. }) => {
+                return self
+                    .reload(
+                        generation,
+                        "the command log advanced without a readable continuation".to_string(),
+                    )
+                    .await;
+            }
             Err(error) => return PersistResult::Failed { generation, error },
         };
         let shared = canonical.len().min(proposed.len());
@@ -256,94 +261,93 @@ where
     async fn load_canonical(
         &self,
     ) -> Result<(Option<StoredSnapshot>, Vec<StoredCommand>, Replica<S>), CommandStreamError> {
-        let head = self.log.ensure_stream(&self.stream_id).await?;
-        let snapshot = self.log.latest_snapshot(&self.stream_id, head.version).await?;
-        let (mut replica, mut after) = match &snapshot {
+        let stored = self.service.load(&self.stream_id).await?;
+        let replica = Self::rebuild(stored.snapshot.as_ref(), &stored.tail)?;
+        Ok((stored.snapshot, stored.tail, replica))
+    }
+
+    /// Rebuilds the replica from the given snapshot and commands.
+    fn rebuild(
+        snapshot: Option<&StoredSnapshot>,
+        commands: &[StoredCommand],
+    ) -> Result<Replica<S>, CommandStreamError> {
+        let mut replica = match snapshot {
             Some(snapshot) => {
                 let state = decode_snapshot::<S>(&snapshot.data)
                     .map_err(|error| CommandStreamError::Corrupt(format!("snapshot {}: {error}", snapshot.version)))?;
-                (
-                    Replica::from_snapshot(snapshot.version, state, snapshot.chain_hash),
-                    snapshot.version,
-                )
+                Replica::from_snapshot(snapshot.version, state, snapshot.chain_hash)
             }
-            None => (Replica::new(), 0),
+            None => Replica::new(),
         };
-        let mut tail = Vec::new();
-        loop {
-            let page = self
-                .log
-                .commands_after(&self.stream_id, after, self.config.page_size)
-                .await?;
-            let count = page.len() as i64;
-            for command in page {
-                let envelope = to_envelope::<S>(&command)?;
-                replica
-                    .apply_next(&envelope)
-                    .map_err(|error| CommandStreamError::Corrupt(format!("command {}: {error}", command.version)))?;
-                after = command.version;
-                tail.push(command);
-            }
-            if count < self.config.page_size {
-                return Ok((snapshot, tail, replica));
-            }
-        }
-    }
-
-    async fn catch_up(&self) -> Result<Vec<StoredCommand>, CommandStreamError> {
-        let mut after = self.replica.version();
-        let mut commands = Vec::new();
-        loop {
-            let page = self
-                .log
-                .commands_after(&self.stream_id, after, self.config.page_size)
-                .await?;
-            let count = page.len() as i64;
-            if let Some(last) = page.last() {
-                after = last.version;
-            }
-            commands.extend(page);
-            if count < self.config.page_size {
-                return Ok(commands);
-            }
-        }
-    }
-
-    async fn advance(
-        &mut self,
-        commands: &[StoredCommand],
-    ) -> Result<(Option<StoredSnapshot>, Option<Checkpoint>), AdvanceError> {
-        let mut snapshot = None;
         for command in commands {
-            let envelope = to_envelope::<S>(command).map_err(AdvanceError::Failed)?;
+            let envelope = command.to_envelope::<S>()?;
+            replica
+                .apply_next(&envelope)
+                .map_err(|error| CommandStreamError::Corrupt(format!("command {}: {error}", command.version)))?;
+        }
+        Ok(replica)
+    }
+
+    /// Replays the commands onto the replica, in place. A command that does not continue the history
+    /// means this instance and the log do not agree: the replica has to be built again from the log.
+    fn apply(&mut self, commands: &[StoredCommand]) -> Result<(), AdvanceError> {
+        for command in commands {
+            let envelope = command.to_envelope::<S>().map_err(AdvanceError::Failed)?;
             self.replica.apply_next(&envelope).map_err(|error| {
                 AdvanceError::Reload(format!(
                     "canonical command {} cannot be replayed: {error}",
                     command.version
                 ))
             })?;
-            if self.config.snapshot_every > 0 && command.version % self.config.snapshot_every == 0 {
-                let data = encode_snapshot(self.replica.state()).map_err(|error| {
-                    AdvanceError::Failed(CommandStreamError::Corrupt(format!(
-                        "snapshot {}: {error}",
-                        command.version
-                    )))
-                })?;
-                snapshot = Some(StoredSnapshot {
-                    version: command.version,
-                    hash: self.replica.hash(),
-                    chain_hash: self.replica.chain_hash(),
-                    data,
-                });
-            }
         }
+        Ok(())
+    }
 
-        let (snapshot, checkpoint) = if let Some(snapshot) = snapshot {
-            match self.log.try_store_snapshot(&self.stream_id, &snapshot).await {
-                Ok(()) => {
-                    if let Err(error) = self.log.prune(&self.stream_id, self.config.keep_snapshots).await {
-                        tracing::warn!("[{}] Failed to prune the log: {error:#?}", self.stream_id);
-                    }
+    /// Takes the replica's state as a snapshot row at the given version.
+    fn snapshot_at(&self, version: i64) -> Result<StoredSnapshot, CommandStreamError> {
+        let data = encode_snapshot(self.replica.state())
+            .map_err(|error| CommandStreamError::Corrupt(format!("snapshot {version}: {error}")))?;
+        Ok(StoredSnapshot {
+            version,
+            hash: self.replica.hash(),
+            chain_hash: self.replica.chain_hash(),
+            data,
+        })
+    }
+
+    async fn advance(
+        &mut self,
+        commands: &[StoredCommand],
+    ) -> Result<(Option<StoredSnapshot>, Option<Checkpoint>), AdvanceError> {
+        let snapshot_every = self.service.config().snapshot_every;
+        // Only the last snapshot boundary of the batch is kept: the ones before it are already
+        // obsolete by the end of the replay.
+        let boundary = if snapshot_every > 0 {
+            commands
+                .iter()
+                .rposition(|command| command.version % snapshot_every == 0)
+        } else {
+            None
+        };
+
+        let snapshot = match boundary {
+            Some(boundary) => {
+                self.apply(&commands[..=boundary])?;
+                let snapshot = self
+                    .snapshot_at(commands[boundary].version)
+                    .map_err(AdvanceError::Failed)?;
+                self.apply(&commands[boundary + 1..])?;
+                Some(snapshot)
+            }
+            None => {
+                self.apply(commands)?;
+                None
+            }
+        };
+
+        let (snapshot, checkpoint) = match snapshot {
+            Some(snapshot) => match self.service.store_snapshot(&self.stream_id, &snapshot).await {
+                SnapshotOutcome::Stored => {
                     let checkpoint = Checkpoint {
                         version: snapshot.version,
                         chain_hash: snapshot.chain_hash,
@@ -351,47 +355,24 @@ where
                     };
                     (Some(snapshot), Some(checkpoint))
                 }
-                Err(CommandStreamError::SnapshotDiverged) => {
+                SnapshotOutcome::Diverged => {
                     return Err(AdvanceError::Reload(format!(
                         "snapshot {} differs from the stored snapshot",
                         snapshot.version
                     )));
                 }
-                Err(error) => {
-                    tracing::warn!(
-                        "[{}] Failed to store the snapshot of version {}: {error:#?}",
-                        self.stream_id,
-                        snapshot.version
-                    );
-                    (None, None)
-                }
-            }
-        } else {
-            (None, None)
+                SnapshotOutcome::Skipped => (None, None),
+            },
+            None => (None, None),
         };
         Ok((snapshot, checkpoint))
     }
 
     async fn finish(&self, commands: &[StoredCommand]) {
-        let trim_through = commands
-            .iter()
-            .filter_map(|command| command.inbox_id.as_deref().and_then(InboxId::parse))
-            .max();
-        if let Some(trim_through) = trim_through {
-            if let Err(error) = self.inbox.trim(&self.stream_id, &trim_through).await {
-                tracing::warn!("[{}] Failed to trim the inbox: {error:#?}", self.stream_id);
-            }
-        }
-        if let Err(error) = self
-            .inbox
+        self.service.trim_inbox(&self.stream_id, commands).await;
+        self.service
             .notify_persisted(&self.stream_id, self.replica.version())
-            .await
-        {
-            tracing::warn!(
-                "[{}] Failed to announce the persisted version: {error:#?}",
-                self.stream_id
-            );
-        }
+            .await;
     }
 }
 
@@ -399,7 +380,3 @@ enum AdvanceError {
     Reload(String),
     Failed(CommandStreamError),
 }
-
-#[cfg(test)]
-#[path = "persistence_worker_test.rs"]
-mod persistence_worker_test;

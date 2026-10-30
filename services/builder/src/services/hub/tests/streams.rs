@@ -131,11 +131,8 @@ async fn the_hub_sends_stream_messages_to_a_connection_by_its_id() {
 mod served {
     use super::*;
     use crate::{
-        repositories::{
-            command_inbox::tests::test_utils::{create_test_inbox, TestInbox},
-            command_log::tests::{create_test_log, TestLog},
-        },
         services::{command_stream::WorkerConfig, hub_test_utils::Egress},
+        testing::command_stream::{create_test_inbox, create_test_log, TestInbox, TestLog},
     };
     use shine_game::replica::{encode_command, ChatCommand, ChatState, PixelMapCommand, PixelMapState};
     use shine_test::test;

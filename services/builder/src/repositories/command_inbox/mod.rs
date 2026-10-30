@@ -11,6 +11,3 @@ pub use self::{
     command_inbox_db::CommandInboxDb,
     command_inbox_types::{InboxBatch, InboxEntry, InboxId, InboxWake},
 };
-
-#[cfg(test)]
-pub mod tests;

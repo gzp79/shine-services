@@ -6,6 +6,9 @@ mod routes;
 mod services;
 mod settings;
 
+#[cfg(test)]
+pub mod testing;
+
 use self::{app_config::AppConfig, app_state::AppState, services::HubStatus};
 use anyhow::Error as AnyError;
 use repositories::{create_postgres_pool, create_redis_pool};

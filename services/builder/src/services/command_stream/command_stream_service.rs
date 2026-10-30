@@ -4,7 +4,7 @@ use crate::{
         command_inbox::{CommandInboxDb, InboxId},
         command_log::{CommandLogDb, StoredCommand},
     },
-    services::command_stream::{stream_state::to_envelope, CommandStreamConfig, StreamState},
+    services::command_stream::{CommandStreamConfig, StreamState},
 };
 use shine_game::replica::{decode_snapshot, Checkpoint, ReplayState, Replica, StreamId};
 use tracing::instrument;
@@ -88,7 +88,7 @@ impl<I: CommandInboxDb, L: CommandLogDb> CommandStreamService<I, L> {
             let page = self.log.commands_after(stream_id, after, self.config.page_size).await?;
             let count = page.len() as i64;
             for command in page {
-                let envelope = to_envelope::<S>(&command)?;
+                let envelope = command.to_envelope::<S>()?;
                 replica
                     .apply_next(&envelope)
                     .map_err(|err| CommandStreamError::Corrupt(format!("command {}: {err}", command.version)))?;
@@ -316,7 +316,3 @@ impl<I: CommandInboxDb, L: CommandLogDb> CommandStreamService<I, L> {
         }
     }
 }
-
-#[cfg(test)]
-#[path = "command_stream_service_test.rs"]
-mod command_stream_service_test;

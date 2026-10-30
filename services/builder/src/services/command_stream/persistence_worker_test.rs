@@ -1,24 +1,21 @@
 use super::*;
-use crate::repositories::{
-    command_inbox::tests::test_utils::create_test_inbox,
-    command_log::{
-        tests::{create_test_log, fetch_all_commands, seed_chat_log_and_snapshots, stream_id, ChatLog, TestLog},
-        CommandLogDb,
+use crate::{
+    repositories::{command_inbox::CommandInboxDb, command_log::CommandLogDb},
+    testing::command_stream::{
+        create_test_inbox, create_test_log, fetch_all_commands, seed_chat_log_and_snapshots, stream_id, ChatLog,
+        TestInbox, TestLog,
     },
 };
-use shine_game::replica::ChatState;
+use shine_game::replica::{ChatState, ReplayState, StreamId};
 use shine_test::test;
 
-async fn fixture() -> Option<(
-    crate::repositories::command_inbox::tests::test_utils::TestInbox,
-    TestLog,
-)> {
+async fn fixture() -> Option<(TestInbox, TestLog)> {
     Some((create_test_inbox(60).await?, create_test_log().await?))
 }
 
 fn worker(
     stream_id: StreamId,
-    inbox: &crate::repositories::command_inbox::tests::test_utils::TestInbox,
+    inbox: &TestInbox,
     log: &TestLog,
     config: CommandStreamConfig,
 ) -> PersistenceWorker<ChatState, impl CommandInboxDb + 'static, impl CommandLogDb + 'static> {

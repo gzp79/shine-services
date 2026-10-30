@@ -1,6 +1,6 @@
-use crate::repositories::command_inbox::{
-    tests::test_utils::{create_test_inbox, next_wake_of, stream_id},
-    CommandInboxDb, InboxEntry, InboxId, InboxWake,
+use crate::{
+    repositories::command_inbox::{CommandInboxDb, InboxEntry, InboxId, InboxWake},
+    testing::command_stream::{create_test_inbox, stream_id, wait_inbox_wake},
 };
 use shine_game::replica::StreamKind;
 use shine_test::test;
@@ -249,7 +249,6 @@ async fn every_push_renews_the_expiry_of_the_inbox() {
 // ---------------------------------------------------------------------------------------------
 // Wakes
 // ---------------------------------------------------------------------------------------------
-
 #[test]
 async fn a_push_wakes_the_listeners_of_its_stream() {
     let Some(inbox) = create_test_inbox(60).await else {
@@ -260,7 +259,7 @@ async fn a_push_wakes_the_listeners_of_its_stream() {
 
     inbox.db.push(&id, Uuid::new_v4(), Uuid::new_v4(), "a").await.unwrap();
 
-    let wake = next_wake_of(&mut wakes, &id).await;
+    let wake = wait_inbox_wake(&mut wakes, &id).await;
     assert_eq!(wake, InboxWake::Stream { stream_id: id, persisted: None });
 }
 
@@ -274,7 +273,7 @@ async fn announcing_a_persisted_version_wakes_the_listeners_with_it() {
 
     inbox.db.notify_persisted(&id, 42).await.unwrap();
 
-    let wake = next_wake_of(&mut wakes, &id).await;
+    let wake = wait_inbox_wake(&mut wakes, &id).await;
     assert_eq!(
         wake,
         InboxWake::Stream {

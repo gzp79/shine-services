@@ -237,9 +237,8 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
             .retain(|_, worker| !worker.is_finished());
     }
 
-    /// The workers held, running or ended.
-    #[cfg(test)]
-    fn held_workers(&self) -> usize {
+    /// All the held workers.
+    pub fn workers_count(&self) -> usize {
         self.inner.state.lock().unwrap().workers.len()
     }
 
@@ -273,7 +272,3 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
         self.purge();
     }
 }
-
-#[cfg(test)]
-#[path = "stream_registry_test.rs"]
-mod stream_registry_test;

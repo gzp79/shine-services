@@ -8,12 +8,10 @@ mod persistence_worker;
 mod stream_actor;
 mod stream_egress;
 mod stream_kinds;
+mod stream_log_service;
 mod stream_registry;
 mod stream_state;
 mod stream_worker;
-
-#[cfg(test)]
-pub mod stream_test_utils;
 
 pub use self::{
     command_stream_config::CommandStreamConfig,
@@ -24,8 +22,17 @@ pub use self::{
     stream_actor::StreamActor,
     stream_egress::StreamEgress,
     stream_kinds::standard_registry,
+    stream_log_service::{AppendOutcome, SnapshotOutcome, StoredStream, StreamLogService},
     stream_registry::{StreamRegistry, StreamRegistryBuilder, MAX_COMMAND_BYTES},
     stream_state::StreamState,
     stream_worker::{spawn_worker, WorkerConfig, WorkerHandle},
 };
-pub use crate::models::messages::{StreamCommand, StreamMessage, StreamSnapshot};
+
+#[cfg(test)]
+mod command_stream_service_test;
+#[cfg(test)]
+mod persistence_worker_test;
+#[cfg(test)]
+mod stream_registry_test;
+#[cfg(test)]
+mod stream_worker_test;

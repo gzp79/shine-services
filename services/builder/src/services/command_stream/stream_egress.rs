@@ -1,4 +1,4 @@
-use crate::services::command_stream::StreamMessage;
+use crate::models::messages::StreamMessage;
 use std::{future::Future, sync::Arc};
 use uuid::Uuid;
 

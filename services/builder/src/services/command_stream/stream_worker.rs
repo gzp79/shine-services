@@ -1,11 +1,10 @@
 use crate::{
+    models::messages::{StreamCommand, StreamMessage, StreamSnapshot},
     repositories::{
         command_inbox::CommandInboxDb,
         command_log::{CommandLogDb, StoredCommand},
     },
-    services::command_stream::{
-        CommandStreamService, StreamCommand, StreamEgress, StreamMessage, StreamSnapshot, StreamState,
-    },
+    services::command_stream::{CommandStreamService, StreamEgress, StreamState},
 };
 use shine_game::replica::{ReplayState, StreamId};
 use std::{collections::HashMap, sync::Arc, time::Duration};
@@ -36,6 +35,17 @@ impl Default for WorkerConfig {
             min_wake_spacing: Duration::from_millis(50),
             unload_grace: Duration::from_secs(60),
             max_failures: 5,
+        }
+    }
+}
+
+impl WorkerConfig {
+    pub fn quiet() -> Self {
+        WorkerConfig {
+            backstop: Duration::from_secs(3600),
+            min_wake_spacing: Duration::ZERO,
+            unload_grace: Duration::from_secs(3600),
+            max_failures: 3,
         }
     }
 }
@@ -412,7 +422,3 @@ fn sync_message<S: ReplayState>(state: &StreamState<S>) -> StreamMessage {
         commands: state.tail().iter().map(StreamCommand::from).collect(),
     }
 }
-
-#[cfg(test)]
-#[path = "stream_worker_test.rs"]
-mod stream_worker_test;

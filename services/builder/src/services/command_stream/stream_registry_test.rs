@@ -4,20 +4,15 @@
 use crate::{
     models::{messages::CommandFailure, CommandStreamError},
     repositories::{
-        command_inbox::{
-            redis::RedisCommandInboxDb,
-            tests::test_utils::{create_test_inbox, TestInbox},
-            CommandInboxDb, InboxId,
-        },
-        command_log::{
-            pg::PgCommandLogDb,
-            tests::{create_test_log, fetch_all_commands, stream_id, TestLog},
-            CommandLogDb,
-        },
+        command_inbox::{redis::RedisCommandInboxDb, CommandInboxDb, InboxId},
+        command_log::{pg::PgCommandLogDb, CommandLogDb},
     },
     services::command_stream::{
-        stream_test_utils::{kinds, quiet, versions_of, TestEgress, WAIT},
         CommandStreamConfig, CommandStreamService, StreamRegistry, WorkerConfig, MAX_COMMAND_BYTES,
+    },
+    testing::command_stream::{
+        create_test_inbox, create_test_log, fetch_all_commands, message_kinds, message_versions, stream_id, TestEgress,
+        TestInbox, TestLog, WAIT_NOTIFICATION,
     },
 };
 use shine_game::replica::{
@@ -84,7 +79,7 @@ impl Harness {
 }
 
 async fn wait_for_workers(registry: &StreamRegistry<RedisCommandInboxDb, PgCommandLogDb>, count: usize) {
-    let result = timeout(WAIT, async {
+    let result = timeout(WAIT_NOTIFICATION, async {
         while registry.worker_count() != count {
             sleep(Duration::from_millis(5)).await;
         }
@@ -96,7 +91,7 @@ async fn wait_for_workers(registry: &StreamRegistry<RedisCommandInboxDb, PgComma
 fn short_grace() -> WorkerConfig {
     WorkerConfig {
         unload_grace: Duration::from_millis(200),
-        ..quiet()
+        ..WorkerConfig::quiet()
     }
 }
 
@@ -109,8 +104,8 @@ async fn a_kind_registered_twice_fails_the_build() {
     let service = || CommandStreamService::new(inbox.db.clone(), log.db.clone(), CommandStreamConfig::default());
 
     let result = StreamRegistry::builder(inbox.db.clone(), log.db.clone())
-        .register::<ChatState, _>(service(), TestEgress::default(), quiet())
-        .register::<ChatState, _>(service(), TestEgress::default(), quiet())
+        .register::<ChatState, _>(service(), TestEgress::default(), WorkerConfig::quiet())
+        .register::<ChatState, _>(service(), TestEgress::default(), WorkerConfig::quiet())
         .build();
 
     assert!(matches!(result, Err(CommandStreamError::DuplicateKind(kind)) if kind == ChatState::KIND));
@@ -122,7 +117,9 @@ async fn a_kind_registered_twice_fails_the_build() {
 
 #[test]
 async fn a_new_stream_opens_with_its_registered_kind() {
-    let Some(h) = harness(quiet()).await else { return };
+    let Some(h) = harness(WorkerConfig::quiet()).await else {
+        return;
+    };
 
     assert_eq!(
         h.registry.open(&stream_id(ChatState::KIND)).await.unwrap(),
@@ -132,7 +129,9 @@ async fn a_new_stream_opens_with_its_registered_kind() {
 
 #[test]
 async fn commands_are_checked_by_the_kind_of_their_stream() {
-    let Some(h) = harness(quiet()).await else { return };
+    let Some(h) = harness(WorkerConfig::quiet()).await else {
+        return;
+    };
     let chat = encode_command::<ChatState>(&ChatCommand::Add { text: "hi".into() }).unwrap();
     let paint = encode_command::<PixelMapState>(&PixelMapCommand::Paint { x: 1, y: 2, color: 3 }).unwrap();
     let off_the_map = encode_command::<PixelMapState>(&PixelMapCommand::Paint { x: 99, y: 2, color: 3 }).unwrap();
@@ -148,7 +147,9 @@ async fn commands_are_checked_by_the_kind_of_their_stream() {
 
 #[test]
 async fn a_valid_command_is_queued_in_the_inbox_of_its_stream() {
-    let Some(h) = harness(quiet()).await else { return };
+    let Some(h) = harness(WorkerConfig::quiet()).await else {
+        return;
+    };
     let id = stream_id(ChatState::KIND);
     let (command_id, user_id) = (Uuid::new_v4(), Uuid::new_v4());
     let data = encode_command::<ChatState>(&ChatCommand::Add { text: "hi".into() }).unwrap();
@@ -162,7 +163,9 @@ async fn a_valid_command_is_queued_in_the_inbox_of_its_stream() {
 
 #[test]
 async fn a_command_that_is_not_valid_for_the_kind_is_refused_and_not_queued() {
-    let Some(h) = harness(quiet()).await else { return };
+    let Some(h) = harness(WorkerConfig::quiet()).await else {
+        return;
+    };
     let id = stream_id(ChatState::KIND);
     let paint = encode_command::<PixelMapState>(&PixelMapCommand::Paint { x: 1, y: 1, color: 1 }).unwrap();
     let off_the_map = encode_command::<PixelMapState>(&PixelMapCommand::Paint { x: 90, y: 1, color: 1 }).unwrap();
@@ -202,7 +205,9 @@ async fn a_command_that_is_not_valid_for_the_kind_is_refused_and_not_queued() {
 
 #[test]
 async fn subscribers_of_a_stream_share_one_worker_and_streams_have_their_own() {
-    let Some(h) = harness(quiet()).await else { return };
+    let Some(h) = harness(WorkerConfig::quiet()).await else {
+        return;
+    };
     let (a, b) = (stream_id(ChatState::KIND), stream_id(PixelMapState::KIND));
 
     let first = h.join(&a).await;
@@ -215,13 +220,15 @@ async fn subscribers_of_a_stream_share_one_worker_and_streams_have_their_own() {
     h.push_chat(&a, "to both").await;
     h.registry.wake(&a);
 
-    h.egress.wait(first, |m| versions_of(m, &a) == [1]).await;
-    h.egress.wait(second, |m| versions_of(m, &a) == [1]).await;
+    h.egress.wait(first, |m| message_versions(m, &a) == [1]).await;
+    h.egress.wait(second, |m| message_versions(m, &a) == [1]).await;
 }
 
 #[test]
 async fn a_wake_reaches_the_worker_of_its_stream() {
-    let Some(h) = harness(quiet()).await else { return };
+    let Some(h) = harness(WorkerConfig::quiet()).await else {
+        return;
+    };
     let (a, b) = (stream_id(ChatState::KIND), stream_id(PixelMapState::KIND));
     let in_a = h.join(&a).await;
     let in_b = h.join(&b).await;
@@ -230,10 +237,10 @@ async fn a_wake_reaches_the_worker_of_its_stream() {
 
     h.registry.wake(&a);
 
-    h.egress.wait(in_a, |m| versions_of(m, &a) == [1]).await;
+    h.egress.wait(in_a, |m| message_versions(m, &a) == [1]).await;
     sleep(Duration::from_millis(150)).await;
     assert_eq!(
-        versions_of(&h.egress.messages(in_b), &b),
+        message_versions(&h.egress.messages(in_b), &b),
         Vec::<i64>::new(),
         "b was not woken"
     );
@@ -241,7 +248,9 @@ async fn a_wake_reaches_the_worker_of_its_stream() {
 
 #[test]
 async fn the_inbox_wakes_the_workers_without_anyone_calling_wake() {
-    let Some(h) = harness(quiet()).await else { return };
+    let Some(h) = harness(WorkerConfig::quiet()).await else {
+        return;
+    };
     h.registry.listen().await.unwrap();
     let id = stream_id(ChatState::KIND);
     let connection = h.join(&id).await;
@@ -249,13 +258,15 @@ async fn the_inbox_wakes_the_workers_without_anyone_calling_wake() {
     h.push_chat(&id, "a").await;
     h.push_chat(&id, "b").await;
 
-    h.egress.wait(connection, |m| versions_of(m, &id) == [1, 2]).await;
+    h.egress.wait(connection, |m| message_versions(m, &id) == [1, 2]).await;
     h.registry.unlisten().await.unwrap();
 }
 
 #[test]
 async fn streams_of_different_kinds_work_side_by_side_for_one_connection() {
-    let Some(h) = harness(quiet()).await else { return };
+    let Some(h) = harness(WorkerConfig::quiet()).await else {
+        return;
+    };
     h.registry.listen().await.unwrap();
     let (chat, map) = (stream_id(ChatState::KIND), stream_id(PixelMapState::KIND));
     let connection = h.join(&chat).await;
@@ -267,7 +278,7 @@ async fn streams_of_different_kinds_work_side_by_side_for_one_connection() {
 
     h.egress
         .wait(connection, |m| {
-            versions_of(m, &chat) == [1] && versions_of(m, &map) == [1, 2]
+            message_versions(m, &chat) == [1] && message_versions(m, &map) == [1, 2]
         })
         .await;
     assert_eq!(fetch_all_commands(&h.log.db, &map).await.len(), 2);
@@ -305,7 +316,7 @@ async fn an_unsubscribe_releases_only_that_stream_and_a_stream_can_be_joined_aga
     // A is gone; joining it again starts a new worker.
     let again = Uuid::new_v4();
     h.join_as(again, &a).await;
-    assert_eq!(kinds(&h.egress.messages(again)), vec!["sync:0"]);
+    assert_eq!(message_kinds(&h.egress.messages(again)), vec!["sync:0"]);
     assert_eq!(h.registry.worker_count(), 2);
 }
 
@@ -318,21 +329,23 @@ async fn ended_workers_are_not_running_and_a_purge_forgets_them() {
     h.registry.unsubscribe(connection, &id);
 
     wait_for_workers(&h.registry, 0).await;
-    assert_eq!(h.registry.held_workers(), 1, "an ended worker is held until a purge");
+    assert_eq!(h.registry.workers_count(), 1, "an ended worker is held until a purge");
     h.registry.purge();
-    assert_eq!(h.registry.held_workers(), 0);
+    assert_eq!(h.registry.workers_count(), 0);
 }
 
 #[test]
 async fn a_shutdown_persists_what_is_waiting_and_ends_every_worker() {
-    let Some(h) = harness(quiet()).await else { return };
+    let Some(h) = harness(WorkerConfig::quiet()).await else {
+        return;
+    };
     let (a, b) = (stream_id(ChatState::KIND), stream_id(PixelMapState::KIND));
     h.join(&a).await;
     h.join(&b).await;
     h.push_chat(&a, "waiting").await;
     h.push_paint(&b, 3, 3, 3).await;
 
-    h.registry.shutdown(WAIT).await;
+    h.registry.shutdown(WAIT_NOTIFICATION).await;
 
     assert_eq!(h.registry.worker_count(), 0);
     assert_eq!(fetch_all_commands(&h.log.db, &a).await.len(), 1);

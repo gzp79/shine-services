@@ -70,8 +70,7 @@ pub struct InboxBatch {
     pub more: bool,
 }
 
-/// A hint that a stream may have something to do. The notifications are not reliable (a reconnect
-/// of the listener loses the ones sent meanwhile), so a consumer also polls on its own timer.
+/// A hint that a stream may have something to do. The notifications are not reliable, so a consumer should also poll on its own timer.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum InboxWake {
     /// A command arrived (`persisted` is `None`), or an instance persisted the stream up to a version.

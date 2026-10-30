@@ -2,6 +2,8 @@
 // `CommandLogDb` is a later round.
 #![allow(dead_code)]
 
+use crate::models::CommandStreamError;
+use shine_game::replica::{decode_command, CommandEnvelope, CommandHeader, ReplayState};
 use uuid::Uuid;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -21,6 +23,24 @@ pub struct StoredCommand {
     pub data: String,
     pub command_hash: u64,
     pub chain_hash: u64,
+}
+
+impl StoredCommand {
+    /// Reads the stored row as the command envelope a replica is advanced with.
+    pub fn to_envelope<S: ReplayState>(&self) -> Result<CommandEnvelope<S::Command>, CommandStreamError> {
+        let decoded = decode_command::<S>(&self.data)
+            .map_err(|err| CommandStreamError::Corrupt(format!("command {}: {err}", self.version)))?;
+        Ok(CommandEnvelope {
+            header: CommandHeader {
+                version: self.version,
+                command_id: self.command_id,
+                user_id: self.user_id,
+                chain_hash: self.chain_hash,
+            },
+            command: decoded,
+            command_hash: self.command_hash,
+        })
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

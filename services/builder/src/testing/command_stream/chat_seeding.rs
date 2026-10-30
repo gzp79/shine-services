@@ -1,10 +1,7 @@
 use crate::{
     models::CommandStreamError,
-    repositories::command_log::{
-        pg::PgCommandLogDb,
-        tests::{replay, utils::stream_id, TestLog},
-        CommandLogDb, StoredCommand, StoredSnapshot, StreamHead,
-    },
+    repositories::command_log::{pg::PgCommandLogDb, CommandLogDb, StoredCommand, StoredSnapshot, StreamHead},
+    testing::command_stream::{replay, stream_id, TestLog},
 };
 use shine_game::replica::{
     encode_command, encode_snapshot, stable_hash_of, ChatCommand, ChatState, CommandEnvelope, ReplayState, Replica,
@@ -103,7 +100,7 @@ impl ChatLog {
     }
 }
 
-pub async fn persist_command_logs(
+pub async fn persist_chat_logs(
     db: &PgCommandLogDb,
     stream_id: &StreamId,
     room: &ChatLog,
@@ -119,7 +116,7 @@ pub async fn seeded_chat_log(log: &TestLog, count: i64) -> (StreamId, ChatLog) {
     let room = ChatLog::new("seed", count);
     let id = stream_id(ChatState::KIND);
     log.db.ensure_stream(&id).await.unwrap();
-    persist_command_logs(&log.db, &id, &room, 1, room.commands.len() as i64)
+    persist_chat_logs(&log.db, &id, &room, 1, room.commands.len() as i64)
         .await
         .unwrap();
     (id, room)
