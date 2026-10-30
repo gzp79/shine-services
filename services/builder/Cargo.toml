@@ -50,7 +50,7 @@ utoipa = { workspace = true }
 utoipa-axum = { workspace = true }
 validator = { workspace = true }
 
-shine-core = { workspace = true }
+shine-core = { workspace = true, features = ["tokio"] }
 shine-game = { workspace = true }
 shine-infra = { workspace = true }
 

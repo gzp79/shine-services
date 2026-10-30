@@ -5,21 +5,21 @@ use crate::{
     repositories::{
         command_inbox::{
             redis::RedisCommandInboxDb,
-            tests::test_utils::{create_test_inbox, next_wake_of, TestInbox},
+            tests::{create_test_inbox, next_wake_of, TestInbox},
             CommandInboxDb, InboxId,
         },
         command_log::{
             pg::PgCommandLogDb,
-            tests::test_utils::{
-                all_commands, append_range, create_test_log, replay, stream_id, stream_with_snapshots, ChatLog,
-                TestLog, KIND,
+            tests::{
+                create_test_log, fetch_all_commands, persist_command_logs, replay_chat, seed_chat_log_and_snapshots,
+                stream_id, ChatLog, TestLog,
             },
             CommandLogDb, StoredCommand, StoredSnapshot,
         },
     },
     services::command_stream::{CommandStreamConfig, CommandStreamService, StreamState},
 };
-use shine_game::replica::{decode_command, encode_command, ChatCommand, ChatState, StreamId};
+use shine_game::replica::{decode_command, encode_command, ChatCommand, ChatState, ReplayState, StreamId};
 use shine_test::test;
 use uuid::Uuid;
 
@@ -69,7 +69,7 @@ impl Fixture {
     }
 
     async fn stored_texts(&self, id: &StreamId) -> Vec<String> {
-        texts(&all_commands(&self.log.db, id).await)
+        texts(&fetch_all_commands(&self.log.db, id).await)
     }
 
     async fn assert_log_is_sound(&self, id: &StreamId) {
@@ -103,7 +103,7 @@ fn strs(values: &[&str]) -> Vec<String> {
 #[test]
 async fn a_new_stream_loads_empty() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id(KIND);
+    let id = stream_id(ChatState::KIND);
 
     let state = fx.load(&id).await;
 
@@ -117,13 +117,13 @@ async fn a_new_stream_loads_empty() {
 #[test]
 async fn a_stream_loads_from_its_latest_snapshot_and_the_commands_after_it() {
     let Some(fx) = fixture().await else { return };
-    let (id, room) = stream_with_snapshots(&fx.log, 10, &[4, 7]).await;
+    let (id, room) = seed_chat_log_and_snapshots(&fx.log, 10, &[4, 7]).await;
 
     let state = fx.load(&id).await;
 
     assert_eq!(state.confirmed_version(), 10);
     assert_eq!(state.confirmed_chain_hash(), room.chain_hash_at(10));
-    assert_eq!(state.replica().state(), room.replica().state());
+    assert_eq!(state.replica().state(), room.replica.state());
     assert_eq!(
         versions(state.tail()),
         vec![8, 9, 10],
@@ -138,7 +138,7 @@ async fn a_stream_loads_from_its_latest_snapshot_and_the_commands_after_it() {
 #[test]
 async fn commands_get_dense_versions_in_inbox_order_and_are_stored_and_the_inbox_is_trimmed() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id(KIND);
+    let id = stream_id(ChatState::KIND);
     let mut state = fx.load(&id).await;
     fx.send(&id, "a").await;
     fx.send(&id, "b").await;
@@ -161,7 +161,7 @@ async fn commands_get_dense_versions_in_inbox_order_and_are_stored_and_the_inbox
 #[test]
 async fn a_loaded_stream_continues_after_its_head() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id(KIND);
+    let id = stream_id(ChatState::KIND);
     let mut first = fx.load(&id).await;
     fx.send(&id, "a").await;
     fx.send(&id, "b").await;
@@ -180,7 +180,7 @@ async fn a_loaded_stream_continues_after_its_head() {
 #[test]
 async fn command_ids_are_the_clients_own_so_a_repeated_one_gets_a_version_each() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id(KIND);
+    let id = stream_id(ChatState::KIND);
     let mut state = fx.load(&id).await;
     let command_id = fx.send(&id, "same").await;
     fx.send_as(&id, command_id, "same").await;
@@ -198,7 +198,7 @@ async fn command_ids_are_the_clients_own_so_a_repeated_one_gets_a_version_each()
 #[test]
 async fn an_entry_that_cannot_be_decoded_is_skipped_without_blocking_the_rest() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id(KIND);
+    let id = stream_id(ChatState::KIND);
     let mut state = fx.load(&id).await;
     let (command, user) = (Uuid::new_v4().to_string(), Uuid::new_v4().to_string());
     fx.inbox
@@ -218,7 +218,7 @@ async fn an_entry_that_cannot_be_decoded_is_skipped_without_blocking_the_rest() 
 #[test]
 async fn the_persisted_version_is_announced_to_the_other_instances() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id(KIND);
+    let id = stream_id(ChatState::KIND);
     let mut state = fx.load(&id).await;
     let mut wakes = fx.inbox.listen().await;
     fx.send(&id, "a").await;
@@ -242,7 +242,7 @@ async fn the_persisted_version_is_announced_to_the_other_instances() {
 #[test]
 async fn an_instance_behind_adopts_what_the_others_persisted_and_sequences_its_own_command_after_it() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id(KIND);
+    let id = stream_id(ChatState::KIND);
     let mut ahead = fx.load(&id).await;
     let mut behind = fx.load(&id).await;
     for text in ["a", "b", "c"] {
@@ -265,7 +265,7 @@ async fn an_instance_behind_adopts_what_the_others_persisted_and_sequences_its_o
 #[test]
 async fn a_batch_overlapping_commands_of_the_others_is_resequenced_after_them() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id(KIND);
+    let id = stream_id(ChatState::KIND);
     let mut ahead = fx.load(&id).await;
     let mut behind = fx.load(&id).await;
     fx.send(&id, "a").await;
@@ -284,7 +284,7 @@ async fn a_batch_overlapping_commands_of_the_others_is_resequenced_after_them() 
 #[test]
 async fn a_waiting_command_that_another_instance_stored_is_not_appended_again() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id(KIND);
+    let id = stream_id(ChatState::KIND);
     let mut ahead = fx.load(&id).await;
     let mut behind = fx.load(&id).await;
     // Reads the inbox but persists nothing: `x` waits in `behind`.
@@ -313,7 +313,7 @@ async fn a_waiting_command_that_another_instance_stored_is_not_appended_again() 
 #[test]
 async fn a_waiting_command_is_kept_when_the_stored_one_with_its_id_is_another_command() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id(KIND);
+    let id = stream_id(ChatState::KIND);
     let mut ahead = fx.load(&id).await;
     let mut behind = fx.load(&id).await;
     let reads_only = CommandStreamService::new(
@@ -339,7 +339,7 @@ async fn a_waiting_command_is_kept_when_the_stored_one_with_its_id_is_another_co
 #[test]
 async fn inbox_entries_that_are_stored_but_not_trimmed_are_not_taken_again() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id(KIND);
+    let id = stream_id(ChatState::KIND);
     let mut first = fx.load(&id).await;
     fx.send(&id, "x").await;
     fx.send(&id, "y").await;
@@ -374,7 +374,7 @@ async fn inbox_entries_that_are_stored_but_not_trimmed_are_not_taken_again() {
 #[test]
 async fn an_idle_instance_adopts_what_the_others_persisted() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id(KIND);
+    let id = stream_id(ChatState::KIND);
     let mut busy = fx.load(&id).await;
     let mut idle = fx.load(&id).await;
     fx.send(&id, "a").await;
@@ -393,7 +393,7 @@ async fn instances_sequencing_the_same_inbox_at_once_agree() {
     let Some(fx) = fixture().await else { return };
 
     for round in 0..8 {
-        let id = stream_id(KIND);
+        let id = stream_id(ChatState::KIND);
         let mut first = fx.load(&id).await;
         let mut second = fx.load(&id).await;
         let expected: Vec<String> = (0..6).map(|i| format!("m{i}")).collect();
@@ -434,10 +434,10 @@ async fn instances_sequencing_the_same_inbox_at_once_agree() {
 #[test]
 async fn a_log_contradicting_the_confirmed_history_makes_the_stream_reload() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id(KIND);
+    let id = stream_id(ChatState::KIND);
     let seed = ChatLog::new("seed", 3);
     fx.log.db.ensure_stream(&id).await.unwrap();
-    append_range(&fx.log.db, &id, &seed, 1, 3).await.unwrap();
+    persist_command_logs(&fx.log.db, &id, &seed, 1, 3).await.unwrap();
     let mut state = fx.load(&id).await;
     // The log is replaced behind the instance's back by another history that is longer.
     fx.log
@@ -451,7 +451,7 @@ async fn a_log_contradicting_the_confirmed_history_makes_the_stream_reload() {
         ))
         .await;
     let other = ChatLog::new("other", 4);
-    append_range(&fx.log.db, &id, &other, 1, 4).await.unwrap();
+    persist_command_logs(&fx.log.db, &id, &other, 1, 4).await.unwrap();
     fx.send(&id, "mine").await;
 
     let outcome = fx.service.sync(&mut state).await.unwrap();
@@ -459,7 +459,7 @@ async fn a_log_contradicting_the_confirmed_history_makes_the_stream_reload() {
     assert!(outcome.reload);
     assert!(outcome.confirmed.is_empty());
     assert_eq!(
-        all_commands(&fx.log.db, &id).await,
+        fetch_all_commands(&fx.log.db, &id).await,
         other.commands,
         "the log is left alone"
     );
@@ -472,7 +472,7 @@ async fn a_log_contradicting_the_confirmed_history_makes_the_stream_reload() {
 #[test]
 async fn replaying_brings_the_replica_up_to_the_confirmed_version() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id(KIND);
+    let id = stream_id(ChatState::KIND);
     let mut state = fx.load(&id).await;
     for text in ["a", "b", "c", "d", "e"] {
         fx.send(&id, text).await;
@@ -482,7 +482,7 @@ async fn replaying_brings_the_replica_up_to_the_confirmed_version() {
 
     let outcome = fx.service.replay(&mut state).await.unwrap();
 
-    let expected = replay(None, &all_commands(&fx.log.db, &id).await);
+    let expected = replay_chat(None, &fetch_all_commands(&fx.log.db, &id).await);
     assert!(
         outcome.checkpoint.is_none() && !outcome.reload,
         "no checkpoint before 100"
@@ -495,7 +495,7 @@ async fn replaying_brings_the_replica_up_to_the_confirmed_version() {
 #[test]
 async fn a_checkpoint_stores_its_snapshot_and_the_tail_continues_after_it() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id(KIND);
+    let id = stream_id(ChatState::KIND);
     let service = fx.snapshotting(4, 3);
     let mut state = fx.load(&id).await;
     for i in 0..10 {
@@ -506,8 +506,8 @@ async fn a_checkpoint_stores_its_snapshot_and_the_tail_continues_after_it() {
     let outcome = service.replay(&mut state).await.unwrap();
 
     // Versions 4 and 8 were passed; the latest checkpoint is the one reported and kept.
-    let commands = all_commands(&fx.log.db, &id).await;
-    let at_8 = replay(None, &commands[..8]);
+    let commands = fetch_all_commands(&fx.log.db, &id).await;
+    let at_8 = replay_chat(None, &commands[..8]);
     let checkpoint = outcome.checkpoint.expect("a checkpoint");
     assert_eq!((checkpoint.version, checkpoint.state_hash), (8, at_8.hash()));
     assert_eq!(checkpoint.chain_hash, at_8.chain_hash());
@@ -527,7 +527,7 @@ async fn a_checkpoint_stores_its_snapshot_and_the_tail_continues_after_it() {
 #[test]
 async fn instances_reaching_the_same_checkpoint_both_keep_it() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id(KIND);
+    let id = stream_id(ChatState::KIND);
     let service = fx.snapshotting(4, 3);
     let mut first = fx.load(&id).await;
     let mut second = fx.load(&id).await;
@@ -549,7 +549,7 @@ async fn instances_reaching_the_same_checkpoint_both_keep_it() {
 #[test]
 async fn a_snapshot_disagreeing_with_the_stored_one_makes_the_stream_reload() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id(KIND);
+    let id = stream_id(ChatState::KIND);
     let service = fx.snapshotting(4, 3);
     let mut state = fx.load(&id).await;
     for i in 0..4 {
@@ -575,7 +575,7 @@ async fn a_snapshot_disagreeing_with_the_stored_one_makes_the_stream_reload() {
 #[test]
 async fn only_the_latest_snapshots_are_kept_and_an_instance_behind_the_rest_reloads() {
     let Some(fx) = fixture().await else { return };
-    let id = stream_id(KIND);
+    let id = stream_id(ChatState::KIND);
     let service = fx.snapshotting(2, 2);
     let mut state = fx.load(&id).await;
     let mut behind = fx.load(&id).await;
@@ -588,7 +588,7 @@ async fn only_the_latest_snapshots_are_kept_and_an_instance_behind_the_rest_relo
 
     // Snapshots were stored at 2, 4, 6 and 8; the latest two stay, with the commands from the older one.
     assert_eq!(fx.log.db.oldest_snapshot_version(&id).await.unwrap(), Some(6));
-    assert_eq!(versions(&all_commands(&fx.log.db, &id).await), vec![6, 7, 8]);
+    assert_eq!(versions(&fetch_all_commands(&fx.log.db, &id).await), vec![6, 7, 8]);
     let outcome = service.sync(&mut behind).await.unwrap();
     assert!(outcome.reload, "the commands it needs are pruned");
 }

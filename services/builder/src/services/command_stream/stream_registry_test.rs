@@ -11,7 +11,7 @@ use crate::{
         },
         command_log::{
             pg::PgCommandLogDb,
-            tests::test_utils::{all_commands, create_test_log, stream_id, TestLog},
+            tests::{create_test_log, fetch_all_commands, stream_id, TestLog},
             CommandLogDb,
         },
     },
@@ -270,7 +270,7 @@ async fn streams_of_different_kinds_work_side_by_side_for_one_connection() {
             versions_of(m, &chat) == [1] && versions_of(m, &map) == [1, 2]
         })
         .await;
-    assert_eq!(all_commands(&h.log.db, &map).await.len(), 2);
+    assert_eq!(fetch_all_commands(&h.log.db, &map).await.len(), 2);
     h.registry.unlisten().await.unwrap();
 }
 
@@ -335,6 +335,6 @@ async fn a_shutdown_persists_what_is_waiting_and_ends_every_worker() {
     h.registry.shutdown(WAIT).await;
 
     assert_eq!(h.registry.worker_count(), 0);
-    assert_eq!(all_commands(&h.log.db, &a).await.len(), 1);
-    assert_eq!(all_commands(&h.log.db, &b).await.len(), 1);
+    assert_eq!(fetch_all_commands(&h.log.db, &a).await.len(), 1);
+    assert_eq!(fetch_all_commands(&h.log.db, &b).await.len(), 1);
 }

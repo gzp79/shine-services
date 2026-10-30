@@ -133,7 +133,7 @@ mod served {
     use crate::{
         repositories::{
             command_inbox::tests::test_utils::{create_test_inbox, TestInbox},
-            command_log::tests::test_utils::{create_test_log, TestLog},
+            command_log::tests::{create_test_log, TestLog},
         },
         services::{command_stream::WorkerConfig, hub_test_utils::Egress},
     };

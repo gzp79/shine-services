@@ -3,8 +3,14 @@ name = "shine-core"
 version.workspace = true
 edition.workspace = true
 
+[features]
+default = []
+
+tokio = ["dep:tokio"]
+
 [dependencies]
 serde = { workspace = true }
+tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
 shine-test = { workspace = true }

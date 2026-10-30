@@ -3978,6 +3978,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "shine-test",
+ "tokio",
  "wasm-bindgen-test",
 ]
 

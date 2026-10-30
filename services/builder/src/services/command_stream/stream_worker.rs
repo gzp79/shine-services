@@ -91,7 +91,7 @@ impl WorkerHandle {
     }
 
     /// Whether both handles belong to the same worker.
-    pub fn same_worker(&self, other: &WorkerHandle) -> bool {
+    pub fn is_same_worker(&self, other: &WorkerHandle) -> bool {
         Arc::ptr_eq(&self.wake, &other.wake)
     }
 }
