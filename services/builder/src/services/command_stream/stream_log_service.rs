@@ -2,7 +2,7 @@ use crate::{
     models::CommandStreamError,
     repositories::{
         command_inbox::{CommandInboxDb, InboxId},
-        command_log::{CommandLogDb, StoredCommand, StoredSnapshot},
+        command_log::{CommandLogDb, StoredCommand, StoredSnapshot, StreamHead},
     },
     services::command_stream::CommandStreamConfig,
 };
@@ -14,6 +14,7 @@ use tracing::instrument;
 pub struct StoredStream {
     pub snapshot: Option<StoredSnapshot>,
     pub tail: Vec<StoredCommand>,
+    pub stored_inbox: Option<InboxId>,
 }
 
 /// What the log made of an offered batch.
@@ -56,14 +57,31 @@ impl<I: CommandInboxDb, L: CommandLogDb> StreamLogService<I, L> {
         &self.config
     }
 
+    /// Reads only the canonical head, without replaying the stream.
+    #[instrument(level = "debug", skip_all, fields(stream_id = %stream_id))]
+    pub async fn head(&self, stream_id: &StreamId) -> Result<Option<StreamHead>, CommandStreamError> {
+        self.log.head(stream_id).await
+    }
+
     /// Reads the stream as it is stored, creating it if it is new.
     #[instrument(level = "debug", skip_all, fields(stream_id = %stream_id))]
     pub async fn load(&self, stream_id: &StreamId) -> Result<StoredStream, CommandStreamError> {
         let head = self.log.ensure_stream(stream_id).await?;
         let snapshot = self.log.latest_snapshot(stream_id, head.version).await?;
         let after = snapshot.as_ref().map(|snapshot| snapshot.version).unwrap_or(0);
-        let tail = self.commands_after(stream_id, after).await?;
-        Ok(StoredStream { snapshot, tail })
+        // Read from one version earlier so the command the snapshot was taken at comes along: its inbox
+        // entry must not be taken again, and it is the only marker left once the commands before the
+        // snapshot are pruned. Everything is then derived from this one read, so no command appended
+        // between two reads can claim inbox entries that are missing from the tail.
+        let mut tail = self.commands_after(stream_id, (after - 1).max(0)).await?;
+        let stored_inbox = tail
+            .last()
+            .and_then(|command| command.inbox_id.as_deref())
+            .and_then(InboxId::parse);
+        if tail.first().is_some_and(|command| command.version == after) {
+            tail.remove(0);
+        }
+        Ok(StoredStream { snapshot, tail, stored_inbox })
     }
 
     /// Every command the log holds after the given version.

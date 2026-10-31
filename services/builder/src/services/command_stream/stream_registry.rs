@@ -4,7 +4,7 @@ use crate::{
         command_inbox::{CommandInboxDb, InboxWake},
         command_log::CommandLogDb,
     },
-    services::command_stream::{spawn_worker, CommandStreamService, StreamEgress, WorkerConfig, WorkerHandle},
+    services::command_stream::{StreamEgress, StreamLogService, StreamWorker, WorkerConfig},
 };
 use futures::future::join_all;
 use shine_game::replica::{decode_command, ReplayState, StreamId, StreamKind};
@@ -21,13 +21,13 @@ pub const MAX_COMMAND_BYTES: usize = 16 * 1024;
 /// What a kind of stream is to the registry. It is made by `register`, which is the only place that
 /// knows the type of the replayed state; here it is behind closures.
 struct KindEntry {
-    spawn: Box<dyn Fn(StreamId) -> WorkerHandle + Send + Sync>,
+    spawn: Box<dyn Fn(StreamId) -> Arc<StreamWorker> + Send + Sync>,
     is_valid_command: Box<dyn Fn(&str) -> bool + Send + Sync>,
 }
 
 #[derive(Default)]
 struct State {
-    workers: HashMap<StreamId, WorkerHandle>,
+    workers: HashMap<StreamId, Arc<StreamWorker>>,
     /// The streams each connection is subscribed to, to release them when it leaves.
     connections: HashMap<Uuid, HashSet<StreamId>>,
 }
@@ -63,15 +63,22 @@ pub struct StreamRegistryBuilder<I: CommandInboxDb, L: CommandLogDb> {
 }
 
 impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistryBuilder<I, L> {
-    /// Registers the kind `S::KIND`: its workers are started over `service` and send through `egress`.
-    pub fn register<S, E>(mut self, service: CommandStreamService<I, L>, egress: E, config: WorkerConfig) -> Self
+    /// Registers the kind `S::KIND`: its streams are served over `service` and send through `egress`.
+    pub fn register<S, E>(mut self, service: StreamLogService<I, L>, egress: E, config: WorkerConfig) -> Self
     where
         S: ReplayState,
         E: StreamEgress,
     {
+        let inbox = self.inbox.clone();
         let entry = KindEntry {
             spawn: Box::new(move |stream_id| {
-                spawn_worker::<S, I, L, E>(service.clone(), egress.clone(), stream_id, config.clone())
+                StreamWorker::start::<S, I, L, E>(
+                    service.clone(),
+                    inbox.clone(),
+                    egress.clone(),
+                    stream_id,
+                    config.clone(),
+                )
             }),
             is_valid_command: Box::new(|data| {
                 decode_command::<S>(data).is_ok_and(|command| S::is_well_formed(&command))
@@ -261,11 +268,11 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
 
     /// Asks every worker to persist what is waiting and end, and waits for them for up to `timeout`.
     pub async fn shutdown(&self, timeout: Duration) {
-        let workers: Vec<WorkerHandle> = self.inner.state.lock().unwrap().workers.values().cloned().collect();
+        let workers: Vec<Arc<StreamWorker>> = self.inner.state.lock().unwrap().workers.values().cloned().collect();
         for worker in &workers {
             worker.stop();
         }
-        let ended = join_all(workers.iter().map(|worker| worker.finished()));
+        let ended = join_all(workers.iter().map(|worker| worker.wait_finished()));
         if tokio::time::timeout(timeout, ended).await.is_err() {
             tracing::warn!("Some stream workers did not end within {timeout:?}");
         }

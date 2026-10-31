@@ -1,7 +1,7 @@
 use crate::{
     models::CommandStreamError,
     repositories::{command_inbox::CommandInboxDb, command_log::CommandLogDb},
-    services::command_stream::{CommandStreamConfig, CommandStreamService, StreamEgress, StreamRegistry, WorkerConfig},
+    services::command_stream::{CommandStreamConfig, StreamEgress, StreamLogService, StreamRegistry, WorkerConfig},
 };
 use shine_game::replica::{ChatState, PixelMapState};
 
@@ -18,7 +18,7 @@ where
     L: CommandLogDb + 'static,
     E: StreamEgress + Clone + 'static,
 {
-    let service = || CommandStreamService::new(inbox_db.clone(), log_db.clone(), service_config.clone());
+    let service = || StreamLogService::new(inbox_db.clone(), log_db.clone(), service_config.clone());
     StreamRegistry::builder(inbox_db.clone(), log_db.clone())
         .register::<ChatState, _>(service(), egress.clone(), worker_config.clone())
         .register::<PixelMapState, _>(service(), egress.clone(), worker_config)

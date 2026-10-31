@@ -1,109 +1,45 @@
 use crate::{
     models::CommandStreamError,
     repositories::{
-        command_inbox::CommandInboxDb,
+        command_inbox::{CommandInboxDb, InboxId},
         command_log::{CommandLogDb, StoredCommand, StoredSnapshot},
     },
-    services::command_stream::{
-        stream_log_service::{AppendOutcome, SnapshotOutcome, StreamLogService},
-        CommandStreamConfig,
-    },
+    services::command_stream::stream_log_service::{AppendOutcome, SnapshotOutcome, StreamLogService},
 };
 use shine_game::replica::{decode_snapshot, encode_snapshot, Checkpoint, ReplayState, Replica, StreamId};
 use std::sync::Arc;
-use tokio::{
-    sync::mpsc,
-    task::{self, JoinHandle},
-};
 
-const CHANNEL_CAPACITY: usize = 1;
-
-/// One optimistic batch submitted by the stream actor. Only one batch per stream may be in flight.
-#[derive(Debug)]
-pub struct PersistJob {
-    pub generation: u64,
-    pub baseline_version: i64,
-    pub baseline_chain_hash: u64,
-    pub commands: Arc<[StoredCommand]>,
-}
-
-enum PersistenceRequest {
-    Load { generation: u64, reason: String },
-    Persist(PersistJob),
-}
-
-/// The canonical result of a persistence attempt. Client delivery remains the stream actor's job.
+/// The canonical result of a persistence attempt.
 #[derive(Debug)]
 pub enum PersistResult {
+    Current,
     Advanced {
-        generation: u64,
         canonical: Arc<[StoredCommand]>,
         snapshot: Option<StoredSnapshot>,
         checkpoint: Option<Checkpoint>,
     },
     Reloaded {
-        generation: u64,
         snapshot: Option<StoredSnapshot>,
         tail: Arc<[StoredCommand]>,
+        stored_inbox: Option<InboxId>,
         reason: String,
     },
     Failed {
-        generation: u64,
         error: CommandStreamError,
     },
 }
 
-#[derive(Clone)]
-pub struct PersistenceHandle {
-    requests: mpsc::Sender<PersistenceRequest>,
+enum AdvanceError {
+    Reload(String),
+    Failed(CommandStreamError),
 }
 
-impl PersistenceHandle {
-    pub async fn load(&self, generation: u64, reason: impl Into<String>) -> bool {
-        self.requests
-            .send(PersistenceRequest::Load {
-                generation,
-                reason: reason.into(),
-            })
-            .await
-            .is_ok()
-    }
-
-    pub async fn persist(&self, job: PersistJob) -> Result<(), PersistJob> {
-        self.requests
-            .send(PersistenceRequest::Persist(job))
-            .await
-            .map_err(|error| match error.0 {
-                PersistenceRequest::Persist(job) => job,
-                PersistenceRequest::Load { .. } => unreachable!(),
-            })
-    }
-}
-
-pub struct PersistenceResults {
-    results: mpsc::Receiver<PersistResult>,
-}
-
-impl PersistenceResults {
-    pub async fn recv(&mut self) -> Option<PersistResult> {
-        self.results.recv().await
-    }
-
-    pub fn try_recv(&mut self) -> Result<PersistResult, mpsc::error::TryRecvError> {
-        self.results.try_recv()
-    }
-}
-
-pub struct StartedPersistence {
-    pub handle: PersistenceHandle,
-    pub results: PersistenceResults,
-    pub task: JoinHandle<()>,
-    pub snapshot: Option<StoredSnapshot>,
-    pub tail: Vec<StoredCommand>,
-}
-
-/// Serializes durable append, canonical catch-up, replay and snapshot storage for one stream.
-pub struct PersistenceWorker<S, I, L>
+/// The durable side of one stream: appends the optimistic batches to the log, replays the canonical
+/// history onto its private replica, stores the snapshots and clears the inbox behind them.
+///
+/// It owns no task and no channel: every entry point is an ordinary method, so it can be driven
+/// straight from a test. `StreamWorker` is what gives it a task of its own in production.
+pub struct StreamPersistence<S, I, L>
 where
     S: ReplayState,
     I: CommandInboxDb,
@@ -114,22 +50,22 @@ where
     replica: Replica<S>,
 }
 
-impl<S, I, L> PersistenceWorker<S, I, L>
+impl<S, I, L> StreamPersistence<S, I, L>
 where
     S: ReplayState,
     I: CommandInboxDb + 'static,
     L: CommandLogDb + 'static,
 {
-    pub fn new(stream_id: StreamId, inbox: I, log: L, config: CommandStreamConfig) -> Self {
-        Self::with_service(stream_id, StreamLogService::new(inbox, log, config))
-    }
-
-    pub fn with_service(stream_id: StreamId, service: StreamLogService<I, L>) -> Self {
+    pub fn new(stream_id: StreamId, service: StreamLogService<I, L>) -> Self {
         Self {
             stream_id,
             service,
             replica: Replica::new(),
         }
+    }
+
+    pub fn stream_id(&self) -> &StreamId {
+        &self.stream_id
     }
 
     pub fn version(&self) -> i64 {
@@ -140,91 +76,48 @@ where
         self.replica.chain_hash()
     }
 
-    pub fn spawn(mut self) -> (PersistenceHandle, PersistenceResults, JoinHandle<()>) {
-        let (requests, mut request_rx) = mpsc::channel(CHANNEL_CAPACITY);
-        let (result_tx, results) = mpsc::channel(CHANNEL_CAPACITY);
-        let task = task::spawn(async move {
-            while let Some(request) = request_rx.recv().await {
-                let result = match request {
-                    PersistenceRequest::Load { generation, reason } => self.reload(generation, reason).await,
-                    PersistenceRequest::Persist(job) => self.persist(job).await,
-                };
-                if result_tx.send(result).await.is_err() {
-                    break;
-                }
-            }
-        });
-        (PersistenceHandle { requests }, PersistenceResults { results }, task)
-    }
-
-    /// Loads or creates the stream before the actor starts, then starts the persistence loop with the
-    /// rebuilt replica as its private mutable state.
-    pub async fn start(mut self) -> Result<StartedPersistence, CommandStreamError> {
-        let (snapshot, tail, replica) = self.load_canonical().await?;
-        self.replica = replica;
-        let (handle, results, task) = self.spawn();
-        Ok(StartedPersistence {
-            handle,
-            results,
-            task,
-            snapshot,
-            tail,
-        })
-    }
-
-    async fn persist(&mut self, job: PersistJob) -> PersistResult {
-        let generation = job.generation;
-        if job.baseline_version != self.replica.version() || job.baseline_chain_hash != self.replica.chain_hash() {
+    pub async fn persist(
+        &mut self,
+        baseline_version: i64,
+        baseline_chain_hash: u64,
+        commands: Arc<[StoredCommand]>,
+    ) -> PersistResult {
+        if baseline_version != self.replica.version() || baseline_chain_hash != self.replica.chain_hash() {
             return self
-                .reload(
-                    generation,
-                    format!(
-                        "persistence baseline {} does not match canonical version {}",
-                        job.baseline_version,
-                        self.replica.version()
-                    ),
-                )
+                .reload(format!(
+                    "persistence baseline {} does not match canonical version {}",
+                    baseline_version,
+                    self.replica.version()
+                ))
                 .await;
         }
-        if job.commands.is_empty() {
+        if commands.is_empty() {
             return PersistResult::Advanced {
-                generation,
                 canonical: Arc::from([]),
                 snapshot: None,
                 checkpoint: None,
             };
         }
-        let proposed = job.commands.clone();
+        let proposed = commands.clone();
 
         let canonical = match self
             .service
-            .append(
-                &self.stream_id,
-                &job.commands,
-                job.baseline_version,
-                job.baseline_chain_hash,
-            )
+            .append(&self.stream_id, &commands, baseline_version, baseline_chain_hash)
             .await
         {
-            Ok(AppendOutcome::Stored) => job.commands,
+            Ok(AppendOutcome::Stored) => commands,
             Ok(AppendOutcome::Behind { canonical }) if !canonical.is_empty() => canonical.into(),
             Ok(AppendOutcome::Behind { .. }) => {
                 return self
-                    .reload(
-                        generation,
-                        "the command log advanced without a readable continuation".to_string(),
-                    )
+                    .reload("the command log advanced without a readable continuation")
                     .await;
             }
-            Err(error) => return PersistResult::Failed { generation, error },
+            Err(error) => return PersistResult::Failed { error },
         };
         let shared = canonical.len().min(proposed.len());
         if canonical[..shared] != proposed[..shared] {
             return self
-                .reload(
-                    generation,
-                    "canonical commands differ from the optimistic history".to_string(),
-                )
+                .reload("canonical commands differ from the optimistic history")
                 .await;
         }
 
@@ -232,38 +125,54 @@ where
             Ok((snapshot, checkpoint)) => {
                 self.finish(&canonical).await;
                 PersistResult::Advanced {
-                    generation,
                     canonical,
                     snapshot,
                     checkpoint,
                 }
             }
-            Err(AdvanceError::Reload(reason)) => self.reload(generation, reason).await,
-            Err(AdvanceError::Failed(error)) => PersistResult::Failed { generation, error },
+            Err(AdvanceError::Reload(reason)) => self.reload(reason).await,
+            Err(AdvanceError::Failed(error)) => PersistResult::Failed { error },
         }
     }
 
-    async fn reload(&mut self, generation: u64, reason: String) -> PersistResult {
+    /// Checks whether the durable stream still has the head the actor knows. A peer may have advanced
+    /// and trimmed the inbox before this worker observed its notification, so a mismatch reloads the
+    /// canonical history even when there are no local commands to persist.
+    pub async fn reconcile(&mut self, version: i64, chain_hash: u64) -> PersistResult {
+        match self.service.head(&self.stream_id).await {
+            Ok(Some(head)) if head.version == version && head.chain_hash == chain_hash => PersistResult::Current,
+            Ok(_) => {
+                self.reload("the durable head advanced without a local persistence")
+                    .await
+            }
+            Err(error) => PersistResult::Failed { error },
+        }
+    }
+
+    /// Builds the replica from the log: this instance has no history yet, or no longer agrees with the
+    /// log. The same work either way, so a stream starts from a reload like any other.
+    pub async fn reload(&mut self, reason: impl Into<String>) -> PersistResult {
         match self.load_canonical().await {
-            Ok((snapshot, tail, replica)) => {
+            Ok((snapshot, tail, stored_inbox, replica)) => {
                 self.replica = replica;
                 PersistResult::Reloaded {
-                    generation,
                     snapshot,
                     tail: tail.into(),
-                    reason,
+                    stored_inbox,
+                    reason: reason.into(),
                 }
             }
-            Err(error) => PersistResult::Failed { generation, error },
+            Err(error) => PersistResult::Failed { error },
         }
     }
 
+    #[allow(clippy::type_complexity)]
     async fn load_canonical(
         &self,
-    ) -> Result<(Option<StoredSnapshot>, Vec<StoredCommand>, Replica<S>), CommandStreamError> {
+    ) -> Result<(Option<StoredSnapshot>, Vec<StoredCommand>, Option<InboxId>, Replica<S>), CommandStreamError> {
         let stored = self.service.load(&self.stream_id).await?;
         let replica = Self::rebuild(stored.snapshot.as_ref(), &stored.tail)?;
-        Ok((stored.snapshot, stored.tail, replica))
+        Ok((stored.snapshot, stored.tail, stored.stored_inbox, replica))
     }
 
     /// Rebuilds the replica from the given snapshot and commands.
@@ -368,6 +277,7 @@ where
         Ok((snapshot, checkpoint))
     }
 
+    /// Clears what is durable from the inbox and tells the other instances how far the log goes.
     async fn finish(&self, commands: &[StoredCommand]) {
         self.service.trim_inbox(&self.stream_id, commands).await;
         self.service
@@ -376,7 +286,6 @@ where
     }
 }
 
-enum AdvanceError {
-    Reload(String),
-    Failed(CommandStreamError),
-}
+#[cfg(test)]
+#[path = "./stream_persistence_test.rs"]
+mod stream_persistence_test;

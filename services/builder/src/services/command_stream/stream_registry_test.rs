@@ -8,11 +8,12 @@ use crate::{
         command_log::{pg::PgCommandLogDb, CommandLogDb},
     },
     services::command_stream::{
-        CommandStreamConfig, CommandStreamService, StreamRegistry, WorkerConfig, MAX_COMMAND_BYTES,
+        CommandStreamConfig, PersistResult, StreamLogService, StreamPersistence, StreamRegistry, WorkerConfig,
+        MAX_COMMAND_BYTES,
     },
     testing::command_stream::{
-        create_test_inbox, create_test_log, fetch_all_commands, message_kinds, message_versions, stream_id, TestEgress,
-        TestInbox, TestLog, WAIT_NOTIFICATION,
+        create_test_inbox, create_test_log, fetch_all_commands, message_kinds, message_versions, stream_id, ChatLog,
+        TestEgress, TestInbox, TestLog, WAIT_NOTIFICATION,
     },
 };
 use shine_game::replica::{
@@ -34,7 +35,7 @@ async fn harness(worker: WorkerConfig) -> Option<Harness> {
     let log = create_test_log().await?;
     let inbox = create_test_inbox(60).await?;
     let egress = TestEgress::default();
-    let service = || CommandStreamService::new(inbox.db.clone(), log.db.clone(), CommandStreamConfig::default());
+    let service = || StreamLogService::new(inbox.db.clone(), log.db.clone(), CommandStreamConfig::default());
     let registry = StreamRegistry::builder(inbox.db.clone(), log.db.clone())
         .register::<ChatState, _>(service(), egress.clone(), worker.clone())
         .register::<PixelMapState, _>(service(), egress.clone(), worker)
@@ -76,6 +77,37 @@ impl Harness {
             .wait(connection, |m| m.iter().any(|message| message.stream_id() == stream))
             .await;
     }
+
+    /// The subscribers are told the commands before they are in the log, so a test that cares about
+    /// durability has to wait for it on its own.
+    async fn wait_persisted(&self, stream: &StreamId, count: usize) {
+        let result = timeout(WAIT_NOTIFICATION, async {
+            while fetch_all_commands(&self.log.db, stream).await.len() < count {
+                sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await;
+        assert!(
+            result.is_ok(),
+            "{} commands persisted, expected {count}",
+            fetch_all_commands(&self.log.db, stream).await.len()
+        );
+    }
+
+    /// The trim follows the answer of the persistence worker, so an emptied inbox is awaited.
+    async fn wait_inbox_cleared(&self, stream: &StreamId) {
+        let result = timeout(WAIT_NOTIFICATION, async {
+            while self.inbox.len(stream).await > 0 {
+                sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await;
+        assert!(
+            result.is_ok(),
+            "the inbox still holds {} entries",
+            self.inbox.len(stream).await
+        );
+    }
 }
 
 async fn wait_for_workers(registry: &StreamRegistry<RedisCommandInboxDb, PgCommandLogDb>, count: usize) {
@@ -101,7 +133,7 @@ async fn a_kind_registered_twice_fails_the_build() {
     let Some(inbox) = create_test_inbox(60).await else {
         return;
     };
-    let service = || CommandStreamService::new(inbox.db.clone(), log.db.clone(), CommandStreamConfig::default());
+    let service = || StreamLogService::new(inbox.db.clone(), log.db.clone(), CommandStreamConfig::default());
 
     let result = StreamRegistry::builder(inbox.db.clone(), log.db.clone())
         .register::<ChatState, _>(service(), TestEgress::default(), WorkerConfig::quiet())
@@ -281,8 +313,61 @@ async fn streams_of_different_kinds_work_side_by_side_for_one_connection() {
             message_versions(m, &chat) == [1] && message_versions(m, &map) == [1, 2]
         })
         .await;
-    assert_eq!(fetch_all_commands(&h.log.db, &map).await.len(), 2);
+    // The subscribers are told before the log is written, so durability is awaited separately.
+    h.wait_persisted(&map, 2).await;
     h.registry.unlisten().await.unwrap();
+}
+
+#[test]
+async fn the_entries_of_the_stored_commands_are_cleared_from_the_inbox() {
+    let Some(h) = harness(WorkerConfig::quiet()).await else {
+        return;
+    };
+    h.registry.listen().await.unwrap();
+    let id = stream_id(ChatState::KIND);
+    let connection = h.join(&id).await;
+
+    h.push_chat(&id, "one").await;
+    h.push_chat(&id, "two").await;
+
+    h.egress.wait(connection, |m| message_versions(m, &id) == [1, 2]).await;
+    h.wait_persisted(&id, 2).await;
+    h.wait_inbox_cleared(&id).await;
+    h.registry.unlisten().await.unwrap();
+}
+
+#[test]
+async fn a_quiet_worker_reconciles_a_durable_head_advanced_by_a_peer() {
+    let Some(h) = harness(WorkerConfig {
+        backstop: Duration::from_millis(50),
+        ..WorkerConfig::quiet()
+    })
+    .await
+    else {
+        return;
+    };
+    let id = stream_id(ChatState::KIND);
+    let connection = h.join(&id).await;
+
+    let mut peer = StreamPersistence::<ChatState, _, _>::new(
+        id.clone(),
+        StreamLogService::new(h.inbox.db.clone(), h.log.db.clone(), CommandStreamConfig::default()),
+    );
+    assert!(matches!(
+        peer.reload("the peer is starting").await,
+        PersistResult::Reloaded { .. }
+    ));
+    let room = ChatLog::new("stored by peer", 1);
+    assert!(matches!(
+        peer.persist(0, 0, room.commands.into()).await,
+        PersistResult::Advanced { .. }
+    ));
+
+    h.egress
+        .wait(connection, |messages| {
+            message_kinds(messages) == ["sync:0", "reset", "sync:1"]
+        })
+        .await;
 }
 
 // ---------------------------------------------------------------------------------------------
