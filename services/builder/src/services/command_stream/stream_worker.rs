@@ -1,54 +1,23 @@
 use crate::{
-    models::messages::{StreamCommand, StreamMessage, StreamSnapshot},
     repositories::{
         command_inbox::CommandInboxDb,
         command_log::{CommandLogDb, StoredCommand},
     },
-    services::command_stream::{CommandStreamService, StreamEgress, StreamState},
+    services::command_stream::{
+        PersistResult, StreamActor, StreamConfig, StreamEgress, StreamLogService, StreamPersistence,
+    },
 };
 use shine_game::replica::{ReplayState, StreamId};
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::sync::{Arc, Mutex};
 use tokio::{
-    sync::{mpsc, Notify},
+    sync::{mpsc, oneshot, Notify},
+    task::JoinHandle,
     time::{self, Instant, MissedTickBehavior},
 };
 use uuid::Uuid;
 
-#[derive(Clone, Debug)]
-pub struct WorkerConfig {
-    /// Interval of the tick that looks at the inbox and the log even when no wake came, the safety net
-    /// for a wake that was lost.
-    pub backstop: Duration,
-    /// Least time between two passes triggered by wakes, so a steady flow of commands is worked in
-    /// batches.
-    pub min_wake_spacing: Duration,
-    /// How long the worker stays loaded after its last subscriber left.
-    pub unload_grace: Duration,
-    /// How many passes in a row may fail before the stream is given up.
-    pub max_failures: u32,
-}
-
-impl Default for WorkerConfig {
-    fn default() -> Self {
-        Self {
-            backstop: Duration::from_secs(10),
-            min_wake_spacing: Duration::from_millis(50),
-            unload_grace: Duration::from_secs(60),
-            max_failures: 5,
-        }
-    }
-}
-
-impl WorkerConfig {
-    pub fn quiet() -> Self {
-        WorkerConfig {
-            backstop: Duration::from_secs(3600),
-            min_wake_spacing: Duration::ZERO,
-            unload_grace: Duration::from_secs(3600),
-            max_failures: 3,
-        }
-    }
-}
+/// Only one batch per stream may be in flight, so nothing is gained by a deeper queue.
+const CHANNEL_CAPACITY: usize = 1;
 
 enum Message {
     Subscribe(Uuid),
@@ -56,127 +25,291 @@ enum Message {
     Stop,
 }
 
-/// How to reach a running worker. It does not depend on the kind of the stream, so the handles of
-/// all the workers fit in one map.
-#[derive(Clone)]
-pub struct WorkerHandle {
+/// The two tasks of a running stream: the fast path for optimistic in-memory handling and the durable path for persistence.
+pub struct StreamWorker {
     stream_id: StreamId,
     messages: mpsc::UnboundedSender<Message>,
     wake: Arc<Notify>,
+    tasks: Mutex<Option<[JoinHandle<()>; 2]>>,
 }
 
-impl WorkerHandle {
+impl StreamWorker {
+    /// Starts the two tasks of one stream. The caller is never blocked all heavy lifting is done asynchronously in the tasks.
+    pub fn start<S, I, L, E>(
+        service: StreamLogService<I, L>,
+        inbox: I,
+        egress: E,
+        stream_id: StreamId,
+        config: StreamConfig,
+    ) -> Arc<StreamWorker>
+    where
+        S: ReplayState,
+        I: CommandInboxDb + 'static,
+        L: CommandLogDb + 'static,
+        E: StreamEgress,
+    {
+        let (message_tx, message_rx) = mpsc::unbounded_channel();
+        let (request_tx, request_rx) = mpsc::channel(CHANNEL_CAPACITY);
+        let wake = Arc::new(Notify::new());
+        let stream_config = service.config().clone();
+
+        let persistence = StreamPersistence::<S, I, L>::new(stream_id.clone(), service);
+        let durable = tokio::spawn(run_persistence(persistence, request_rx));
+
+        let actor = StreamActor::<S, I, E>::new(stream_id.clone(), inbox, egress, stream_config);
+        let fast = tokio::spawn(run_actor(actor, config, wake.clone(), message_rx, request_tx));
+
+        Arc::new(StreamWorker {
+            stream_id,
+            messages: message_tx,
+            wake,
+            tasks: Mutex::new(Some([fast, durable])),
+        })
+    }
+
     pub fn stream_id(&self) -> &StreamId {
         &self.stream_id
     }
 
-    /// Adds the connection as a subscriber, or syncs it again if it already is one. `false` if the
-    /// worker has ended: the caller has to start a new one.
+    /// Adds or synchronizes a subscriber.
     pub fn subscribe(&self, connection_id: Uuid) -> bool {
         self.messages.send(Message::Subscribe(connection_id)).is_ok()
     }
 
+    /// Removes a subscriber.
     pub fn unsubscribe(&self, connection_id: Uuid) -> bool {
         self.messages.send(Message::Unsubscribe(connection_id)).is_ok()
     }
 
-    /// Tells the worker that there may be something new in the inbox or the log. Wakes collapse into
-    /// one pass.
+    /// Notifies the stream that there might be new messages in the inbox.
     pub fn wake(&self) {
         self.wake.notify_one();
     }
 
-    /// Asks the worker to persist what is waiting and end.
+    /// Asks the stream to persist what is waiting and stop.
     pub fn stop(&self) -> bool {
         self.messages.send(Message::Stop).is_ok()
     }
 
+    /// Returns whether the stream has finished and will not accept new messages.
     pub fn is_finished(&self) -> bool {
         self.messages.is_closed()
     }
 
-    /// Resolves when the worker has ended.
-    pub async fn finished(&self) {
+    /// Waits until both tasks have ended and pending messages have been persisted.
+    pub async fn wait_finished(&self) {
         self.messages.closed().await;
-    }
-
-    /// Whether both handles belong to the same worker.
-    pub fn is_same_worker(&self, other: &WorkerHandle) -> bool {
-        Arc::ptr_eq(&self.wake, &other.wake)
-    }
-}
-
-enum Flow {
-    Continue,
-    /// The log contradicts the state: load the stream again.
-    Reload,
-    /// The stream cannot be served.
-    GiveUp,
-}
-
-/// Starts the worker of one stream. It loads the stream, then serves its subscribers until the last one
-/// has left for the grace period, or it is stopped.
-pub fn spawn_worker<S, I, L, E>(
-    service: CommandStreamService<I, L>,
-    egress: E,
-    stream_id: StreamId,
-    config: WorkerConfig,
-) -> WorkerHandle
-where
-    S: ReplayState,
-    I: CommandInboxDb + 'static,
-    L: CommandLogDb + 'static,
-    E: StreamEgress,
-{
-    let (messages, receiver) = mpsc::unbounded_channel();
-    let wake = Arc::new(Notify::new());
-    let worker = StreamWorker::<S, I, L, E> {
-        service,
-        egress,
-        stream_id: stream_id.clone(),
-        config,
-        wake: wake.clone(),
-        state: None,
-        subscribers: HashMap::new(),
-        failures: 0,
-        grace_deadline: None,
-    };
-    tokio::spawn(worker.run(receiver));
-    WorkerHandle { stream_id, messages, wake }
-}
-
-struct StreamWorker<S: ReplayState, I: CommandInboxDb, L: CommandLogDb, E: StreamEgress> {
-    service: CommandStreamService<I, L>,
-    egress: E,
-    stream_id: StreamId,
-    config: WorkerConfig,
-    wake: Arc<Notify>,
-    state: Option<StreamState<S>>,
-    /// The subscribers, with the last version sent to each.
-    subscribers: HashMap<Uuid, i64>,
-    failures: u32,
-    /// When the worker ends if it has no subscriber by then.
-    grace_deadline: Option<Instant>,
-}
-
-impl<S, I, L, E> StreamWorker<S, I, L, E>
-where
-    S: ReplayState,
-    I: CommandInboxDb + 'static,
-    L: CommandLogDb + 'static,
-    E: StreamEgress,
-{
-    async fn run(mut self, mut receiver: mpsc::UnboundedReceiver<Message>) {
-        self.grace_deadline = Some(Instant::now() + self.config.unload_grace);
-        match self.service.load::<S>(&self.stream_id).await {
-            Ok(state) => self.state = Some(state),
-            Err(err) => {
-                tracing::warn!("[{}] Failed to load the stream: {err:#?}", self.stream_id);
-                self.reject_queued(&mut receiver).await;
-                return;
+        let tasks = self.tasks.lock().unwrap().take();
+        if let Some(tasks) = tasks {
+            for task in tasks {
+                task.await.ok();
             }
         }
+    }
+}
 
+enum PersistenceWork {
+    Persist {
+        baseline_version: i64,
+        baseline_chain_hash: u64,
+        commands: Arc<[StoredCommand]>,
+    },
+    Reconcile {
+        version: i64,
+        chain_hash: u64,
+    },
+}
+
+struct PersistenceRequest {
+    work: PersistenceWork,
+    response: oneshot::Sender<PersistResult>,
+}
+
+async fn run_persistence<S, I, L>(
+    mut persistence: StreamPersistence<S, I, L>,
+    mut requests: mpsc::Receiver<PersistenceRequest>,
+) where
+    S: ReplayState,
+    I: CommandInboxDb + 'static,
+    L: CommandLogDb + 'static,
+{
+    while let Some(PersistenceRequest { work, response }) = requests.recv().await {
+        let result = match work {
+            PersistenceWork::Persist {
+                baseline_version,
+                baseline_chain_hash,
+                commands,
+            } => {
+                persistence
+                    .persist(baseline_version, baseline_chain_hash, commands)
+                    .await
+            }
+            PersistenceWork::Reconcile { version, chain_hash } => persistence.reconcile(version, chain_hash).await,
+        };
+        response.send(result).ok();
+    }
+}
+
+/// The fast task: holds the actor back until the log has given it a history, then drives it until the
+/// stream ends.
+async fn run_actor<S, I, E>(
+    actor: StreamActor<S, I, E>,
+    config: StreamConfig,
+    wake: Arc<Notify>,
+    mut receiver: mpsc::UnboundedReceiver<Message>,
+    persistence: mpsc::Sender<PersistenceRequest>,
+) where
+    S: ReplayState,
+    I: CommandInboxDb + 'static,
+    E: StreamEgress,
+{
+    let stream_id = actor.stream_id().clone();
+    let reconcile_deadline = Instant::now() + config.backstop;
+    let mut loop_state = ActorLoop {
+        actor,
+        persistence,
+        wake,
+        failures: 0,
+        saturated: false,
+        grace_deadline: Some(Instant::now() + config.unload_grace),
+        reconcile_deadline,
+        config,
+    };
+
+    if !loop_state.preflight().await {
+        reject_queued(loop_state.actor.egress(), &stream_id, &mut receiver).await;
+        return;
+    }
+    loop_state.reconcile_deadline = Instant::now() + loop_state.config.backstop;
+
+    let mut persistence_result = None;
+    loop_state.run(&mut persistence_result, &mut receiver).await;
+}
+
+/// Answers the subscribers that queued up while the stream was loading or being given up.
+async fn reject_queued<E: StreamEgress>(
+    egress: &E,
+    stream_id: &StreamId,
+    receiver: &mut mpsc::UnboundedReceiver<Message>,
+) {
+    let message = Arc::new(crate::models::messages::StreamMessage::Unsynced { stream_id: stream_id.clone() });
+    receiver.close();
+    while let Some(queued) = receiver.recv().await {
+        if let Message::Subscribe(connection_id) = queued {
+            egress.send(connection_id, message.clone()).await;
+        }
+    }
+}
+
+/// What drives the actor: the actor itself holds no loop, so every wake, answer and message of the
+/// stream is turned into a call on it here.
+struct ActorLoop<S, I, E>
+where
+    S: ReplayState,
+    I: CommandInboxDb,
+    E: StreamEgress,
+{
+    actor: StreamActor<S, I, E>,
+    persistence: mpsc::Sender<PersistenceRequest>,
+    config: StreamConfig,
+    wake: Arc<Notify>,
+    failures: u32,
+    /// Whether the last pass found the optimistic backlog full, so the change is logged once.
+    saturated: bool,
+    /// When the stream ends if it has no subscriber by then.
+    grace_deadline: Option<Instant>,
+    /// A quiet stream still checks that another worker did not advance and trim the durable history
+    /// before its wake was observed.
+    reconcile_deadline: Instant,
+}
+
+impl<S, I, E> ActorLoop<S, I, E>
+where
+    S: ReplayState,
+    I: CommandInboxDb + 'static,
+    E: StreamEgress,
+{
+    async fn request_persist(
+        &self,
+        baseline_version: i64,
+        baseline_chain_hash: u64,
+        commands: Arc<[StoredCommand]>,
+    ) -> Result<oneshot::Receiver<PersistResult>, Arc<[StoredCommand]>> {
+        let (response, result) = oneshot::channel();
+        self.persistence
+            .send(PersistenceRequest {
+                work: PersistenceWork::Persist {
+                    baseline_version,
+                    baseline_chain_hash,
+                    commands,
+                },
+                response,
+            })
+            .await
+            .map_err(|error| match error.0.work {
+                PersistenceWork::Persist { commands, .. } => commands,
+                PersistenceWork::Reconcile { .. } => unreachable!(),
+            })?;
+        Ok(result)
+    }
+
+    async fn request_reconciliation(
+        &self,
+        version: i64,
+        chain_hash: u64,
+    ) -> Result<oneshot::Receiver<PersistResult>, ()> {
+        let (response, result) = oneshot::channel();
+        self.persistence
+            .send(PersistenceRequest {
+                work: PersistenceWork::Reconcile { version, chain_hash },
+                response,
+            })
+            .await
+            .map_err(|_| ())?;
+        Ok(result)
+    }
+
+    /// Reconciles the empty actor with the durable head before it may touch the inbox or a subscriber.
+    /// An existing empty stream is already current; a missing or non-empty stream takes the normal
+    /// reload path. Returns whether the stream is servable.
+    async fn preflight(&mut self) -> bool {
+        let (version, chain_hash) = self.actor.confirmed_head();
+        let loading = match self.request_reconciliation(version, chain_hash).await {
+            Ok(loading) => loading,
+            Err(()) => {
+                tracing::warn!("[{}] The persistence of the stream is gone", self.actor.stream_id());
+                return false;
+            }
+        };
+        match loading.await {
+            Ok(PersistResult::Reloaded {
+                snapshot, tail, stored_inbox, ..
+            }) => {
+                self.actor.accept_reload(snapshot, tail.to_vec(), stored_inbox);
+                true
+            }
+            Ok(PersistResult::Current) => true,
+            // Giving up at once: the actor holds nothing to serve, so there is no degraded stream to
+            // keep. `failed` is for a stream that has a history and may yet recover.
+            Ok(PersistResult::Failed { error }) => {
+                tracing::warn!("[{}] Failed to load the stream: {error:#?}", self.actor.stream_id());
+                false
+            }
+            Ok(PersistResult::Advanced { .. }) => {
+                unreachable!("preflight submits reconciliation, not persistence")
+            }
+            Err(_) => {
+                tracing::warn!("[{}] The persistence of the stream is gone", self.actor.stream_id());
+                false
+            }
+        }
+    }
+
+    async fn run(
+        &mut self,
+        persistence_result: &mut Option<oneshot::Receiver<PersistResult>>,
+        receiver: &mut mpsc::UnboundedReceiver<Message>,
+    ) {
         let mut backstop = time::interval(self.config.backstop);
         backstop.set_missed_tick_behavior(MissedTickBehavior::Delay);
         backstop.tick().await;
@@ -184,9 +317,10 @@ where
         let mut next_wake_pass = Instant::now();
 
         // Commands that arrived while loading are worked at once.
-        let mut alive = self.pass().await;
+        let mut alive = self.pass(persistence_result).await;
         while alive {
             let deadline = self.grace_deadline;
+            let reconcile_deadline = self.reconcile_deadline;
             let grace = async {
                 match deadline {
                     Some(deadline) => time::sleep_until(deadline).await,
@@ -199,226 +333,254 @@ where
                     Some(Message::Subscribe(connection_id)) => self.subscribe(connection_id).await,
                     Some(Message::Unsubscribe(connection_id)) => self.unsubscribe(connection_id),
                     Some(Message::Stop) | None => {
-                        self.pass().await;
+                        self.drain(persistence_result).await;
+                        alive = false;
+                    }
+                },
+                result = async {
+                    persistence_result
+                        .as_mut()
+                        .expect("the result branch is disabled without an outstanding job")
+                        .await
+                }, if persistence_result.is_some() => match result {
+                    Ok(result) => {
+                        persistence_result.take();
+                        alive = self.settle(result, persistence_result).await;
+                    }
+                    // The persistence is gone, so nothing can be made durable any more.
+                    Err(_) => {
+                        persistence_result.take();
+                        self.actor.give_up().await;
                         alive = false;
                     }
                 },
                 _ = wake.notified() => {
                     time::sleep_until(next_wake_pass).await;
-                    alive = self.pass().await;
+                    alive = self.pass(persistence_result).await;
                     next_wake_pass = Instant::now() + self.config.min_wake_spacing;
                 }
-                _ = backstop.tick() => alive = self.pass().await,
+                _ = backstop.tick() => alive = self.pass(persistence_result).await,
+                _ = time::sleep_until(reconcile_deadline), if persistence_result.is_none() => {
+                    alive = self.reconcile(persistence_result).await;
+                }
                 _ = grace => {
-                    // The last words: whatever is waiting in the inbox is persisted.
-                    self.pass().await;
+                    // The last words: whatever is waiting in the inbox is made durable.
+                    self.drain(persistence_result).await;
                     alive = false;
                 }
             }
         }
-        if self.state.is_none() {
-            self.reject_queued(&mut receiver).await;
-        }
     }
 
-    /// One look at the inbox and the log. Returns whether the worker goes on.
-    async fn pass(&mut self) -> bool {
-        let Some(mut state) = self.state.take() else {
-            return false;
-        };
-        match self.work(&mut state).await {
-            Flow::Continue => {
-                self.state = Some(state);
-                true
+    /// One look at the inbox: whatever waits there is versioned, sent to the subscribers and submitted.
+    /// Returns whether the stream goes on.
+    async fn pass(&mut self, persistence_result: &mut Option<oneshot::Receiver<PersistResult>>) -> bool {
+        let ingested = match self.actor.ingest().await {
+            Ok(ingested) => {
+                self.failures = 0;
+                ingested
             }
-            Flow::Reload => self.reload().await,
-            Flow::GiveUp => {
-                self.give_up().await;
+            Err(err) => return self.failed(err).await,
+        };
+        // Logged on the edges only: a saturated stream passes on every persistence round-trip.
+        if ingested.throttled != self.saturated {
+            self.saturated = ingested.throttled;
+            if self.saturated {
+                tracing::warn!(
+                    "[{}] The optimistic backlog is full, the inbox is left to wait for persistence",
+                    self.actor.stream_id()
+                );
+            } else {
+                tracing::info!("[{}] The optimistic backlog has room again", self.actor.stream_id());
+            }
+        }
+        if !ingested.commands.is_empty() {
+            self.actor.deliver(&ingested.commands).await;
+            self.arm_grace_if_empty();
+        }
+        self.submit(persistence_result).await
+    }
+
+    /// Submits what is waiting, if the persistence is free. Returns whether the stream goes on.
+    async fn submit(&mut self, persistence_result: &mut Option<oneshot::Receiver<PersistResult>>) -> bool {
+        match self.try_submit(persistence_result).await {
+            Ok(_) => true,
+            // The persistence is gone: what the subscribers were told can never be confirmed.
+            Err(_) => {
+                tracing::warn!("[{}] The persistence of the stream is gone", self.actor.stream_id());
+                self.actor.give_up().await;
                 false
             }
         }
     }
 
-    async fn work(&mut self, state: &mut StreamState<S>) -> Flow {
-        let more = match self.service.sync(state).await {
-            Ok(outcome) if outcome.reload => return Flow::Reload,
-            Ok(outcome) => {
-                self.deliver(outcome.confirmed).await;
-                outcome.more
-            }
-            Err(err) => return self.failed(err),
-        };
-        match self.service.replay(state).await {
-            Ok(outcome) if outcome.reload => return Flow::Reload,
-            Ok(outcome) => {
-                if let Some(checkpoint) = outcome.checkpoint {
-                    let message = StreamMessage::Checkpoint {
-                        stream_id: self.stream_id.clone(),
-                        version: checkpoint.version,
-                        state_hash: checkpoint.state_hash,
-                    };
-                    self.broadcast(Arc::new(message)).await;
-                }
-            }
-            Err(err) => return self.failed(err),
+    /// Hands the waiting batch to the persistence unless one is already on its way. The single place
+    /// that opens the in-flight window, so there is one place that can leave two jobs outstanding.
+    /// Returns whether a job was sent.
+    async fn try_submit(
+        &mut self,
+        persistence_result: &mut Option<oneshot::Receiver<PersistResult>>,
+    ) -> Result<bool, Arc<[StoredCommand]>> {
+        if persistence_result.is_some() {
+            return Ok(false);
         }
-        self.failures = 0;
-        if more {
-            // Work the rest of the backlog without waiting for another wake.
-            self.wake.notify_one();
+        if self.actor.optimistic().is_empty() {
+            return Ok(false);
         }
-        Flow::Continue
+        let commands = self.actor.optimistic().to_vec().into();
+        let (baseline_version, baseline_chain_hash) = self.actor.confirmed_head();
+        *persistence_result = Some(
+            self.request_persist(baseline_version, baseline_chain_hash, commands)
+                .await?,
+        );
+        self.reconcile_deadline = Instant::now() + self.config.backstop;
+        Ok(true)
     }
 
-    fn failed(&mut self, err: impl std::fmt::Debug) -> Flow {
+    /// Checks the durable head after a quiet period. Sending any work rearms the deadline, so an active
+    /// stream is reconciled by its normal persistence results instead of additional head reads.
+    async fn reconcile(&mut self, persistence_result: &mut Option<oneshot::Receiver<PersistResult>>) -> bool {
+        let (version, chain_hash) = self.actor.confirmed_head();
+        match self.request_reconciliation(version, chain_hash).await {
+            Ok(result) => {
+                *persistence_result = Some(result);
+                self.reconcile_deadline = Instant::now() + self.config.backstop;
+                true
+            }
+            Err(()) => {
+                tracing::warn!("[{}] The persistence of the stream is gone", self.actor.stream_id());
+                self.actor.give_up().await;
+                false
+            }
+        }
+    }
+
+    /// An answer of the persistence. Returns whether the stream goes on.
+    async fn settle(
+        &mut self,
+        result: PersistResult,
+        persistence_result: &mut Option<oneshot::Receiver<PersistResult>>,
+    ) -> bool {
+        match result {
+            PersistResult::Current => {
+                self.failures = 0;
+                true
+            }
+            PersistResult::Advanced {
+                canonical,
+                snapshot,
+                checkpoint,
+            } => {
+                self.failures = 0;
+                if self.actor.accept_canonical(&canonical, snapshot) {
+                    // The commands that piled up behind the batch are at other versions than the
+                    // subscribers were told: what they have of the stream is void.
+                    self.actor.resync_all().await;
+                }
+                if let Some(checkpoint) = checkpoint {
+                    self.actor.broadcast_checkpoint(checkpoint).await;
+                }
+                self.arm_grace_if_empty();
+                // The backlog may have been held back while the batch was in flight.
+                self.wake.notify_one();
+                self.submit(persistence_result).await
+            }
+            PersistResult::Reloaded {
+                snapshot,
+                tail,
+                stored_inbox,
+                reason,
+            } => {
+                tracing::info!("[{}] The stream is reloaded: {reason}", self.actor.stream_id());
+                self.failures = 0;
+                self.actor.accept_reload(snapshot, tail.to_vec(), stored_inbox);
+                // What the subscribers were told did not survive: they start again from the log.
+                self.actor.resync_all().await;
+                self.arm_grace_if_empty();
+                self.wake.notify_one();
+                true
+            }
+            PersistResult::Failed { error } => self.failed(error).await,
+        }
+    }
+
+    /// Makes durable what is waiting and waits for the answer, so that once the stream has ended, every
+    /// command it took from the inbox is in the log. A command that arrives after this is left in the
+    /// inbox for whoever serves the stream next.
+    async fn drain(&mut self, persistence_result: &mut Option<oneshot::Receiver<PersistResult>>) {
+        if let Err(err) = self.actor.ingest().await {
+            tracing::warn!(
+                "[{}] The last look at the inbox failed: {err:#?}",
+                self.actor.stream_id()
+            );
+        }
+        loop {
+            match self.try_submit(persistence_result).await {
+                // Nothing is waiting and nothing is in flight: everything taken is durable.
+                Ok(false) if persistence_result.is_none() => return,
+                Ok(_) => {}
+                Err(_) => return,
+            }
+            let Some(result) = persistence_result.take() else {
+                return;
+            };
+            let Ok(result) = result.await else {
+                return;
+            };
+            match result {
+                PersistResult::Current => continue,
+                PersistResult::Advanced { canonical, snapshot, .. } => {
+                    self.actor.accept_canonical(&canonical, snapshot);
+                }
+                PersistResult::Reloaded {
+                    snapshot, tail, stored_inbox, ..
+                } => {
+                    // The log holds a history of its own; the commands of this instance that are not in
+                    // it stay in the inbox, so they are not lost by giving up here.
+                    self.actor.accept_reload(snapshot, tail.to_vec(), stored_inbox);
+                    return;
+                }
+                PersistResult::Failed { error, .. } => {
+                    tracing::warn!(
+                        "[{}] The last commands could not be stored: {error:#?}",
+                        self.actor.stream_id()
+                    );
+                    return;
+                }
+            }
+        }
+    }
+
+    async fn failed(&mut self, err: impl std::fmt::Debug) -> bool {
         self.failures += 1;
         tracing::warn!(
             "[{}] The pass failed ({} in a row): {err:#?}",
-            self.stream_id,
+            self.actor.stream_id(),
             self.failures
         );
         if self.failures >= self.config.max_failures {
-            Flow::GiveUp
+            self.actor.give_up().await;
+            false
         } else {
-            Flow::Continue
-        }
-    }
-
-    /// Loads the stream again and syncs every subscriber from it.
-    async fn reload(&mut self) -> bool {
-        match self.service.load::<S>(&self.stream_id).await {
-            Ok(state) => {
-                tracing::info!("[{}] The stream is reloaded", self.stream_id);
-                self.failures = 0;
-                let reset = Arc::new(StreamMessage::Reset {
-                    stream_id: self.stream_id.clone(),
-                });
-                self.broadcast(reset).await;
-                let sync = Arc::new(sync_message(&state));
-                let version = state.confirmed_version();
-                self.state = Some(state);
-                for connection_id in self.subscriber_ids() {
-                    self.send_to_subscriber(connection_id, sync.clone(), version).await;
-                }
-                self.arm_grace_if_empty();
-                true
-            }
-            Err(err) => {
-                tracing::warn!("[{}] Failed to reload the stream: {err:#?}", self.stream_id);
-                self.give_up().await;
-                false
-            }
-        }
-    }
-
-    async fn give_up(&mut self) {
-        let message = Arc::new(StreamMessage::Unsynced {
-            stream_id: self.stream_id.clone(),
-        });
-        self.broadcast(message).await;
-        self.subscribers.clear();
-        self.state = None;
-    }
-
-    /// Answers the subscribers that queued up while the stream was loading or being given up.
-    async fn reject_queued(&mut self, receiver: &mut mpsc::UnboundedReceiver<Message>) {
-        let message = Arc::new(StreamMessage::Unsynced {
-            stream_id: self.stream_id.clone(),
-        });
-        receiver.close();
-        while let Some(queued) = receiver.recv().await {
-            if let Message::Subscribe(connection_id) = queued {
-                self.egress.send(connection_id, message.clone()).await;
-            }
+            true
         }
     }
 
     async fn subscribe(&mut self, connection_id: Uuid) {
         self.grace_deadline = None;
-        let Some(state) = self.state.as_ref() else {
-            return;
-        };
-        let version = state.confirmed_version();
-        let sync = Arc::new(sync_message(state));
-        self.send_to_subscriber(connection_id, sync, version).await;
+        self.actor.subscribe(connection_id, 0);
+        self.actor.resync(connection_id).await;
         self.arm_grace_if_empty();
     }
 
     fn unsubscribe(&mut self, connection_id: Uuid) {
-        self.subscribers.remove(&connection_id);
+        self.actor.unsubscribe(connection_id);
         self.arm_grace_if_empty();
-    }
-
-    /// Sends the newly confirmed commands to the subscribers that have not got them.
-    async fn deliver(&mut self, confirmed: Vec<StoredCommand>) {
-        let (Some(first), Some(last)) = (confirmed.first(), confirmed.last()) else {
-            return;
-        };
-        let (first, last) = (first.version, last.version);
-        let all = Arc::new(StreamMessage::Commands {
-            stream_id: self.stream_id.clone(),
-            commands: confirmed.iter().map(StreamCommand::from).collect(),
-        });
-        for connection_id in self.subscriber_ids() {
-            let Some(&sent_up_to) = self.subscribers.get(&connection_id) else {
-                continue;
-            };
-            let message = if sent_up_to + 1 == first {
-                all.clone()
-            } else {
-                let commands: Vec<_> = confirmed
-                    .iter()
-                    .filter(|command| command.version > sent_up_to)
-                    .map(StreamCommand::from)
-                    .collect();
-                if commands.is_empty() {
-                    continue;
-                }
-                Arc::new(StreamMessage::Commands {
-                    stream_id: self.stream_id.clone(),
-                    commands,
-                })
-            };
-            self.send_to_subscriber(connection_id, message, last).await;
-        }
-        self.arm_grace_if_empty();
-    }
-
-    async fn broadcast(&mut self, message: Arc<StreamMessage>) {
-        for connection_id in self.subscriber_ids() {
-            if !self.egress.send(connection_id, message.clone()).await {
-                self.subscribers.remove(&connection_id);
-            }
-        }
-        self.arm_grace_if_empty();
-    }
-
-    /// Sends a message that brings the subscriber up to `version`; a subscriber that cannot be sent to
-    /// is forgotten.
-    async fn send_to_subscriber(&mut self, connection_id: Uuid, message: Arc<StreamMessage>, version: i64) {
-        if self.egress.send(connection_id, message).await {
-            self.subscribers.insert(connection_id, version);
-        } else {
-            self.subscribers.remove(&connection_id);
-        }
-    }
-
-    fn subscriber_ids(&self) -> Vec<Uuid> {
-        self.subscribers.keys().copied().collect()
     }
 
     fn arm_grace_if_empty(&mut self) {
-        if self.subscribers.is_empty() && self.grace_deadline.is_none() {
+        if self.actor.subscriber_count() == 0 && self.grace_deadline.is_none() {
             self.grace_deadline = Some(Instant::now() + self.config.unload_grace);
         }
-    }
-}
-
-/// The state a subscriber starts from: the latest snapshot and the confirmed commands after it.
-fn sync_message<S: ReplayState>(state: &StreamState<S>) -> StreamMessage {
-    StreamMessage::Sync {
-        stream_id: state.stream_id().clone(),
-        snapshot: state.snapshot().map(StreamSnapshot::from),
-        commands: state.tail().iter().map(StreamCommand::from).collect(),
     }
 }

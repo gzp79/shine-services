@@ -131,7 +131,7 @@ async fn the_hub_sends_stream_messages_to_a_connection_by_its_id() {
 mod served {
     use super::*;
     use crate::{
-        services::{command_stream::WorkerConfig, hub_test_utils::Egress},
+        services::{command_stream::StreamConfig, hub_test_utils::Egress},
         testing::command_stream::{create_test_inbox, create_test_log, TestInbox, TestLog},
     };
     use shine_game::replica::{encode_command, ChatCommand, ChatState, PixelMapCommand, PixelMapState};
@@ -148,11 +148,9 @@ mod served {
     async fn served() -> Option<Served> {
         let log = create_test_log().await?;
         let inbox = create_test_inbox(60).await?;
-        let worker = WorkerConfig {
-            backstop: Duration::from_secs(3600),
-            min_wake_spacing: Duration::ZERO,
-            unload_grace: Duration::from_millis(200),
-            max_failures: 3,
+        let worker = StreamConfig {
+            unload_grace: Duration::from_millis(20),
+            ..StreamConfig::quiet()
         };
         let test = create_test_hub(TestHubOptions {
             streams: Some((log.db.clone(), inbox.db.clone(), worker)),

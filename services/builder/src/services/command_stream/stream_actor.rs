@@ -7,7 +7,7 @@ use crate::{
         command_inbox::{CommandInboxDb, InboxId},
         command_log::{StoredCommand, StoredSnapshot},
     },
-    services::command_stream::{CommandStreamConfig, StreamEgress},
+    services::command_stream::{StreamConfig, StreamEgress},
 };
 use shine_game::replica::{
     decode_command, encode_command, fold_chain_hash, Checkpoint, Command, ReplayState, StreamId,
@@ -40,7 +40,7 @@ where
     stream_id: StreamId,
     inbox: I,
     egress: E,
-    config: CommandStreamConfig,
+    config: StreamConfig,
 
     snapshot: Option<StoredSnapshot>,
     confirmed: Vec<StoredCommand>,
@@ -61,7 +61,7 @@ where
     E: StreamEgress,
 {
     /// An actor that holds nothing of the stream yet: everything it shows comes of the first reload.
-    pub fn new(stream_id: StreamId, inbox: I, egress: E, config: CommandStreamConfig) -> Self {
+    pub fn new(stream_id: StreamId, inbox: I, egress: E, config: StreamConfig) -> Self {
         Self {
             stream_id,
             inbox,
@@ -405,7 +405,3 @@ where
         }
     }
 }
-
-#[cfg(test)]
-#[path = "stream_actor_test.rs"]
-mod stream_actor_test;

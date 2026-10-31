@@ -8,8 +8,7 @@ use crate::{
         command_log::{pg::PgCommandLogDb, CommandLogDb},
     },
     services::command_stream::{
-        CommandStreamConfig, PersistResult, StreamLogService, StreamPersistence, StreamRegistry, WorkerConfig,
-        MAX_COMMAND_BYTES,
+        PersistResult, StreamConfig, StreamLogService, StreamPersistence, StreamRegistry, MAX_COMMAND_BYTES,
     },
     testing::command_stream::{
         create_test_inbox, create_test_log, fetch_all_commands, message_kinds, message_versions, stream_id, ChatLog,
@@ -31,11 +30,11 @@ struct Harness {
     registry: StreamRegistry<RedisCommandInboxDb, PgCommandLogDb>,
 }
 
-async fn harness(worker: WorkerConfig) -> Option<Harness> {
+async fn harness(worker: StreamConfig) -> Option<Harness> {
     let log = create_test_log().await?;
     let inbox = create_test_inbox(60).await?;
     let egress = TestEgress::default();
-    let service = || StreamLogService::new(inbox.db.clone(), log.db.clone(), CommandStreamConfig::default());
+    let service = || StreamLogService::new(inbox.db.clone(), log.db.clone(), StreamConfig::default());
     let registry = StreamRegistry::builder(inbox.db.clone(), log.db.clone())
         .register::<ChatState, _>(service(), egress.clone(), worker.clone())
         .register::<PixelMapState, _>(service(), egress.clone(), worker)
@@ -120,10 +119,10 @@ async fn wait_for_workers(registry: &StreamRegistry<RedisCommandInboxDb, PgComma
     assert!(result.is_ok(), "{} workers, expected {count}", registry.worker_count());
 }
 
-fn short_grace() -> WorkerConfig {
-    WorkerConfig {
+fn short_grace() -> StreamConfig {
+    StreamConfig {
         unload_grace: Duration::from_millis(200),
-        ..WorkerConfig::quiet()
+        ..StreamConfig::quiet()
     }
 }
 
@@ -133,11 +132,11 @@ async fn a_kind_registered_twice_fails_the_build() {
     let Some(inbox) = create_test_inbox(60).await else {
         return;
     };
-    let service = || StreamLogService::new(inbox.db.clone(), log.db.clone(), CommandStreamConfig::default());
+    let service = || StreamLogService::new(inbox.db.clone(), log.db.clone(), StreamConfig::default());
 
     let result = StreamRegistry::builder(inbox.db.clone(), log.db.clone())
-        .register::<ChatState, _>(service(), TestEgress::default(), WorkerConfig::quiet())
-        .register::<ChatState, _>(service(), TestEgress::default(), WorkerConfig::quiet())
+        .register::<ChatState, _>(service(), TestEgress::default(), StreamConfig::quiet())
+        .register::<ChatState, _>(service(), TestEgress::default(), StreamConfig::quiet())
         .build();
 
     assert!(matches!(result, Err(CommandStreamError::DuplicateKind(kind)) if kind == ChatState::KIND));
@@ -149,7 +148,7 @@ async fn a_kind_registered_twice_fails_the_build() {
 
 #[test]
 async fn a_new_stream_opens_with_its_registered_kind() {
-    let Some(h) = harness(WorkerConfig::quiet()).await else {
+    let Some(h) = harness(StreamConfig::quiet()).await else {
         return;
     };
 
@@ -161,7 +160,7 @@ async fn a_new_stream_opens_with_its_registered_kind() {
 
 #[test]
 async fn commands_are_checked_by_the_kind_of_their_stream() {
-    let Some(h) = harness(WorkerConfig::quiet()).await else {
+    let Some(h) = harness(StreamConfig::quiet()).await else {
         return;
     };
     let chat = encode_command::<ChatState>(&ChatCommand::Add { text: "hi".into() }).unwrap();
@@ -179,7 +178,7 @@ async fn commands_are_checked_by_the_kind_of_their_stream() {
 
 #[test]
 async fn a_valid_command_is_queued_in_the_inbox_of_its_stream() {
-    let Some(h) = harness(WorkerConfig::quiet()).await else {
+    let Some(h) = harness(StreamConfig::quiet()).await else {
         return;
     };
     let id = stream_id(ChatState::KIND);
@@ -195,7 +194,7 @@ async fn a_valid_command_is_queued_in_the_inbox_of_its_stream() {
 
 #[test]
 async fn a_command_that_is_not_valid_for_the_kind_is_refused_and_not_queued() {
-    let Some(h) = harness(WorkerConfig::quiet()).await else {
+    let Some(h) = harness(StreamConfig::quiet()).await else {
         return;
     };
     let id = stream_id(ChatState::KIND);
@@ -237,7 +236,7 @@ async fn a_command_that_is_not_valid_for_the_kind_is_refused_and_not_queued() {
 
 #[test]
 async fn subscribers_of_a_stream_share_one_worker_and_streams_have_their_own() {
-    let Some(h) = harness(WorkerConfig::quiet()).await else {
+    let Some(h) = harness(StreamConfig::quiet()).await else {
         return;
     };
     let (a, b) = (stream_id(ChatState::KIND), stream_id(PixelMapState::KIND));
@@ -258,7 +257,7 @@ async fn subscribers_of_a_stream_share_one_worker_and_streams_have_their_own() {
 
 #[test]
 async fn a_wake_reaches_the_worker_of_its_stream() {
-    let Some(h) = harness(WorkerConfig::quiet()).await else {
+    let Some(h) = harness(StreamConfig::quiet()).await else {
         return;
     };
     let (a, b) = (stream_id(ChatState::KIND), stream_id(PixelMapState::KIND));
@@ -280,7 +279,7 @@ async fn a_wake_reaches_the_worker_of_its_stream() {
 
 #[test]
 async fn the_inbox_wakes_the_workers_without_anyone_calling_wake() {
-    let Some(h) = harness(WorkerConfig::quiet()).await else {
+    let Some(h) = harness(StreamConfig::quiet()).await else {
         return;
     };
     h.registry.listen().await.unwrap();
@@ -296,7 +295,7 @@ async fn the_inbox_wakes_the_workers_without_anyone_calling_wake() {
 
 #[test]
 async fn streams_of_different_kinds_work_side_by_side_for_one_connection() {
-    let Some(h) = harness(WorkerConfig::quiet()).await else {
+    let Some(h) = harness(StreamConfig::quiet()).await else {
         return;
     };
     h.registry.listen().await.unwrap();
@@ -320,7 +319,7 @@ async fn streams_of_different_kinds_work_side_by_side_for_one_connection() {
 
 #[test]
 async fn the_entries_of_the_stored_commands_are_cleared_from_the_inbox() {
-    let Some(h) = harness(WorkerConfig::quiet()).await else {
+    let Some(h) = harness(StreamConfig::quiet()).await else {
         return;
     };
     h.registry.listen().await.unwrap();
@@ -338,9 +337,9 @@ async fn the_entries_of_the_stored_commands_are_cleared_from_the_inbox() {
 
 #[test]
 async fn a_quiet_worker_reconciles_a_durable_head_advanced_by_a_peer() {
-    let Some(h) = harness(WorkerConfig {
+    let Some(h) = harness(StreamConfig {
         backstop: Duration::from_millis(50),
-        ..WorkerConfig::quiet()
+        ..StreamConfig::quiet()
     })
     .await
     else {
@@ -351,7 +350,7 @@ async fn a_quiet_worker_reconciles_a_durable_head_advanced_by_a_peer() {
 
     let mut peer = StreamPersistence::<ChatState, _, _>::new(
         id.clone(),
-        StreamLogService::new(h.inbox.db.clone(), h.log.db.clone(), CommandStreamConfig::default()),
+        StreamLogService::new(h.inbox.db.clone(), h.log.db.clone(), StreamConfig::default()),
     );
     assert!(matches!(
         peer.reload("the peer is starting").await,
@@ -421,7 +420,7 @@ async fn ended_workers_are_not_running_and_a_purge_forgets_them() {
 
 #[test]
 async fn a_shutdown_persists_what_is_waiting_and_ends_every_worker() {
-    let Some(h) = harness(WorkerConfig::quiet()).await else {
+    let Some(h) = harness(StreamConfig::quiet()).await else {
         return;
     };
     let (a, b) = (stream_id(ChatState::KIND), stream_id(PixelMapState::KIND));

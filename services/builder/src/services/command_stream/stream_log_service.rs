@@ -4,7 +4,7 @@ use crate::{
         command_inbox::{CommandInboxDb, InboxId},
         command_log::{CommandLogDb, StoredCommand, StoredSnapshot, StreamHead},
     },
-    services::command_stream::CommandStreamConfig,
+    services::command_stream::StreamConfig,
 };
 use shine_game::replica::StreamId;
 use tracing::instrument;
@@ -45,15 +45,15 @@ pub enum SnapshotOutcome {
 pub struct StreamLogService<I: CommandInboxDb, L: CommandLogDb> {
     inbox: I,
     log: L,
-    config: CommandStreamConfig,
+    config: StreamConfig,
 }
 
 impl<I: CommandInboxDb, L: CommandLogDb> StreamLogService<I, L> {
-    pub fn new(inbox: I, log: L, config: CommandStreamConfig) -> Self {
+    pub fn new(inbox: I, log: L, config: StreamConfig) -> Self {
         Self { inbox, log, config }
     }
 
-    pub fn config(&self) -> &CommandStreamConfig {
+    pub fn config(&self) -> &StreamConfig {
         &self.config
     }
 

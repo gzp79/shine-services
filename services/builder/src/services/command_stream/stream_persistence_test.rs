@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
     repositories::{command_inbox::CommandInboxDb, command_log::CommandLogDb},
-    services::command_stream::CommandStreamConfig,
+    services::command_stream::StreamConfig,
     testing::command_stream::{
         create_test_inbox, create_test_log, fetch_all_commands, seed_chat_log_and_snapshots, stream_id, ChatLog,
         TestInbox, TestLog,
@@ -19,7 +19,7 @@ fn persistence(
     stream_id: StreamId,
     inbox: &TestInbox,
     log: &TestLog,
-    config: CommandStreamConfig,
+    config: StreamConfig,
 ) -> StreamPersistence<ChatState, impl CommandInboxDb + 'static, impl CommandLogDb + 'static> {
     StreamPersistence::new(
         stream_id,
@@ -32,7 +32,7 @@ async fn loading_takes_the_latest_snapshot_and_tail() {
     let Some((inbox, log)) = fixture().await else { return };
     let (stream_id, room) = seed_chat_log_and_snapshots(&log, 10, &[4, 7]).await;
 
-    let loaded = persistence(stream_id, &inbox, &log, CommandStreamConfig::default())
+    let loaded = persistence(stream_id, &inbox, &log, StreamConfig::default())
         .reload("the stream is starting")
         .await;
 
@@ -52,9 +52,9 @@ async fn persistence_appends_replays_and_returns_a_snapshot() {
     let Some((inbox, log)) = fixture().await else { return };
     let stream_id = stream_id(ChatState::KIND);
     let room = ChatLog::new("persist", 4);
-    let config = CommandStreamConfig {
+    let config = StreamConfig {
         snapshot_every: 2,
-        ..CommandStreamConfig::default()
+        ..StreamConfig::default()
     };
     let mut persistence = persistence(stream_id.clone(), &inbox, &log, config);
     persistence.reload("the stream is starting").await;
@@ -88,8 +88,8 @@ async fn concurrent_instances_converge_on_the_same_canonical_batch() {
     let Some((inbox, log)) = fixture().await else { return };
     let stream_id = stream_id(ChatState::KIND);
     let room = ChatLog::new("shared", 6);
-    let mut first = persistence(stream_id.clone(), &inbox, &log, CommandStreamConfig::default());
-    let mut second = persistence(stream_id.clone(), &inbox, &log, CommandStreamConfig::default());
+    let mut first = persistence(stream_id.clone(), &inbox, &log, StreamConfig::default());
+    let mut second = persistence(stream_id.clone(), &inbox, &log, StreamConfig::default());
     first.reload("the stream is starting").await;
     second.reload("the stream is starting").await;
 
@@ -109,8 +109,8 @@ async fn concurrent_instances_converge_on_the_same_canonical_batch() {
 async fn reconciliation_reloads_only_when_the_durable_head_changed() {
     let Some((inbox, log)) = fixture().await else { return };
     let stream_id = stream_id(ChatState::KIND);
-    let mut watcher = persistence(stream_id.clone(), &inbox, &log, CommandStreamConfig::default());
-    let mut peer = persistence(stream_id.clone(), &inbox, &log, CommandStreamConfig::default());
+    let mut watcher = persistence(stream_id.clone(), &inbox, &log, StreamConfig::default());
+    let mut peer = persistence(stream_id.clone(), &inbox, &log, StreamConfig::default());
     watcher.reload("the stream is starting").await;
     peer.reload("the stream is starting").await;
 

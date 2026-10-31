@@ -285,7 +285,3 @@ where
             .await;
     }
 }
-
-#[cfg(test)]
-#[path = "./stream_persistence_test.rs"]
-mod stream_persistence_test;

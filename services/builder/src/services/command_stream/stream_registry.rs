@@ -4,7 +4,7 @@ use crate::{
         command_inbox::{CommandInboxDb, InboxWake},
         command_log::CommandLogDb,
     },
-    services::command_stream::{StreamEgress, StreamLogService, StreamWorker, WorkerConfig},
+    services::command_stream::{StreamConfig, StreamEgress, StreamLogService, StreamWorker},
 };
 use futures::future::join_all;
 use shine_game::replica::{decode_command, ReplayState, StreamId, StreamKind};
@@ -64,7 +64,7 @@ pub struct StreamRegistryBuilder<I: CommandInboxDb, L: CommandLogDb> {
 
 impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistryBuilder<I, L> {
     /// Registers the kind `S::KIND`: its streams are served over `service` and send through `egress`.
-    pub fn register<S, E>(mut self, service: StreamLogService<I, L>, egress: E, config: WorkerConfig) -> Self
+    pub fn register<S, E>(mut self, service: StreamLogService<I, L>, egress: E, config: StreamConfig) -> Self
     where
         S: ReplayState,
         E: StreamEgress,

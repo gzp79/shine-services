@@ -16,7 +16,7 @@ async fn fixture() -> Option<(TestInbox, TestLog)> {
 }
 
 fn service(inbox: &TestInbox, log: &TestLog) -> StreamLogService<impl CommandInboxDb, impl CommandLogDb> {
-    StreamLogService::new(inbox.db.clone(), log.db.clone(), CommandStreamConfig::default())
+    StreamLogService::new(inbox.db.clone(), log.db.clone(), StreamConfig::default())
 }
 
 #[test]

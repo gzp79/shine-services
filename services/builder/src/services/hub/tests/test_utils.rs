@@ -1,6 +1,6 @@
 use crate::models::messages::PingEvent;
 use crate::repositories::{command_inbox::redis::RedisCommandInboxDb, command_log::pg::PgCommandLogDb};
-use crate::services::command_stream::{standard_registry, CommandStreamConfig, WorkerConfig};
+use crate::services::command_stream::{standard_registry, StreamConfig};
 use crate::services::{HubConfig, HubService, StreamAuthorizeService};
 use crate::{
     models::messages::{DisconnectReason, HubEvent, HubMessage, TopicKey},
@@ -36,7 +36,7 @@ pub struct TestHubOptions {
     pub session_check: Duration,
     pub ping_enabled: bool,
     pub redis_cns: Option<String>,
-    pub streams: Option<(PgCommandLogDb, RedisCommandInboxDb, WorkerConfig)>,
+    pub streams: Option<(PgCommandLogDb, RedisCommandInboxDb, StreamConfig)>,
 }
 
 impl Default for TestHubOptions {
@@ -81,11 +81,9 @@ pub async fn create_test_hub(options: TestHubOptions) -> Option<TestHub> {
             .with_session_service(session_service)
             .with_hub_registry(registry.clone())
             .with_stream_authorize_service(StreamAuthorizeService::new);
-        if let Some((log_db, inbox_db, worker)) = options.streams {
+        if let Some((log_db, inbox_db, config)) = options.streams {
             hub_builder = hub_builder
-                .with_stream_registry(|egress| {
-                    standard_registry(inbox_db, log_db, egress, CommandStreamConfig::default(), worker)
-                })
+                .with_stream_registry(|egress| standard_registry(inbox_db, log_db, egress, config))
                 .unwrap()
         };
         hub_builder.build().await.unwrap()

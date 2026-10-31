@@ -3,16 +3,16 @@ import { type StreamCommandFrame, StreamSession, wsConnectUrl, wsHeaders } from 
 import { MintedSession, SessionMint } from '$lib/mocks/session_mint';
 import { randomUUID } from 'node:crypto';
 
-// A stream is a shared, ordered log of commands of one kind. A client subscribes with the stream's id and
-// kind, gets the state to start from (`streamSync`), then every command after it in version order
+// A stream is a shared, ordered log of commands of one kind. A client subscribes with the stream's kind:id,
+// gets the state to start from (`streamSync`), then every command after it in version order
 // (`streamCommands`). Commands are queued with `streamCommand`; there is no success reply, the sender sees its
 // own command come back with its version. A refusal is a `streamNack` or `streamSubscribeFailed`.
 
 const CHAT = 'chat';
 const PIXEL_MAP = 'pixel-map';
 
-// Stream ids are 1 to 64 letters, digits and `_ . : -`. Unique per test, so tests never share a stream.
-const newStreamId = (prefix: string) => `${prefix}-${randomUUID().replace(/-/g, '')}`;
+// Stream names are 1 to 64 letters, digits and `_ . : -`. Unique per test, so tests never share a stream.
+const newStreamId = (kind: string, prefix: string) => `${kind}:${prefix}-${randomUUID().replace(/-/g, '')}`;
 
 const add = (text: string) => ({ type: 'add', text });
 const paint = (x: number, y: number, color: number) => ({ type: 'paint', x, y, color });
@@ -49,12 +49,12 @@ test.describe('Builder streams', { tag: ['@regression'] }, () => {
         homeUrl,
         builderWSUrl
     }) => {
-        const streamId = newStreamId('room');
+        const streamId = newStreamId(CHAT, 'room');
         const a = await connect(homeUrl, builderWSUrl, alice);
         const b = await connect(homeUrl, builderWSUrl, bob);
 
-        const syncA = await a.subscribe(streamId, CHAT);
-        const syncB = await b.subscribe(streamId, CHAT);
+        const syncA = await a.subscribe(streamId);
+        const syncB = await b.subscribe(streamId);
         expect(syncA).toEqual({ type: 'streamSync', streamId, snapshot: null, commands: [] });
         expect(syncB).toEqual({ type: 'streamSync', streamId, snapshot: null, commands: [] });
 
@@ -85,9 +85,9 @@ test.describe('Builder streams', { tag: ['@regression'] }, () => {
         homeUrl,
         builderWSUrl
     }) => {
-        const streamId = newStreamId('room');
+        const streamId = newStreamId(CHAT, 'room');
         const a = await connect(homeUrl, builderWSUrl, alice);
-        await a.subscribe(streamId, CHAT);
+        await a.subscribe(streamId);
         for (const text of ['one', 'two', 'three']) {
             a.command(streamId, randomUUID(), add(text));
         }
@@ -97,7 +97,7 @@ test.describe('Builder streams', { tag: ['@regression'] }, () => {
         }
 
         const b = await connect(homeUrl, builderWSUrl, bob);
-        const sync = await b.subscribe(streamId, CHAT);
+        const sync = await b.subscribe(streamId);
         // No snapshot yet (they come every 100 commands), so the sync carries the whole log.
         expect(sync.snapshot).toBeNull();
         expect(sync.commands.map((c) => c.version)).toEqual([1, 2, 3]);
@@ -112,12 +112,12 @@ test.describe('Builder streams', { tag: ['@regression'] }, () => {
         homeUrl,
         builderWSUrl
     }) => {
-        const room = newStreamId('room');
-        const canvas = newStreamId('canvas');
+        const room = newStreamId(CHAT, 'room');
+        const canvas = newStreamId(PIXEL_MAP, 'canvas');
         const a = await connect(homeUrl, builderWSUrl, alice);
 
-        await a.subscribe(room, CHAT);
-        const sync = await a.subscribe(canvas, PIXEL_MAP);
+        await a.subscribe(room);
+        const sync = await a.subscribe(canvas);
         expect(sync.commands).toEqual([]);
         a.command(room, randomUUID(), add('hello'));
         a.command(canvas, randomUUID(), paint(3, 4, 5));
@@ -132,9 +132,9 @@ test.describe('Builder streams', { tag: ['@regression'] }, () => {
         homeUrl,
         builderWSUrl
     }) => {
-        const streamId = newStreamId('room');
+        const streamId = newStreamId(CHAT, 'room');
         const a = await connect(homeUrl, builderWSUrl, alice);
-        await a.subscribe(streamId, CHAT);
+        await a.subscribe(streamId);
 
         const commandId = randomUUID();
         a.command(streamId, commandId, add('same'));
@@ -154,11 +154,11 @@ test.describe('Builder streams', { tag: ['@regression'] }, () => {
         homeUrl,
         builderWSUrl
     }) => {
-        const streamId = newStreamId('room');
+        const streamId = newStreamId(CHAT, 'room');
         const a = await connect(homeUrl, builderWSUrl, alice);
         const b = await connect(homeUrl, builderWSUrl, bob);
-        await a.subscribe(streamId, CHAT);
-        await b.subscribe(streamId, CHAT);
+        await a.subscribe(streamId);
+        await b.subscribe(streamId);
 
         a.unsubscribe(streamId);
         // The unsubscribe is a request to the hub, in order with what follows on this connection.
@@ -180,7 +180,7 @@ test.describe('Builder streams', { tag: ['@regression'] }, () => {
         builderWSUrl
     }) => {
         const a = await connect(homeUrl, builderWSUrl, alice);
-        const streamId = newStreamId('room');
+        const streamId = newStreamId(CHAT, 'room');
         const commandId = randomUUID();
 
         a.command(streamId, commandId, add('hello'));
@@ -190,31 +190,6 @@ test.describe('Builder streams', { tag: ['@regression'] }, () => {
             streamId,
             commandId,
             reason: 'notSubscribed'
-        });
-    });
-
-    test('WS stream subscribe with an unknown kind shall fail', async ({ homeUrl, builderWSUrl }) => {
-        const a = await connect(homeUrl, builderWSUrl, alice);
-        const streamId = newStreamId('room');
-
-        a.send({ type: 'streamSubscribe', streamId, kind: 'nothing' });
-
-        expect(await a.waitFrame('streamSubscribeFailed', (f) => f.streamId === streamId)).toEqual({
-            type: 'streamSubscribeFailed',
-            streamId,
-            reason: 'unknownKind'
-        });
-    });
-
-    test('WS stream subscribe as another kind than the stream is shall fail', async ({ homeUrl, builderWSUrl }) => {
-        const a = await connect(homeUrl, builderWSUrl, alice);
-        const streamId = newStreamId('canvas');
-        await a.subscribe(streamId, PIXEL_MAP);
-
-        a.send({ type: 'streamSubscribe', streamId, kind: CHAT });
-
-        expect(await a.waitFrame('streamSubscribeFailed', (f) => f.streamId === streamId)).toMatchObject({
-            reason: 'kindMismatch'
         });
     });
 
@@ -228,8 +203,8 @@ test.describe('Builder streams', { tag: ['@regression'] }, () => {
     ]) {
         test(`WS stream ${invalid.title} shall be refused as invalid`, async ({ homeUrl, builderWSUrl }) => {
             const a = await connect(homeUrl, builderWSUrl, alice);
-            const streamId = newStreamId('stream');
-            await a.subscribe(streamId, invalid.kind);
+            const streamId = newStreamId(invalid.kind, 'stream');
+            await a.subscribe(streamId);
             const commandId = randomUUID();
 
             a.command(streamId, commandId, invalid.command);
@@ -253,13 +228,13 @@ test.describe('Builder streams', { tag: ['@regression'] }, () => {
         const a = await connect(homeUrl, builderWSUrl, alice);
 
         // Not valid stream ids, and frames missing their fields.
-        a.send({ type: 'streamSubscribe', streamId: 'has spaces', kind: CHAT });
-        a.send({ type: 'streamSubscribe', streamId: '', kind: CHAT });
+        a.send({ type: 'streamSubscribe', streamId: 'has spaces' });
+        a.send({ type: 'streamSubscribe', streamId: '' });
         a.sendRaw(JSON.stringify({ type: 'streamSubscribe' }));
         a.sendRaw(JSON.stringify({ type: 'streamCommand', streamId: 'x' }));
 
-        const streamId = newStreamId('room');
-        expect(await a.subscribe(streamId, CHAT)).toMatchObject({ type: 'streamSync', streamId });
+        const streamId = newStreamId(CHAT, 'room');
+        expect(await a.subscribe(streamId)).toMatchObject({ type: 'streamSync', streamId });
     });
 
     // Snapshots are taken every 100 commands. The pixel map is a state worth one: a 32 by 32 grid of colors.
@@ -267,9 +242,9 @@ test.describe('Builder streams', { tag: ['@regression'] }, () => {
         homeUrl,
         builderWSUrl
     }) => {
-        const streamId = newStreamId('canvas');
+        const streamId = newStreamId(PIXEL_MAP, 'canvas');
         const a = await connect(homeUrl, builderWSUrl, alice);
-        await a.subscribe(streamId, PIXEL_MAP);
+        await a.subscribe(streamId);
 
         // Paint 100 different pixels: row by row, a color from 1 to 15.
         const pixel = (n: number) => ({ x: n % 32, y: Math.floor(n / 32), color: (n % 15) + 1 });
@@ -283,7 +258,7 @@ test.describe('Builder streams', { tag: ['@regression'] }, () => {
         expect(checkpoint.stateHash).toMatch(/^[0-9a-f]{16}$/);
 
         const b = await connect(homeUrl, builderWSUrl, bob);
-        const sync = await b.subscribe(streamId, PIXEL_MAP);
+        const sync = await b.subscribe(streamId);
         expect(sync.commands).toEqual([]);
         expect(sync.snapshot).toMatchObject({ version: 100, stateHash: checkpoint.stateHash });
         expect(sync.snapshot?.chainHash).toMatch(/^[0-9a-f]{16}$/);

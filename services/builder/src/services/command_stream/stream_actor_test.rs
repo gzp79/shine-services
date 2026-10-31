@@ -1,16 +1,16 @@
-use super::*;
 use crate::{
     repositories::{
         command_inbox::redis::RedisCommandInboxDb,
-        command_log::{pg::PgCommandLogDb, CommandLogDb},
+        command_log::{pg::PgCommandLogDb, CommandLogDb, StoredCommand},
     },
-    services::command_stream::{CommandStreamConfig, PersistResult, StreamLogService, StreamPersistence},
+    services::command_stream::{PersistResult, StreamActor, StreamConfig, StreamLogService, StreamPersistence},
     testing::command_stream::{
         create_test_inbox, create_test_log, persist_chat_logs, stream_id, ChatLog, TestEgress, TestInbox, TestLog,
     },
 };
-use shine_game::replica::{ChatState, ReplayState};
+use shine_game::replica::{ChatState, ReplayState, StreamId};
 use shine_test::test;
+use uuid::Uuid;
 
 type Actor = StreamActor<ChatState, RedisCommandInboxDb, TestEgress>;
 type Persistence = StreamPersistence<ChatState, RedisCommandInboxDb, PgCommandLogDb>;
@@ -23,13 +23,13 @@ type Persistence = StreamPersistence<ChatState, RedisCommandInboxDb, PgCommandLo
 async fn setup(stream_id: &StreamId, inbox: &TestInbox, log: &TestLog) -> (Actor, Persistence) {
     let mut persistence = Persistence::new(
         stream_id.clone(),
-        StreamLogService::new(inbox.db.clone(), log.db.clone(), CommandStreamConfig::default()),
+        StreamLogService::new(inbox.db.clone(), log.db.clone(), StreamConfig::default()),
     );
     let mut actor = Actor::new(
         stream_id.clone(),
         inbox.db.clone(),
         TestEgress::default(),
-        CommandStreamConfig::default(),
+        StreamConfig::default(),
     );
     let PersistResult::Reloaded {
         snapshot, tail, stored_inbox, ..

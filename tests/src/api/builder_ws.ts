@@ -59,7 +59,7 @@ export type StreamFrame =
     | {
           type: 'streamSubscribeFailed';
           streamId: string;
-          reason: 'unknownKind' | 'kindMismatch' | 'failed';
+          reason: 'unauthorized' | 'failed';
       };
 
 export type StreamFrameOf<T extends StreamFrame['type']> = Extract<StreamFrame, { type: T }>;
@@ -153,8 +153,8 @@ export class StreamSession {
     }
 
     // Subscribes and waits for the sync of that stream.
-    async subscribe(streamId: string, kind: string): Promise<StreamFrameOf<'streamSync'>> {
-        this.send({ type: 'streamSubscribe', streamId, kind });
+    async subscribe(streamId: string): Promise<StreamFrameOf<'streamSync'>> {
+        this.send({ type: 'streamSubscribe', streamId });
         return await this.waitFrame('streamSync', (frame) => frame.streamId === streamId);
     }
 
