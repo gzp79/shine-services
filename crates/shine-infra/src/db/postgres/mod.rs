@@ -5,6 +5,8 @@ mod pg_listener;
 mod pg_type;
 mod query_builder;
 
+pub mod testing;
+
 pub use self::{
     error_check::PgErrorChecks,
     pg_connection::{
@@ -16,7 +18,8 @@ pub use self::{
     pg_listener::{PgListener, PgNotification},
     pg_type::{
         PgValue, PgValueTypeBool, PgValueTypeInt2, PgValueTypeInt2Array, PgValueTypeInt4, PgValueTypeInt8,
-        PgValueTypeTimestamptz, PgValueTypeUuid, PgValueTypeVarchar, PgValueTypeVarcharArray, ToPgType,
+        PgValueTypeInt8Array, PgValueTypeTimestamptz, PgValueTypeUnknown, PgValueTypeUuid, PgValueTypeUuidArray,
+        PgValueTypeVarchar, PgValueTypeVarcharArray, ToPgType,
     },
     query_builder::{AndWhere, QueryBuilder},
 };
@@ -63,10 +66,10 @@ macro_rules! __pg_traced {
 /// Create a prepared SQL statements
 #[macro_export]
 macro_rules! pg_prepared_statement {
-    ($id:ident => $stmt:expr, [$($pid:ident:$pty:ty),*]) => {
+    ($vis:vis $id:ident => $stmt:expr, [$($pid:ident:$pty:ty),*]) => {
 
         #[derive(Clone, Copy, Debug)]
-        struct $id($crate::db::postgres::PgStatementId);
+        $vis struct $id($crate::db::postgres::PgStatementId);
 
         impl $id {
             #[allow(dead_code)]
@@ -117,13 +120,13 @@ macro_rules! pg_query {
             pub async fn query<T>(
                 &self,
                 client: &$crate::db::postgres::PgConnection<T>,
-                $($pid: &$pty,)*
+                $($pid: $pty,)*
             ) -> Result<Vec<$rty>, $crate::db::postgres::PgRawError>
             where
                 T: $crate::db::postgres::PgRawConnection
             {
                 $crate::__pg_traced!($id, "query", $stmt, statement = self.statement(client), async {
-                    let rows = client.query(&statement, &[$($pid,)*]).await?;
+                    let rows = client.query(&statement, &[$(&$pid,)*]).await?;
                     rows.into_iter().map(|$row| $extract).collect::<Result<Vec<_>,_>>()
                 })
             }
@@ -133,13 +136,13 @@ macro_rules! pg_query {
             pub async fn query_one<T>(
                 &self,
                 client: &$crate::db::postgres::PgConnection<T>,
-                $($pid: &$pty,)*
+                $($pid: $pty,)*
             ) -> Result<$rty, $crate::db::postgres::PgRawError>
             where
                 T: $crate::db::postgres::PgRawConnection
             {
                 $crate::__pg_traced!($id, "query_one", $stmt, statement = self.statement(client), async {
-                    let $row = client.query_one(&statement, &[$($pid,)*]).await?;
+                    let $row = client.query_one(&statement, &[$(&$pid,)*]).await?;
                     $extract
                 })
             }
@@ -149,13 +152,13 @@ macro_rules! pg_query {
             pub async fn query_opt<T>(
                 &self,
                 client: &$crate::db::postgres::PgConnection<T>,
-                $($pid: &$pty,)*
+                $($pid: $pty,)*
             ) -> Result<Option<$rty>, $crate::db::postgres::PgRawError>
             where
                 T: $crate::db::postgres::PgRawConnection
             {
                 $crate::__pg_traced!($id, "query_opt", $stmt, statement = self.statement(client), async {
-                    client.query_opt(&statement, &[$($pid,)*])
+                    client.query_opt(&statement, &[$(&$pid,)*])
                         .await?
                         .map(|$row| $extract)
                         .transpose()
@@ -164,31 +167,31 @@ macro_rules! pg_query {
         }
     };
 
-    ($id:ident =>
+    ($vis:vis $id:ident =>
         in = $($pid:ident: $pty:ty),*;
         out = $rid:ident: $rty:ty;
         sql = $stmt:expr ) => {
 
-        $crate::pg_prepared_statement!($id => $stmt, [$($pid:$pty),*]);
+        $crate::pg_prepared_statement!($vis $id => $stmt, [$($pid:$pty),*]);
         $crate::pg_query!(@row_queries $id, $stmt, [$($pid: $pty),*], $rty,
             row => row.try_get(&stringify!($rid)));
     };
 
-    ($id:ident =>
+    ($vis:vis $id:ident =>
         in = $($pid:ident: $pty:ty),*;
         out = $oty:ty;
         sql = $stmt:expr ) => {
 
-        $crate::pg_prepared_statement!($id => $stmt, [$($pid:$pty),*]);
+        $crate::pg_prepared_statement!($vis $id => $stmt, [$($pid:$pty),*]);
         $crate::pg_query!(@row_queries $id, $stmt, [$($pid: $pty),*], $oty,
             row => <$oty as postgres_from_row::FromRow>::try_from_row(&row));
     };
 
-    ($id:ident =>
+    ($vis:vis $id:ident =>
         in = $($pid:ident: $pty:ty),*;
         sql = $stmt:expr ) => {
 
-        $crate::pg_prepared_statement!($id => $stmt, [$($pid:$pty),*]);
+        $crate::pg_prepared_statement!($vis $id => $stmt, [$($pid:$pty),*]);
 
         impl $id {
             #[allow(clippy::too_many_arguments)]
@@ -196,13 +199,13 @@ macro_rules! pg_query {
             pub async fn execute<T>(
                 &self,
                 client: &$crate::db::postgres::PgConnection<T>,
-                $($pid: &$pty,)*
+                $($pid: $pty,)*
             ) -> Result<u64, $crate::db::postgres::PgRawError>
             where
                 T: $crate::db::postgres::PgRawConnection
             {
                 $crate::__pg_traced!($id, "execute", $stmt, statement = self.statement(client), async {
-                    client.execute(&statement, &[$($pid,)*]).await
+                    client.execute(&statement, &[$(&$pid,)*]).await
                 })
             }
         }

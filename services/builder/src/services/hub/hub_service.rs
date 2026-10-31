@@ -1,36 +1,44 @@
-use crate::services::hub::hub_metrics::hub_metrics;
 use crate::{
     models::{
-        messages::{DisconnectReason, HubEvent, HubMessage, TopicKey},
-        HubError,
+        messages::{
+            CommandFailure, DisconnectReason, HubEvent, HubMessage, StreamEvent, StreamMessage, SubscribeFailure,
+            TopicKey,
+        },
+        CommandStreamError, HubError,
     },
-    repositories::hub_registry::{redis::RedisHubConnectionDb, HubConnection, HubConnectionDb, HubRegistry},
+    repositories::{
+        command_inbox::redis::RedisCommandInboxDb,
+        command_log::pg::PgCommandLogDb,
+        hub_registry::{redis::RedisHubConnectionDb, HubConnection, HubConnectionDb, HubRegistry},
+    },
     services::{
+        command_stream::StreamRegistry,
         hub::{
             hub_command::ControlCommand,
             hub_connections::{Connections, DeadConnection, RemovedConnection},
+            hub_metrics::hub_metrics,
+            hub_streams::StreamSubscriptions,
             hub_subscribers::Subscribers,
-            tasks::{ChatDispatcher, Heartbeat, SessionChecker},
+            tasks::{Heartbeat, SessionChecker, StreamDispatcher},
         },
-        ChatService,
+        StreamAuthorizeService, StreamEgress,
     },
 };
 use opentelemetry::trace::SpanContext;
-use shine_infra::session::{CurrentUserService, SessionKey};
-use shine_infra::telemetry::{current_span_context, label, link_span};
+use serde::{Deserialize, Serialize};
+use shine_game::replica::StreamId;
+use shine_infra::{
+    serde::{consts, duration},
+    session::{CurrentUserService, SessionKey},
+    telemetry::{current_span_context, label, link_span},
+};
 use std::collections::VecDeque;
 use std::time::Instant;
 use std::{sync::Arc, time::Duration};
+use thiserror::Error as ThisError;
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::{info_span, Instrument};
 use uuid::Uuid;
-
-/// Cadence configuration for the hub's periodic connection consumers.
-pub struct HubIntervals {
-    pub heartbeat: Duration,
-    pub session_check: Duration,
-    pub chat: Duration,
-}
 
 /// Point-in-time counts of hub state, for status reporting.
 #[derive(Clone, Debug)]
@@ -39,34 +47,131 @@ pub struct HubStats {
     pub subscribers: usize,
 }
 
-struct Inner {
-    control_tx: mpsc::UnboundedSender<(ControlCommand, SpanContext, Instant)>,
-    connections: Connections,
-    subscribers: Subscribers,
-    hub_registry: RedisHubConnectionDb,
+/// Configuration for the hub's periodic connection consumers.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HubConfig {
+    #[serde(default = "duration::seconds::<300>", with = "duration::seconds")]
+    pub heartbeat: Duration,
+    #[serde(default = "duration::seconds::<60>", with = "duration::seconds")]
+    pub session_check: Duration,
+    #[serde(default = "duration::seconds::<10>", with = "duration::seconds")]
+    pub stream_shutdown_timeout: Duration,
+    #[serde(default = "consts::bool::<true>")]
+    pub ping_enabled: bool,
 }
 
-/// Messaging service for connected users.
-#[derive(Clone)]
-pub struct HubService {
-    inner: Arc<Inner>,
+impl HubConfig {
+    pub const fn defaults() -> Self {
+        Self {
+            heartbeat: duration::seconds::<300>(),
+            session_check: duration::seconds::<60>(),
+            stream_shutdown_timeout: duration::seconds::<10>(),
+            ping_enabled: true,
+        }
+    }
 }
 
-impl HubService {
-    pub async fn new(
-        hub_registry: RedisHubConnectionDb,
-        session_service: Arc<CurrentUserService>,
-        chat_service: ChatService,
-        intervals: HubIntervals,
-    ) -> Self {
+#[derive(ThisError, Debug)]
+pub enum HubServiceBuilderError {
+    #[error("Missing session service")]
+    MissingSessionService,
+    #[error("Missing hub registry")]
+    MissingHubRegistry,
+    #[error("Missing stream authorize service")]
+    MissingStreamAuthorizeService,
+    #[error(transparent)]
+    CommandInbox(#[from] CommandStreamError),
+}
+
+/// Construction-time resources shared by the hub and its stream egress.
+pub struct HubServiceBuilder {
+    config: HubConfig,
+    connections: Arc<Connections>,
+    control_tx: mpsc::UnboundedSender<ControlMessage>,
+    control_rx: mpsc::UnboundedReceiver<ControlMessage>,
+
+    session_service: Option<Arc<CurrentUserService>>,
+    hub_registry: Option<RedisHubConnectionDb>,
+    stream_registry: Option<StreamRegistry<RedisCommandInboxDb, PgCommandLogDb>>,
+    stream_authorize_service: Option<StreamAuthorizeService>,
+}
+
+impl HubServiceBuilder {
+    fn new(config: HubConfig) -> Self {
         let (control_tx, control_rx) = mpsc::unbounded_channel();
+        Self {
+            config,
+            connections: Arc::new(Connections::new()),
+            control_tx,
+            control_rx,
+            session_service: None,
+            hub_registry: None,
+            stream_registry: None,
+            stream_authorize_service: None,
+        }
+    }
 
-        let service = Self {
+    #[must_use]
+    pub fn with_session_service(mut self, session_service: Arc<CurrentUserService>) -> Self {
+        self.session_service = Some(session_service);
+        self
+    }
+
+    #[must_use]
+    pub fn with_hub_registry(mut self, hub_registry: RedisHubConnectionDb) -> Self {
+        self.hub_registry = Some(hub_registry);
+        self
+    }
+
+    pub fn with_stream_registry<F>(mut self, stream_registry: F) -> Result<Self, CommandStreamError>
+    where
+        F: FnOnce(&HubStreamEgress) -> Result<StreamRegistry<RedisCommandInboxDb, PgCommandLogDb>, CommandStreamError>,
+    {
+        let stream_egress = HubStreamEgress {
+            connections: self.connections.clone(),
+            control_tx: self.control_tx.clone(),
+        };
+        self.stream_registry = Some(stream_registry(&stream_egress)?);
+        Ok(self)
+    }
+
+    #[must_use]
+    pub fn with_stream_authorize_service<F>(mut self, stream_authorize_service: F) -> Self
+    where
+        F: FnOnce() -> StreamAuthorizeService,
+    {
+        self.stream_authorize_service = Some(stream_authorize_service());
+        self
+    }
+
+    pub async fn build(self) -> Result<HubService, HubServiceBuilderError> {
+        let Self {
+            config,
+            connections,
+            control_tx,
+            control_rx,
+            session_service,
+            hub_registry,
+            stream_registry,
+            stream_authorize_service,
+        } = self;
+
+        let session_service = session_service.ok_or(HubServiceBuilderError::MissingSessionService)?;
+        let hub_registry = hub_registry.ok_or(HubServiceBuilderError::MissingHubRegistry)?;
+        let stream_authorize_service =
+            stream_authorize_service.ok_or(HubServiceBuilderError::MissingStreamAuthorizeService)?;
+
+        let service = HubService {
             inner: Arc::new(Inner {
                 control_tx,
-                connections: Connections::new(),
+                connections,
                 subscribers: Subscribers::new(),
                 hub_registry,
+                stream_registry,
+                stream_authorize_service,
+                subscriptions: StreamSubscriptions::default(),
+                ping_enabled: config.ping_enabled,
             }),
         };
 
@@ -76,13 +181,136 @@ impl HubService {
         // dispatcher is started last so nothing drains the channels until every subscription is in
         // place.
         let background_tasks = vec![
-            Self::start_registry_listener(service.clone()),
-            Heartbeat::start(service.clone(), intervals.heartbeat).await,
-            SessionChecker::start(service.clone(), session_service, intervals.session_check).await,
-            ChatDispatcher::start(service.clone(), chat_service, intervals.chat).await,
+            HubService::start_registry_listener(service.clone()),
+            Heartbeat::start(service.clone(), config.heartbeat).await,
+            SessionChecker::start(service.clone(), session_service, config.session_check).await,
         ];
-        Self::start_dispatcher(service.clone(), control_rx, background_tasks);
-        service
+        if let Some(registry) = service.inner.stream_registry.clone() {
+            registry.listen().await?;
+            StreamDispatcher::start(service.clone(), registry, config.stream_shutdown_timeout).await;
+        }
+        HubService::start_dispatcher(service.clone(), control_rx, background_tasks);
+        Ok(service)
+    }
+}
+
+type ControlMessage = (ControlCommand, SpanContext, Instant);
+
+#[derive(Clone)]
+pub struct HubStreamEgress {
+    connections: Arc<Connections>,
+    control_tx: mpsc::UnboundedSender<ControlMessage>,
+}
+
+impl StreamEgress for HubStreamEgress {
+    async fn send(&self, connection_id: Uuid, message: Arc<StreamMessage>) -> bool {
+        match self
+            .connections
+            .send_to_connection(connection_id, HubMessage::StreamMessage(message))
+            .await
+        {
+            Ok(queued) => queued,
+            Err(DeadConnection { connection_id, reason }) => {
+                let command = ControlCommand::DropConnection { connection_id, reason };
+                if self
+                    .control_tx
+                    .send((command, current_span_context(), Instant::now()))
+                    .is_err()
+                {
+                    tracing::warn!("[{connection_id}] Failed to prune a dead stream connection");
+                }
+                false
+            }
+        }
+    }
+}
+
+struct Inner {
+    control_tx: mpsc::UnboundedSender<ControlMessage>,
+    connections: Arc<Connections>,
+    subscribers: Subscribers,
+    hub_registry: RedisHubConnectionDb,
+    stream_registry: Option<StreamRegistry<RedisCommandInboxDb, PgCommandLogDb>>,
+    stream_authorize_service: StreamAuthorizeService,
+    subscriptions: StreamSubscriptions,
+    ping_enabled: bool,
+}
+
+/// Messaging service for connected users.
+#[derive(Clone)]
+pub struct HubService {
+    inner: Arc<Inner>,
+}
+
+impl HubService {
+    pub fn builder(hub_config: HubConfig) -> HubServiceBuilder {
+        HubServiceBuilder::new(hub_config)
+    }
+
+    pub fn ping_enabled(&self) -> bool {
+        self.inner.ping_enabled
+    }
+
+    /// The stream workers of this instance, if the hub serves streams.
+    pub fn stream_registry(&self) -> Option<&StreamRegistry<RedisCommandInboxDb, PgCommandLogDb>> {
+        self.inner.stream_registry.as_ref()
+    }
+
+    /// Subscribes the connection to a stream (or asks for it to be synced again), as `requested_kind` if the
+    /// stream is new. What the stream carries is then sent to the connection through the hub. This is the way
+    /// for every transport.
+    ///
+    /// The stream methods of the hub trust their caller: the transport has authenticated the user, and holds
+    /// the id the hub gave its connection. Neither is ever taken from the client. What the client does send
+    /// (stream id, command) is checked here and in the registry.
+    pub async fn subscribe_stream(
+        &self,
+        connection_id: Uuid,
+        user_id: Uuid,
+        stream_id: StreamId,
+    ) -> Result<(), SubscribeFailure> {
+        let registry = self.inner.stream_registry.as_ref().ok_or(SubscribeFailure::Failed)?;
+        let authorized = self
+            .inner
+            .stream_authorize_service
+            .is_authorized(user_id, &stream_id)
+            .await
+            .map_err(|err| {
+                tracing::warn!("[{connection_id}] Stream authorization failed: {err}");
+                SubscribeFailure::Failed
+            })?;
+        if !authorized {
+            tracing::info!("[{connection_id}] User {user_id} is not authorized for stream {stream_id}");
+            return Err(SubscribeFailure::Unauthorized);
+        }
+        registry.open(&stream_id).await.map_err(|err| err.subscribe_failure())?;
+        self.inner.subscriptions.subscribe(connection_id, stream_id.clone());
+        self.request_stream_subscribe(connection_id, stream_id)
+            .map_err(|_| SubscribeFailure::Failed)
+    }
+
+    pub fn unsubscribe_stream(&self, connection_id: Uuid, stream_id: StreamId) -> Result<(), HubError> {
+        self.inner.subscriptions.unsubscribe(connection_id, &stream_id);
+        self.request_stream_unsubscribe(connection_id, stream_id)
+    }
+
+    /// Queues a command of the connection, which has to be subscribed to the stream. It does not go through
+    /// the hub's loop. The sender sees its command come back with its version, in the stream.
+    pub async fn send_stream_command(
+        &self,
+        connection_id: Uuid,
+        user_id: Uuid,
+        stream_id: &StreamId,
+        command_id: Uuid,
+        command: &str,
+    ) -> Result<(), CommandFailure> {
+        match (
+            self.inner.subscriptions.contains(connection_id, stream_id),
+            self.inner.stream_registry.as_ref(),
+        ) {
+            (true, Some(registry)) => registry.push(stream_id, user_id, command_id, command).await,
+            _ => Err(CommandFailure::NotSubscribed),
+        }
     }
 
     fn send_control(&self, command: ControlCommand) -> Result<(), HubError> {
@@ -145,6 +373,16 @@ impl HubService {
         self.send_control(ControlCommand::DisconnectUser { user_id, connection_id, reason })
     }
 
+    /// Subscribes the connection to a stream, or asks for it to be synced again if it already is.
+    /// Ignored by the loop when the connection is no longer registered.
+    pub fn request_stream_subscribe(&self, connection_id: Uuid, stream_id: StreamId) -> Result<(), HubError> {
+        self.send_control(ControlCommand::SubscribeStream { connection_id, stream_id })
+    }
+
+    pub fn request_stream_unsubscribe(&self, connection_id: Uuid, stream_id: StreamId) -> Result<(), HubError> {
+        self.send_control(ControlCommand::UnsubscribeStream { connection_id, stream_id })
+    }
+
     /// Requests hub shutdown.
     pub fn request_shutdown(&self) -> Result<(), HubError> {
         self.send_control(ControlCommand::Shutdown)
@@ -202,7 +440,7 @@ impl HubService {
     /// Starts the command loop, the sole writer of connection state.
     fn start_dispatcher(
         service: HubService,
-        mut control_rx: mpsc::UnboundedReceiver<(ControlCommand, SpanContext, Instant)>,
+        mut control_rx: mpsc::UnboundedReceiver<ControlMessage>,
         background_tasks: Vec<JoinHandle<()>>,
     ) {
         tokio::spawn(async move {
@@ -367,6 +605,23 @@ impl HubService {
                 self.process_registry_change(user_id).await;
                 true
             }
+            ControlCommand::SubscribeStream { connection_id, stream_id } => {
+                // A subscribe that comes after the connection is gone must not start anything.
+                if self.inner.connections.contains(connection_id).await {
+                    self.publish_internal(StreamEvent::Subscribed { connection_id, stream_id })
+                        .await;
+                } else {
+                    self.inner.subscriptions.remove_connection(connection_id);
+                }
+                true
+            }
+            ControlCommand::UnsubscribeStream { connection_id, stream_id } => {
+                if self.inner.connections.contains(connection_id).await {
+                    self.publish_internal(StreamEvent::Unsubscribed { connection_id, stream_id })
+                        .await;
+                }
+                true
+            }
             ControlCommand::Shutdown => {
                 self.shutdown().await;
                 false
@@ -465,6 +720,7 @@ impl HubService {
             .publish(HubMessage::Hub(HubEvent::Shutdown))
             .await;
         self.inner.subscribers.clear().await;
+        self.inner.subscriptions.clear();
 
         if let Err(err) = self.inner.hub_registry.unlisten_registry_changes().await {
             tracing::warn!("Failed to stop listening to hub registry changes: {err:#?}");
@@ -478,11 +734,20 @@ impl HubService {
         }
     }
 
+    /// Delivers a stream event to the internal subscribers only: subscribing and unsubscribing must never
+    /// load the sockets' queues.
+    async fn publish_internal(&self, event: StreamEvent) {
+        self.inner.subscribers.publish(HubMessage::StreamEvent(event)).await;
+    }
+
     /// Delivers a lifecycle `HubEvent` to every internal subscriber and every topic-matching
     /// connection, pruning any connection found dead.
     async fn publish(&self, event: HubEvent) {
         let mut pending = VecDeque::from([event]);
         while let Some(event) = pending.pop_front() {
+            if let HubEvent::UserDisconnected { connection_id, .. } = &event {
+                self.inner.subscriptions.remove_connection(*connection_id);
+            }
             let message = HubMessage::Hub(event);
             // Internal subscribers first: only the loop delivers to them.
             self.inner.subscribers.publish(message.clone()).await;
@@ -499,6 +764,21 @@ impl HubService {
                         pending.push_back(HubEvent::UserDisconnected { user_id, connection_id, reason });
                     }
                 }
+            }
+        }
+    }
+}
+
+impl StreamEgress for HubService {
+    async fn send(&self, connection_id: Uuid, message: Arc<StreamMessage>) -> bool {
+        match self
+            .send_to_connection(connection_id, HubMessage::StreamMessage(message))
+            .await
+        {
+            Ok(queued) => queued,
+            Err(err) => {
+                tracing::warn!("[{connection_id}] Failed to send a stream message: {err:#?}");
+                false
             }
         }
     }

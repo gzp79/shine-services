@@ -19,6 +19,10 @@ struct Feature {
 
 impl FeatureConfig for Feature {
     const NAME: &'static str = "feature";
+
+    fn validate(&self) -> Result<(), anyhow::Error> {
+        Ok(())
+    }
 }
 
 const CONFIG_ROOT: &str = "./tests/web_configs";

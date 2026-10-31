@@ -10,8 +10,11 @@
   },
 
   "builder": {
-    "hubHeartbeatSeconds": 300,
-    "authCheckInterval": 60,
+    "hub": {
+      "heartbeat": 300,
+      "sessionCheck": 60,
+      "pingEnabled": false
+    },
     "ws": {
       "allowedHosts": ["^ws\\.scytta\\.com(:443)?$"]
     }

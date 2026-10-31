@@ -7,6 +7,7 @@ members = [
 	"crates/shine-core",
 	"crates/shine-infra-macros",
 	"crates/shine-infra",
+	"crates/shine-infra/shine-infra-testing",
 	"crates/shine-game",
 	"services/identity",
 	"services/builder",
@@ -30,6 +31,7 @@ config = "0.15"
 
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+postcard = { version = "1.1", default-features = false, features = ["use-std"] }
 
 time = "0.3"
 chrono = { version = "0.4", features = ["serde"] }
@@ -83,6 +85,7 @@ redis = { version = "1.0", features = ["tokio-comp", "tokio-rustls-comp"] }
 bb8-postgres = "0.9"
 tokio-postgres = "0.7"
 tokio-postgres-rustls = "0.14"
+postgres-types = "0.2"
 postgres-from-row = "0.5"
 refinery = { version = "0.10", features = ["tokio-postgres"] }
 
@@ -134,7 +137,11 @@ shine-test = { path = "./crates/shine-test" }
 shine-core = { path = "./crates/shine-core" }
 shine-infra-macros = { path = "./crates/shine-infra-macros" }
 shine-infra = { path = "./crates/shine-infra" }
+shine-infra-testing= { path = "./crates/shine-infra/shine-infra-testing" }
 shine-game = { path = "./crates/shine-game" }
+
+[profile.release]
+panic = "abort"
 
 [profile.release-lto]
 inherits = "release"

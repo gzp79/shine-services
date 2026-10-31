@@ -86,3 +86,4 @@ shine-infra = { workspace = true }
 
 [dev-dependencies]
 shine-test = { workspace = true }
+shine-infra-testing = { workspace = true }

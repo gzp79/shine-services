@@ -15,5 +15,5 @@
             "#wasm": ["./src/wasm-types/shine_game.d.ts"]
         }
     },
-    "include": ["src", "eslint.config.ts", "vite.config.ts", "vite-plugin-wasm-pack.ts"]
+    "include": ["src", "eslint.config.ts", "vite.config.ts", "vite.https.config.ts", "vite-plugin-wasm-pack.ts"]
 }

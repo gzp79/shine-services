@@ -50,7 +50,8 @@ impl RemovedConnection {
 fn try_send(tx: &mpsc::Sender<HubMessage>, message: HubMessage) -> Result<(), DisconnectReason> {
     let kind = match &message {
         HubMessage::Hub(_) => "hub",
-        HubMessage::Chat(_) => "chat",
+        HubMessage::Ping(_) => "ping",
+        HubMessage::StreamMessage(_) | HubMessage::StreamEvent(_) => "stream",
     };
     let (outcome, result) = match tx.try_send(message) {
         Ok(()) => ("ok", Ok(())),
@@ -193,6 +194,11 @@ impl Connections {
         } else {
             Err(dead)
         }
+    }
+
+    /// Whether the connection is registered.
+    pub async fn contains(&self, connection_id: Uuid) -> bool {
+        self.registry.read().await.connections.contains_key(&connection_id)
     }
 
     /// Number of connected users, for status reporting.

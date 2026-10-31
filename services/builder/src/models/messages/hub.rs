@@ -1,12 +1,14 @@
-use crate::models::messages::ChatBatch;
+use crate::models::messages::{PingEvent, StreamEvent, StreamMessage};
 use shine_infra::session::SessionKey;
+use std::sync::Arc;
 use uuid::Uuid;
 
 /// High level filter for messages sent to the hub bus.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TopicKey {
     Hub,
-    Chat,
+    Stream,
+    Ping,
 }
 
 pub trait ToTopic {
@@ -86,15 +88,23 @@ impl ToTopic for HubEvent {
 /// A message carried on the hub bus: a hub lifecycle event or a domain payload.
 #[derive(Clone, Debug)]
 pub enum HubMessage {
+    /// Connection lifecycle events.
     Hub(HubEvent),
-    Chat(ChatBatch),
+    /// A ping message used for internal keep-alive checks.
+    Ping(PingEvent),
+    /// A change of stream subscriptions.
+    StreamEvent(StreamEvent),
+    /// A message of a stream worker to one connection.
+    StreamMessage(Arc<StreamMessage>),
 }
 
 impl ToTopic for HubMessage {
     fn topic(&self) -> TopicKey {
         match self {
             HubMessage::Hub(event) => event.topic(),
-            HubMessage::Chat(batch) => batch.topic(),
+            HubMessage::Ping(event) => event.topic(),
+            HubMessage::StreamEvent(event) => event.topic(),
+            HubMessage::StreamMessage(message) => message.topic(),
         }
     }
 }

@@ -7,14 +7,16 @@
   },
 
   "builder": {
-    "hubHeartbeatSeconds": 300,
-    "authCheckInterval": 2,
+    "hub": {
+      "heartbeat": 300,
+      "sessionCheck": 2
+    },
     "chat": {
       "syncIntervalSeconds": 1
     },
     "db": {
-      "redisCns": "redis://redis.mockbox.foo:6379",
-      "sqlCns": "postgres://username:password@postgres.mockbox.foo:5432/database-builder?sslmode=disable"
+      "redisCns": "redis://redis.mockbox.foo:6379?timeout=3000&pool_timeout=5000",
+      "sqlCns": "postgres://username:password@postgres.mockbox.foo:5432/database-builder?sslmode=disable&connect_timeout=3&pool_timeout=5"
     },
     "ws": {
       "allowedHosts": ["^ws\\.local\\.scytta\\.com(:\\d+)?$"]

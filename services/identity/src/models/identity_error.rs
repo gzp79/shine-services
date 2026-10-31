@@ -43,24 +43,40 @@ pub enum IdentityError {
     #[error(transparent)]
     DataProtectionError(#[from] DataProtectionError),
 
+    #[error("Service {service} unavailable")]
+    ServiceUnavailable {
+        #[source]
+        source: Box<dyn StdError + Send + Sync>,
+        service: &'static str,
+        location: &'static Location<'static>,
+        backtrace: StdBacktrace,
+    },
     #[error("Internal error")]
-    InternalError {
+    Internal {
         #[source]
         source: Box<dyn StdError + Send + Sync>,
         location: &'static Location<'static>,
         backtrace: StdBacktrace,
-        unavailable: bool,
     },
 }
 
 impl IdentityError {
     #[track_caller]
-    fn internal_error(source: impl StdError + Send + Sync + 'static, unavailable: bool) -> Self {
-        Self::InternalError {
+    fn service_unavailable(service: &'static str, source: impl StdError + Send + Sync + 'static) -> Self {
+        Self::ServiceUnavailable {
+            service,
             source: Box::new(source),
             location: Location::caller(),
             backtrace: StdBacktrace::capture(),
-            unavailable,
+        }
+    }
+
+    #[track_caller]
+    fn internal(source: impl StdError + Send + Sync + 'static) -> Self {
+        Self::Internal {
+            source: Box::new(source),
+            location: Location::caller(),
+            backtrace: StdBacktrace::capture(),
         }
     }
 }
@@ -69,8 +85,8 @@ impl From<PgError> for IdentityError {
     #[track_caller]
     fn from(err: PgError) -> Self {
         match err {
-            PgError::CreatePoolError(_) | PgError::PoolError(_) => Self::internal_error(err, true),
-            _ => Self::internal_error(err, false),
+            PgError::CreatePoolError(_) | PgError::PoolError(_) => Self::service_unavailable("PostgreSQL", err),
+            _ => Self::internal(err),
         }
     }
 }
@@ -85,10 +101,10 @@ impl From<IdentityError> for Problem {
             IdentityError::ExternalIdConflict => Problem::conflict(pr::EXTERNAL_ID_CONFLICT).with_detail(err),
             IdentityError::MissingEmail => Problem::precondition_failed(pr::MISSING_EMAIL).with_detail(err),
             IdentityError::UserDeleted => Problem::conflict(pr::DELETE_CONFLICT).with_detail(err),
-            err @ IdentityError::InternalError { unavailable: true, .. } => Problem::service_unavailable()
+            err @ IdentityError::ServiceUnavailable { .. } => Problem::service_unavailable()
                 .with_detail(err.to_string())
                 .with_sensitive_dbg(err),
-            err @ IdentityError::InternalError { .. } => Problem::internal_error()
+            err @ IdentityError::Internal { .. } => Problem::internal_error()
                 .with_detail(err.to_string())
                 .with_sensitive_dbg(err),
             err => Problem::internal_error().with_detail(&err).with_sensitive_dbg(err),

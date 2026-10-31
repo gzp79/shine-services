@@ -578,6 +578,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 
 [[package]]
+name = "cobs"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0fa961b519f0b462e3a3b4a34b64d119eeaca1d59af726fe450bbba07a9fc0a1"
+dependencies = [
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "combine"
 version = "4.6.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1149,6 +1158,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e079f19b08ca6239f47f8ba8509c11cf3ea30095831f7fed61441475edd8c449"
 
 [[package]]
+name = "embedded-io"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef1a6892d9eef45c8fa6b9e0086428a2cca8491aca8f787c534a3d6d0bcb3ced"
+
+[[package]]
+name = "embedded-io"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "edd0f118536f44f5ccd48bcb8b111bdc3de888b58c74639dfb034a357d0f206d"
+
+[[package]]
 name = "encoding_rs"
 version = "0.8.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1598,6 +1619,12 @@ checksum = "54b4a22553d4242c49fddb9ba998a99962b5cc6f22cb5a3482bec22522403ce4"
 dependencies = [
  "http",
 ]
+
+[[package]]
+name = "heck"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "hex"
@@ -2869,6 +2896,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "postcard"
+version = "1.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6764c3b5dd454e283a30e6dfe78e9b31096d9e32036b5d1eaac7a6119ccb9a24"
+dependencies = [
+ "cobs",
+ "embedded-io 0.4.0",
+ "embedded-io 0.6.1",
+ "serde",
+]
+
+[[package]]
+name = "postgres-derive"
+version = "0.4.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4d9d9089bb0ce62f4b5d52a0be0f4acfb35738b979380670d3dea85fe38d6ddd"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "postgres-from-row"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2917,6 +2968,7 @@ dependencies = [
  "bytes",
  "chrono",
  "fallible-iterator",
+ "postgres-derive",
  "postgres-protocol",
  "uuid",
 ]
@@ -3888,21 +3940,26 @@ dependencies = [
  "anyhow",
  "async-trait",
  "axum",
+ "base64 0.23.1",
  "bb8",
  "bb8-postgres",
  "futures",
  "futures-channel",
  "opentelemetry",
  "postgres-from-row",
+ "postgres-types",
  "rand 0.10.3",
  "redis",
  "refinery",
  "regex",
  "ring",
+ "rustls",
  "serde",
  "serde_json",
  "shine-core",
+ "shine-game",
  "shine-infra",
+ "shine-infra-testing",
  "shine-test",
  "thiserror 2.0.21",
  "tokio",
@@ -3921,6 +3978,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "shine-test",
+ "tokio",
  "wasm-bindgen-test",
 ]
 
@@ -3928,6 +3986,7 @@ dependencies = [
 name = "shine-game"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "console_error_panic_hook",
  "getrandom 0.4.3",
  "glam",
@@ -3935,6 +3994,7 @@ dependencies = [
  "js-sys",
  "lock_api",
  "log",
+ "postcard",
  "rand 0.10.3",
  "serde",
  "serde-wasm-bindgen",
@@ -3946,6 +4006,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tracing-web",
+ "uuid",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
@@ -3991,6 +4052,7 @@ dependencies = [
  "serde_urlencoded",
  "shine-core",
  "shine-infra",
+ "shine-infra-testing",
  "shine-test",
  "tera",
  "thiserror 2.0.21",
@@ -4042,6 +4104,7 @@ dependencies = [
  "opentelemetry_sdk",
  "pin-project",
  "postgres-from-row",
+ "postgres-types",
  "primal-check",
  "rand 0.10.3",
  "redis",
@@ -4055,6 +4118,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shine-infra-macros",
+ "shine-infra-testing",
  "shine-test",
  "thiserror 2.0.21",
  "time",
@@ -4083,6 +4147,13 @@ version = "0.1.0"
 dependencies = [
  "quote",
  "syn 3.0.9",
+]
+
+[[package]]
+name = "shine-infra-testing"
+version = "0.1.0"
+dependencies = [
+ "shine-infra",
 ]
 
 [[package]]

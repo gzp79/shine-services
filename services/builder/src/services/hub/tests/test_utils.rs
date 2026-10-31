@@ -1,20 +1,19 @@
-use crate::services::{HubIntervals, HubService};
+use crate::models::messages::PingEvent;
+use crate::repositories::{command_inbox::redis::RedisCommandInboxDb, command_log::pg::PgCommandLogDb};
+use crate::services::command_stream::{standard_registry, StreamConfig};
+use crate::services::{HubConfig, HubService, StreamAuthorizeService};
 use crate::{
-    models::messages::{ChatBatch, ChatComment, DisconnectReason, HubEvent, HubMessage, TopicKey},
-    repositories::{
-        chat_comments::redis::RedisChatCommentsDb,
-        hub_registry::{redis::RedisHubConnectionDb, HubConnectionDb, HubRegistry},
-    },
-    services::ChatService,
+    models::messages::{DisconnectReason, HubEvent, HubMessage, TopicKey},
+    repositories::hub_registry::{redis::RedisHubConnectionDb, HubConnectionDb, HubRegistry},
 };
 use ring::rand::SystemRandom;
 use shine_infra::{
     db::redis::{create_redis_pool, RedisConnectionPool},
     session::{CurrentUserService, SessionKey},
 };
+use shine_infra_testing::db::redis::get_redis_cns;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
-    env,
     sync::Arc,
     time::Duration,
 };
@@ -30,25 +29,14 @@ const IDLE: Duration = Duration::from_secs(3600);
 pub type Events = mpsc::UnboundedReceiver<HubMessage>;
 pub type Egress = mpsc::Receiver<HubMessage>;
 
-pub fn test_redis_cns() -> Option<String> {
-    let cns = env::var("SHINE_TEST_REDIS_CNS")
-        .or_else(|_| env::var("SHINE_REDIS_CNS"))
-        .ok();
-    if cns.is_none() {
-        tracing::warn!("Missing SHINE_TEST_REDIS_CNS/SHINE_REDIS_CNS, skipping test");
-    }
-    cns
-}
-
 /// Hub configuration of a test. The background consumers idle unless a test shortens their interval, and
 /// every hub chats in its own room so no other test's appends wake it.
 pub struct TestHubOptions {
     pub heartbeat: Duration,
     pub session_check: Duration,
-    pub chat: Duration,
-    pub chat_room: String,
-    /// Redis of the hub; the test Redis when not given.
+    pub ping_enabled: bool,
     pub redis_cns: Option<String>,
+    pub streams: Option<(PgCommandLogDb, RedisCommandInboxDb, StreamConfig)>,
 }
 
 impl Default for TestHubOptions {
@@ -56,9 +44,9 @@ impl Default for TestHubOptions {
         Self {
             heartbeat: IDLE,
             session_check: IDLE,
-            chat: IDLE,
-            chat_room: format!("test-{}", Uuid::new_v4()),
+            ping_enabled: true,
             redis_cns: None,
+            streams: None,
         }
     }
 }
@@ -67,60 +55,55 @@ pub struct TestHub {
     pub hub: HubService,
     pub registry: RedisHubConnectionDb,
     pub redis: RedisConnectionPool,
-    pub chat_room: String,
-    /// Subscribed before any command, so it sees every event of the hub.
     pub events: Events,
 }
 
 /// A hub on its own Redis pool, i.e. with its own registry listener: two of them act as two service
 /// instances. `None` when no test Redis is configured.
 pub async fn create_test_hub(options: TestHubOptions) -> Option<TestHub> {
-    let redis_cns = match options.redis_cns {
-        Some(cns) => cns,
-        None => test_redis_cns()?,
-    };
+    let redis_cns = options.redis_cns.or(get_redis_cns())?;
     let redis = create_redis_pool(redis_cns.as_str()).await.unwrap();
     let registry = RedisHubConnectionDb::new(&redis, 120).await.unwrap();
-    let chat_db = RedisChatCommentsDb::new(&redis, 200, 3600).await.unwrap();
-    let chat_service = ChatService::with_room(chat_db, options.chat_room.clone());
 
     // URL_SAFE_NO_PAD: 86 'A' chars decode to 64 zero bytes, a valid cookie key for tests.
     let cookie_secret = "A".repeat(86);
     let session_service = Arc::new(CurrentUserService::new(None, &cookie_secret, "", 120, redis.clone()).unwrap());
 
-    let intervals = HubIntervals {
-        heartbeat: options.heartbeat,
-        session_check: options.session_check,
-        chat: options.chat,
+    let hub = {
+        let hub_config = HubConfig {
+            heartbeat: options.heartbeat,
+            session_check: options.session_check,
+            stream_shutdown_timeout: Duration::from_secs(10),
+            ping_enabled: options.ping_enabled,
+        };
+
+        let mut hub_builder = HubService::builder(hub_config)
+            .with_session_service(session_service)
+            .with_hub_registry(registry.clone())
+            .with_stream_authorize_service(StreamAuthorizeService::new);
+        if let Some((log_db, inbox_db, config)) = options.streams {
+            hub_builder = hub_builder
+                .with_stream_registry(|egress| standard_registry(inbox_db, log_db, egress, config))
+                .unwrap()
+        };
+        hub_builder.build().await.unwrap()
     };
-    let hub = HubService::new(registry.clone(), session_service, chat_service, intervals).await;
+
     let events = hub.subscribe(vec![TopicKey::Hub]).await;
-    Some(TestHub {
-        hub,
-        registry,
-        redis,
-        chat_room: options.chat_room,
-        events,
-    })
+    Some(TestHub { hub, registry, redis, events })
 }
 
 pub fn key() -> SessionKey {
     SessionKey::new_random(&SystemRandom::new()).unwrap()
 }
 
-pub fn chat(id: impl Into<String>) -> HubMessage {
-    HubMessage::Chat(ChatBatch {
-        comments: vec![ChatComment {
-            id: id.into(),
-            user_id: Uuid::nil(),
-            text: String::new(),
-        }],
-    })
+pub fn ping(id: impl Into<String>) -> HubMessage {
+    HubMessage::Ping(PingEvent { id: id.into() })
 }
 
 /// Requests a connection on the Chat topic, as the ws sockets do.
 pub fn connect(hub: &HubService, user_id: Uuid, capacity: usize) -> (Uuid, Egress) {
-    connect_on(hub, user_id, capacity, vec![TopicKey::Chat])
+    connect_on(hub, user_id, capacity, vec![TopicKey::Ping])
 }
 
 pub fn connect_on(hub: &HubService, user_id: Uuid, capacity: usize, topics: Vec<TopicKey>) -> (Uuid, Egress) {
@@ -255,7 +238,7 @@ pub fn replay(events: &[HubEvent]) -> HashMap<Uuid, Uuid> {
 /// What a connection's egress channel holds once the hub is idle.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct EgressState {
-    pub chats: Vec<String>,
+    pub pings: Vec<String>,
     pub notices: Vec<DisconnectReason>,
     pub closed: bool,
 }
@@ -268,13 +251,13 @@ impl EgressState {
     /// Records a message; a connection on the Hub topic passes its id to skip the drops of others.
     pub fn record_for(&mut self, own: Option<Uuid>, message: HubMessage) {
         match message {
-            HubMessage::Chat(batch) => self.chats.extend(batch.comments.into_iter().map(|c| c.id)),
+            HubMessage::Ping(event) => self.pings.push(event.id),
             HubMessage::Hub(HubEvent::UserDisconnected { connection_id, reason, .. })
                 if reason.is_drop() && own.is_none_or(|own| own == connection_id) =>
             {
                 self.notices.push(reason)
             }
-            HubMessage::Hub(_) => {}
+            HubMessage::Hub(_) | HubMessage::StreamMessage(_) | HubMessage::StreamEvent(_) => {}
         }
     }
 }
@@ -311,7 +294,7 @@ pub fn open() -> EgressState {
 
 pub fn closed_with(notice: Option<DisconnectReason>) -> EgressState {
     EgressState {
-        chats: vec![],
+        pings: vec![],
         notices: notice.into_iter().collect(),
         closed: true,
     }
@@ -366,7 +349,8 @@ pub fn registry_key(user_id: Uuid) -> String {
 
 /// A registry on the test Redis, bypassing any proxy of the hub under test.
 pub async fn direct_registry() -> RedisHubConnectionDb {
-    let redis = create_redis_pool(test_redis_cns().unwrap().as_str()).await.unwrap();
+    let cns = get_redis_cns().unwrap();
+    let redis = create_redis_pool(&cns).await.unwrap();
     RedisHubConnectionDb::new(&redis, 120).await.unwrap()
 }
 
@@ -393,7 +377,7 @@ pub async fn delete_key(redis: &RedisConnectionPool, key: &str) {
 pub fn connect_with_key(hub: &HubService, user_id: Uuid, session_key: SessionKey, capacity: usize) -> (Uuid, Egress) {
     let (tx, rx) = mpsc::channel(capacity);
     let connection_id = hub
-        .request_connection(user_id, session_key, tx, vec![TopicKey::Chat])
+        .request_connection(user_id, session_key, tx, vec![TopicKey::Ping])
         .unwrap();
     (connection_id, rx)
 }
