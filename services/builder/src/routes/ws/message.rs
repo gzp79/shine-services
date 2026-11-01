@@ -52,6 +52,9 @@ pub struct WireStreamCommand {
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 #[serde(tag = "type")]
 pub enum WSMessageResponse {
+    Connected {
+        user_id: Uuid,
+    },
     StreamSync {
         stream_id: String,
         snapshot: Option<WireStreamSnapshot>,

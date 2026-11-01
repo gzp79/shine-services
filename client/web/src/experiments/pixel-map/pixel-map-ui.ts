@@ -1,4 +1,4 @@
-import type { ConnectionState } from '../../engine/net/stream-connection';
+import type { ConnectionState } from '../../engine/net/stream-hub';
 import { PALETTE_SIZE, paletteRgba } from './pixel-map-layout';
 
 export type StatusTone = 'ok' | 'wait' | 'error';
@@ -27,7 +27,6 @@ const TONE_COLOR: Record<StatusTone, string> = { ok: '#6ee7a0', wait: '#ffd66b',
 export class PixelMapUi {
     private readonly root: HTMLDivElement;
     private readonly chip: HTMLDivElement;
-    private readonly user: HTMLDivElement;
     private readonly swatches: HTMLButtonElement[] = [];
     private selected = 1;
 
@@ -37,9 +36,6 @@ export class PixelMapUi {
         this.chip = document.createElement('div');
         this.chip.style.cssText = 'padding:4px 10px;border-radius:12px;background:#000a;color:#fff;margin-bottom:6px;';
         this.root.append(this.chip);
-        this.user = document.createElement('div');
-        this.user.style.cssText = 'font-size:11px;color:#fffc;margin:0 0 6px 10px;text-shadow:0 0 3px #000;';
-        this.root.append(this.user);
 
         const palette = document.createElement('div');
         palette.style.cssText = 'display:grid;grid-template-columns:repeat(8,22px);gap:3px;pointer-events:auto;';
@@ -83,12 +79,6 @@ export class PixelMapUi {
         if (this.chip.textContent === text) return;
         this.chip.textContent = text;
         this.chip.style.borderLeft = `4px solid ${TONE_COLOR[tone]}`;
-    }
-
-    // Who this client is, when it knows.
-    setUser(userId: string | null): void {
-        this.user.textContent = userId ? `user ${userId.slice(0, 8)}` : '';
-        this.user.title = userId ?? '';
     }
 
     dispose(): void {

@@ -10,16 +10,19 @@
                 overflow: hidden;
                 background: #1a1a2e;
             }
+
             #app {
                 width: 100vw;
                 height: 100vh;
                 position: relative;
             }
+
             canvas {
                 display: block;
                 width: 100%;
                 height: 100%;
             }
+
             #nav {
                 position: absolute;
                 top: 8px;
@@ -29,6 +32,7 @@
                 align-items: flex-start;
                 gap: 6px;
             }
+
             #nav-toggle {
                 width: 26px;
                 height: 26px;
@@ -41,19 +45,23 @@
                 cursor: pointer;
                 outline: none;
             }
+
             #nav-toggle:hover {
                 background: rgba(60, 60, 90, 0.9);
                 border-color: rgba(255, 255, 255, 0.5);
             }
+
             #nav-tools {
                 display: flex;
                 flex-direction: column;
                 align-items: stretch;
                 gap: 6px;
             }
+
             #nav.collapsed #nav-tools {
                 display: none;
             }
+
             #heap-stats {
                 display: none;
                 color: #fff;
@@ -66,6 +74,7 @@
                 border: 1px solid rgba(255, 255, 255, 0.3);
                 border-radius: 4px;
             }
+
             #nav select,
             #local-login {
                 color: #fff;
@@ -78,21 +87,25 @@
                 cursor: pointer;
                 outline: none;
             }
+
             #local-login {
                 text-align: center;
                 text-decoration: none;
             }
+
             #nav select:hover,
             #local-login:hover {
                 background: rgba(60, 60, 90, 0.9);
                 border-color: rgba(255, 255, 255, 0.5);
             }
+
             #nav select option {
                 background: #2a2a3e;
                 color: #fff;
             }
         </style>
     </head>
+
     <body>
         <div id="nav" class="collapsed">
             <button id="nav-toggle" type="button" title="Debug tools" aria-expanded="false">&#9881;</button>

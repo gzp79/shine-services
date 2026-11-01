@@ -12,6 +12,10 @@ A **stream** is identified by a `StreamId` whose prefix selects a registered rep
 
 The hub is the transport-facing API. It authorizes subscriptions, checks that commands come from subscribed connections, and delegates stream work to the registry. Each loaded stream has one `StreamWorker` containing two Tokio tasks: a fast actor task for inbox polling and subscriber delivery, and a durable persistence task that owns the canonical replica.
 
+After the WebSocket upgrade and successful hub registration, the server's first frame is
+`{"type":"connected","userId":"<uuid>"}`. The client must wait for this frame before subscribing;
+the user id is the authenticated identity assigned to commands submitted through that connection.
+
 ```mermaid
 flowchart LR
     classDef indigo fill:#6366f122,stroke:#6366f1

@@ -1,7 +1,14 @@
 use serde::{Deserialize, Serialize};
 use shine_infra::serde::duration;
 use std::time::Duration;
-use validator::Validate;
+use validator::{Validate, ValidationError};
+
+fn validate_min_response_spacing(value: &Duration) -> Result<(), ValidationError> {
+    if *value <= Duration::from_millis(3600) {
+        return Ok(());
+    }
+    Err(ValidationError::new("range"))
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[serde(default, rename_all = "camelCase")]
@@ -31,7 +38,7 @@ pub struct StreamConfig {
     pub backstop: Duration,
     /// Least time between wake-triggered response batches.
     #[serde(rename = "minResponseMs", with = "duration::milliseconds")]
-    #[validate(range(min = 0, max = 3600))]
+    #[validate(custom(function = "validate_min_response_spacing"))]
     pub min_response_spacing: Duration,
     /// How long the worker stays loaded after its last subscriber left.
     pub unload_grace: Duration,

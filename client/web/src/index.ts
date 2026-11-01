@@ -3,8 +3,11 @@ import wasmUrl from '#wasm-bin';
 import { WebGPURenderer } from 'three/webgpu';
 import type { AssetCatalogBuilder } from './engine/assets/catalog';
 import { RendererUnavailableError, hasRenderBackend } from './engine/compositor/render-backend';
+import type { StreamHub } from './engine/net/stream-hub';
 import { SceneRuntime } from './engine/scene-runtime';
 import { createContent, scenes } from './scene-registry';
+
+export type { StreamHub, StreamListener, StreamSubscription } from './engine/net/stream-hub';
 
 export interface SceneHandle {
     dispose(): void;
@@ -14,6 +17,12 @@ export interface SceneHandle {
 // Reports a fatal fault after the bundle releases the scene. Synchronous startup faults also reject
 // createScene after invoking this callback; live async and frame faults only use the callback.
 export type SceneErrorHandler = (error: Error) => void;
+
+export interface SceneConfig {
+    catalogBuilder: AssetCatalogBuilder;
+    onError?: SceneErrorHandler;
+    streamHub?: StreamHub;
+}
 
 /** Scenes available in this bundle, for consumers to build navigation. */
 export function listScenes(): { id: string; title: string }[] {
@@ -33,17 +42,20 @@ async function createSharedRenderer(): Promise<WebGPURenderer> {
     return renderer;
 }
 
-export async function createScene(
-    container: HTMLElement,
-    id: string,
-    catalogBuilder: AssetCatalogBuilder,
-    onError?: SceneErrorHandler
-): Promise<SceneHandle> {
+export async function createScene(container: HTMLElement, id: string, config: SceneConfig): Promise<SceneHandle> {
     const renderer = await createSharedRenderer();
-    const runtime = new SceneRuntime(renderer, onError);
+    const runtime = new SceneRuntime(renderer, config.onError);
     try {
         container.appendChild(renderer.domElement);
-        runtime.run((runtime) => createContent(id, { container, renderer, runtime, catalogBuilder }));
+        runtime.run((runtime) =>
+            createContent(id, {
+                container,
+                renderer,
+                runtime,
+                catalogBuilder: config.catalogBuilder,
+                streamHub: config.streamHub
+            })
+        );
     } catch (error) {
         runtime.dispose();
         throw error;
@@ -51,17 +63,21 @@ export async function createScene(
     return handle(runtime);
 }
 
-export async function createRoutedScene(
-    container: HTMLElement,
-    catalogBuilder: AssetCatalogBuilder,
-    onError?: SceneErrorHandler
-): Promise<SceneHandle> {
+export async function createRoutedScene(container: HTMLElement, config: SceneConfig): Promise<SceneHandle> {
     const renderer = await createSharedRenderer();
-    const runtime = new SceneRuntime(renderer, onError);
+    const runtime = new SceneRuntime(renderer, config.onError);
 
     function navigate(): void {
         const hash = window.location.hash.replace('#', '');
-        runtime.run((runtime) => createContent(hash, { container, renderer, runtime, catalogBuilder }));
+        runtime.run((runtime) =>
+            createContent(hash, {
+                container,
+                renderer,
+                runtime,
+                catalogBuilder: config.catalogBuilder,
+                streamHub: config.streamHub
+            })
+        );
     }
 
     try {

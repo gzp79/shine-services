@@ -22,6 +22,13 @@ fn close(code: u16, reason: &'static str) -> WsMessage {
     WsMessage::Close(Some(CloseFrame { code, reason: reason.into() }))
 }
 
+fn text_json(frame: &WsMessage) -> serde_json::Value {
+    let WsMessage::Text(text) = frame else {
+        panic!("expected a text frame, got {frame:?}");
+    };
+    serde_json::from_str(text.as_str()).unwrap()
+}
+
 /// The event that ends the socket of connection `Uuid::nil()`.
 fn dropped_event(reason: DisconnectReason) -> HubMessage {
     HubMessage::Hub(HubEvent::UserDisconnected {
@@ -148,12 +155,15 @@ impl Client {
         )
         .await
         .expect("the socket was not registered");
-        Self {
+        let mut client = Self {
             connection_id: connection_of(&seen, user_id),
             to_server: Some(to_server),
             from_server,
             server,
-        }
+        };
+        let connected = text_json(&client.next_frame().await);
+        assert_eq!(connected, serde_json::json!({"type": "connected", "userId": user_id}));
+        client
     }
 
     fn send(&self, text: &str) {

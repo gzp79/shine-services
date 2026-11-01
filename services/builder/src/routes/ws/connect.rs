@@ -150,6 +150,15 @@ async fn serve_socket<S, R, E>(
         }
         return;
     };
+
+    let connected = serde_json::to_string(&WSMessageResponse::Connected { user_id: current_user_id })
+        .expect("Connected response is serializable");
+    if let Err(err) = ws_sender.send(WsMessage::Text(connected.into())).await {
+        tracing::debug!("[{current_user_id}] Failed to send Connected message: {err:#?}");
+        close_connection(&hub_service, current_user_id, connection_id);
+        return;
+    }
+
     tracing::info!("[{current_user_id}] [{connection_id}] Connected to the hub");
 
     let mut recv_task = {

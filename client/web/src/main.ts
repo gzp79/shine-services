@@ -1,11 +1,11 @@
 import * as wasm from '#wasm';
 import { ASSET_KINDS, type AssetCatalog, type AssetKind } from './engine/assets/catalog';
 import { PROCEDURAL_ASSETS } from './engine/assets/procedural';
+import type { StreamHub } from './engine/net/stream-hub';
+import { WebSocketStreamHub } from './engine/net/websocket-stream-hub';
 import { createRoutedScene } from './index';
 
-// Local-dev catalog for the shine-assets bucket. Lives only in the standalone entry, so
-// it stays out of the library bundle a host consumes — that host injects its own catalog
-// with a server-resolved version.
+export const WEB_SOCKET_URL = 'wss://ws.local.scytta.com:8444/builder/api/connect';
 const ASSET_URL = 'https://assets.local.scytta.com:8093';
 const ASSET_PLATFORM = 'web';
 const ASSET_MODULE = 'models';
@@ -152,4 +152,20 @@ window.addEventListener('unhandledrejection', (event) => {
     showFatal(event.reason);
 });
 
-void createRoutedScene(container, buildDefaultCatalog, showFatal).then(startHeapStats).catch(showFatal);
+const streamHub = new WebSocketStreamHub(WEB_SOCKET_URL);
+streamHub.connect();
+window.addEventListener(
+    'beforeunload',
+    () => {
+        streamHub.dispose();
+    },
+    { once: true }
+);
+
+void createRoutedScene(container, {
+    catalogBuilder: buildDefaultCatalog,
+    onError: showFatal,
+    streamHub: streamHub
+})
+    .then(startHeapStats)
+    .catch(showFatal);
