@@ -314,7 +314,7 @@ where
         backstop.set_missed_tick_behavior(MissedTickBehavior::Delay);
         backstop.tick().await;
         let wake = self.wake.clone();
-        let mut next_wake_pass = Instant::now();
+        let mut next_response_pass = Instant::now();
 
         // Commands that arrived while loading are worked at once.
         let mut alive = self.pass(persistence_result).await;
@@ -355,9 +355,9 @@ where
                     }
                 },
                 _ = wake.notified() => {
-                    time::sleep_until(next_wake_pass).await;
+                    time::sleep_until(next_response_pass).await;
                     alive = self.pass(persistence_result).await;
-                    next_wake_pass = Instant::now() + self.config.min_wake_spacing;
+                    next_response_pass = Instant::now() + self.config.min_response_spacing;
                 }
                 _ = backstop.tick() => alive = self.pass(persistence_result).await,
                 _ = time::sleep_until(reconcile_deadline), if persistence_result.is_none() => {

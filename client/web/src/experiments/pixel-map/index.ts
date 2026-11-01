@@ -20,6 +20,7 @@ export class PixelMapExperiment extends Experiment {
     private readonly clicks = new ClickTracker();
     private readonly raycaster = new THREE.Raycaster();
     private connectionState: ConnectionState = 'connecting';
+    private connectionIssue: string | null = null;
     private time = 0;
 
     constructor(context: SceneContext) {
@@ -48,6 +49,9 @@ export class PixelMapExperiment extends Experiment {
             onState: (state) => {
                 this.connectionState = state;
             },
+            onIssue: (issue) => {
+                this.connectionIssue = issue;
+            },
             onChange: () => {}
         });
 
@@ -69,7 +73,8 @@ export class PixelMapExperiment extends Experiment {
             this.connectionState,
             this.stream.status(),
             this.stream.version(),
-            this.stream.pending_count()
+            this.stream.pending_count(),
+            this.connectionIssue
         );
         this.ui.setStatus(text, tone);
     }

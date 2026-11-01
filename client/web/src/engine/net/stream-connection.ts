@@ -25,7 +25,7 @@ export interface StreamConnectionOptions {
     url: string;
     stream: StreamPort;
     onState(state: ConnectionState): void;
-    // A frame was handled, the stream may have changed.
+    onIssue?(message: string | null): void;
     onChange(): void;
     createSocket?(url: string): StreamSocket;
 }
@@ -82,6 +82,7 @@ export class StreamConnection {
         socket.onopen = () => {
             if (this.socket !== socket) return;
             this.attempt = 0;
+            this.options.onIssue?.(null);
             this.setState('syncing');
             socket.send(this.options.stream.subscribeFrame());
         };
@@ -102,6 +103,7 @@ export class StreamConnection {
                 this.setState('replaced');
                 return;
             }
+            this.options.onIssue?.(describeClose(event));
             this.setState('reconnecting');
             const delay = Math.min(RECONNECT_MIN_MS * 2 ** this.attempt, RECONNECT_MAX_MS);
             this.attempt += 1;
@@ -110,7 +112,8 @@ export class StreamConnection {
                 if (!this.stopped) this.connect();
             }, delay);
         };
-        // A failed socket closes right after; the close handler retries.
+        // A failed socket closes right after; the close handler retries. The platform deliberately
+        // withholds error details, so the close code is the most useful browser-visible diagnosis.
         socket.onerror = () => {};
     }
 
@@ -140,6 +143,12 @@ export class StreamConnection {
         this.state = state;
         this.options.onState(state);
     }
+}
+
+function describeClose(event: CloseEvent): string {
+    if (event.reason) return `Server closed connection: ${event.reason}`;
+    if (event.code === 1006) return 'Network or browser blocked the connection';
+    return `Connection closed (code ${event.code})`;
 }
 
 function detach(socket: StreamSocket): void {

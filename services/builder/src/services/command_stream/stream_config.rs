@@ -1,7 +1,10 @@
+use serde::{Deserialize, Serialize};
+use shine_infra::serde::duration;
 use std::time::Duration;
 use validator::Validate;
 
-#[derive(Clone, Debug, Validate)]
+#[derive(Clone, Debug, Deserialize, Serialize, Validate)]
+#[serde(default, rename_all = "camelCase")]
 pub struct StreamConfig {
     /// Most inbox entries read in one sync.
     #[validate(range(min = 1))]
@@ -26,9 +29,10 @@ pub struct StreamConfig {
     /// Interval of the tick that looks at the inbox and the log even when no wake came, the safety net
     /// for a wake that was lost.
     pub backstop: Duration,
-    /// Least time between two passes triggered by wakes, so a steady flow of commands is worked in
-    /// batches.
-    pub min_wake_spacing: Duration,
+    /// Least time between wake-triggered response batches.
+    #[serde(rename = "minResponseMs", with = "duration::milliseconds")]
+    #[validate(range(min = 0, max = 3600))]
+    pub min_response_spacing: Duration,
     /// How long the worker stays loaded after its last subscriber left.
     pub unload_grace: Duration,
     /// How many passes in a row may fail before the stream is given up.
@@ -46,7 +50,7 @@ impl Default for StreamConfig {
             keep_snapshots: 3,
 
             backstop: Duration::from_secs(10),
-            min_wake_spacing: Duration::from_millis(50),
+            min_response_spacing: Duration::from_millis(400),
             unload_grace: Duration::from_secs(60),
             max_failures: 5,
         }
@@ -57,7 +61,7 @@ impl StreamConfig {
     pub fn quiet() -> Self {
         StreamConfig {
             backstop: Duration::from_secs(3600),
-            min_wake_spacing: Duration::ZERO,
+            min_response_spacing: Duration::ZERO,
             unload_grace: Duration::from_secs(3600),
             max_failures: 3,
             ..Default::default()

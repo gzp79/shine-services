@@ -160,6 +160,7 @@
       "options": {
         "cwd": "services/builder",
         "env": {
+          "RUST_LOG": "info,shine_game=trace,shine_forge=trace,shine_infra=trace,test_map=trace",
           "RUST_BACKTRACE": "full",
           "SHINE--SERVICE--TLS--CERT": "../../certificates/scytta.crt",
           "SHINE--SERVICE--TLS--KEY": "../../certificates/scytta.key",

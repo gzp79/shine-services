@@ -3,7 +3,7 @@ use crate::{
     repositories::command_inbox::redis::RedisCommandInboxDb,
     repositories::command_log::pg::PgCommandLogDb,
     repositories::hub_registry::redis::RedisHubConnectionDb,
-    services::{standard_registry, HubService, StreamAuthorizeService, StreamConfig},
+    services::{standard_registry, HubService, StreamAuthorizeService},
     settings::{BuilderSettings, WsSettings},
 };
 use anyhow::{anyhow, Error as AnyError};
@@ -63,7 +63,7 @@ impl AppState {
             .with_session_service(core_services.current_user_service.clone())
             .with_hub_registry(hub_registry)
             .with_stream_registry(|egress| {
-                standard_registry(command_inbox_db, command_log_db, egress, StreamConfig::default())
+                standard_registry(command_inbox_db, command_log_db, egress, config.feature.stream.clone())
             })?
             .with_stream_authorize_service(StreamAuthorizeService::new)
             .build()

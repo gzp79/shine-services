@@ -7,18 +7,19 @@ export function statusText(
     connection: ConnectionState,
     stream: 'waiting' | 'live' | 'unsynced',
     version: number,
-    pending: number
+    pending: number,
+    issue: string | null = null
 ): { text: string; tone: StatusTone } {
     if (connection === 'closed') return { text: 'Disconnected', tone: 'error' };
     if (connection === 'replaced') return { text: 'Opened in another tab, reload to take over', tone: 'error' };
-    if (connection === 'reconnecting') return { text: 'Reconnecting…', tone: 'wait' };
+    if (connection === 'reconnecting') return { text: `Reconnecting…${issue ? ` (${issue})` : ''}`, tone: 'wait' };
     if (stream === 'unsynced') return { text: 'Stream unavailable, retrying', tone: 'error' };
     if (connection === 'connecting' || stream === 'waiting') return { text: 'Connecting…', tone: 'wait' };
     const unconfirmed = pending > 0 ? ` · ${pending} unconfirmed` : '';
     return { text: `Live · v${version}${unconfirmed}`, tone: 'ok' };
 }
 
-export const SCATTER_COUNTS = [10, 20, 50, 100] as const;
+export const SCATTER_COUNTS = [10, 50, 100, 10000] as const;
 
 const TONE_COLOR: Record<StatusTone, string> = { ok: '#6ee7a0', wait: '#ffd66b', error: '#ff7b7b' };
 
@@ -32,7 +33,7 @@ export class PixelMapUi {
 
     constructor(host: HTMLElement, onScatter: (count: number) => void, onResync: () => void) {
         this.root = document.createElement('div');
-        this.root.style.cssText = 'position:absolute;left:10px;top:10px;font:13px sans-serif;pointer-events:none;';
+        this.root.style.cssText = 'position:absolute;left:42px;top:10px;font:13px sans-serif;pointer-events:none;';
         this.chip = document.createElement('div');
         this.chip.style.cssText = 'padding:4px 10px;border-radius:12px;background:#000a;color:#fff;margin-bottom:6px;';
         this.root.append(this.chip);

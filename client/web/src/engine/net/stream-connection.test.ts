@@ -8,7 +8,7 @@ class FakeSocket implements StreamSocket {
     closed = false;
     onopen: (() => void) | null = null;
     onmessage: ((event: { data: unknown }) => void) | null = null;
-    onclose: ((event: { reason: string }) => void) | null = null;
+    onclose: ((event: { code: number; reason: string }) => void) | null = null;
     onerror: (() => void) | null = null;
 
     constructor(readonly url: string) {
@@ -33,9 +33,9 @@ class FakeSocket implements StreamSocket {
         this.onmessage?.({ data });
     }
 
-    drop(reason = ''): void {
+    drop(reason = '', code = 1006): void {
         this.readyState = 3;
-        this.onclose?.({ reason });
+        this.onclose?.({ code, reason });
     }
 }
 
@@ -56,15 +56,17 @@ class FakeStream implements StreamPort {
 function setup() {
     const stream = new FakeStream();
     const states: ConnectionState[] = [];
+    const issues: (string | null)[] = [];
     const changes = vi.fn();
     const connection = new StreamConnection({
         url: 'wss://host/ws',
         stream,
         onState: (state) => states.push(state),
+        onIssue: (issue) => issues.push(issue),
         onChange: changes,
         createSocket: (url) => new FakeSocket(url)
     });
-    return { stream, states, changes, connection };
+    return { stream, states, issues, changes, connection };
 }
 
 describe('StreamConnection', () => {
@@ -167,6 +169,25 @@ describe('StreamConnection', () => {
 
         expect(states.at(-1)).toBe('replaced');
         expect(FakeSocket.all).toHaveLength(1);
+    });
+
+    it('reports the server close reason and clears it after reconnecting', () => {
+        const { connection, issues } = setup();
+        connection.start();
+        FakeSocket.all[0].drop('unauthorized', 1008);
+
+        expect(issues).toEqual(['Server closed connection: unauthorized']);
+        vi.advanceTimersByTime(1000);
+        FakeSocket.all[1].open();
+        expect(issues).toEqual(['Server closed connection: unauthorized', null]);
+    });
+
+    it('reports an opaque abnormal close as a network or browser problem', () => {
+        const { connection, issues } = setup();
+        connection.start();
+        FakeSocket.all[0].drop();
+
+        expect(issues).toEqual(['Network or browser blocked the connection']);
     });
 
     it('subscribes again on the new socket', () => {

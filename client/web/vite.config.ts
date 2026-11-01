@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import { wasmPackPlugin } from './vite-plugin-wasm-pack';
@@ -10,6 +11,18 @@ export default defineConfig(({ command }) => {
         define: {
             'import.meta.env.VITE_HEAP_PROFILING': JSON.stringify(heapProfiling)
         },
+        server:
+            command === 'serve'
+                ? {
+                      host: 'local.scytta.com',
+                      port: 5173,
+                      strictPort: true,
+                      https: {
+                          cert: readFileSync(fileURLToPath(new URL('../../certificates/scytta.crt', import.meta.url))),
+                          key: readFileSync(fileURLToPath(new URL('../../certificates/scytta.key', import.meta.url)))
+                      }
+                  }
+                : undefined,
         build:
             command === 'build'
                 ? {

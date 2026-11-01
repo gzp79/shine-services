@@ -1,4 +1,7 @@
-use crate::{repositories::DBConfig, services::HubConfig};
+use crate::{
+    repositories::DBConfig,
+    services::{HubConfig, StreamConfig},
+};
 use serde::{Deserialize, Serialize};
 use shine_infra::web::FeatureConfig;
 use validator::Validate;
@@ -21,12 +24,15 @@ pub struct AppConfig {
     pub ws: WsConfig,
     #[serde(default = "HubConfig::defaults")]
     pub hub: HubConfig,
+    #[serde(default)]
+    pub stream: StreamConfig,
 }
 
 impl FeatureConfig for AppConfig {
     const NAME: &'static str = "builder";
 
     fn validate(&self) -> Result<(), anyhow::Error> {
-        Validate::validate(self).map_err(anyhow::Error::from)
+        Validate::validate(self).map_err(anyhow::Error::from)?;
+        Validate::validate(&self.stream).map_err(anyhow::Error::from)
     }
 }

@@ -9,8 +9,14 @@ describe('resolveConfig', () => {
         expect(config.wsUrl).toBe(DEFAULT_WS_URL);
     });
 
-    it('takes the stream from the query', () => {
-        expect(resolveConfig(new URLSearchParams('stream=my-room.1')).streamId).toBe('my-room.1');
+    it('prefixes a valid stream identifier with the pixel-map kind', () => {
+        expect(resolveConfig(new URLSearchParams('stream=my-room.1')).streamId).toBe('pixel-map:my-room.1');
+    });
+
+    it('accepts every allowed identifier character at the length boundary', () => {
+        const identifier = `${'a'.repeat(60)}_.:-`;
+
+        expect(resolveConfig(new URLSearchParams(`stream=${identifier}`)).streamId).toBe(`pixel-map:${identifier}`);
     });
 
     it('falls back to the default for an id the server would not accept', () => {
@@ -19,6 +25,21 @@ describe('resolveConfig', () => {
             params.set('stream', bad);
 
             expect(resolveConfig(params).streamId).toBe(DEFAULT_STREAM_ID);
+        }
+    });
+
+    it('takes a secure builder url from the query', () => {
+        const url = 'wss://ws.local.scytta.com:8443/builder/api/connect';
+
+        expect(resolveConfig(new URLSearchParams(`ws=${encodeURIComponent(url)}`)).wsUrl).toBe(url);
+    });
+
+    it('keeps the default for a url that is not a secure websocket', () => {
+        for (const bad of ['ws://ws.local.scytta.com:8444/builder/api/connect', 'https://example.com', 'nonsense']) {
+            const params = new URLSearchParams();
+            params.set('ws', bad);
+
+            expect(resolveConfig(params).wsUrl).toBe(DEFAULT_WS_URL);
         }
     });
 });

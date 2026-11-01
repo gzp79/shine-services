@@ -11,6 +11,9 @@
       "heartbeat": 300,
       "sessionCheck": 2
     },
+    "stream": {
+      "minResponseMs": 334
+    },
     "chat": {
       "syncIntervalSeconds": 1
     },

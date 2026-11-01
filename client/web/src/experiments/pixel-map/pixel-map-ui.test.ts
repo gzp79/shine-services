@@ -15,6 +15,13 @@ describe('statusText', () => {
         expect(statusText('reconnecting', 'live', 5, 1)).toEqual({ text: 'Reconnecting…', tone: 'wait' });
     });
 
+    it('includes an available connection failure reason while reconnecting', () => {
+        expect(statusText('reconnecting', 'live', 5, 1, 'Network or browser blocked the connection')).toEqual({
+            text: 'Reconnecting… (Network or browser blocked the connection)',
+            tone: 'wait'
+        });
+    });
+
     it('says the stream is unavailable when the server cannot serve it', () => {
         expect(statusText('live', 'unsynced', 5, 0)).toEqual({ text: 'Stream unavailable, retrying', tone: 'error' });
     });

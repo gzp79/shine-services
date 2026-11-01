@@ -15,6 +15,9 @@
       "sessionCheck": 60,
       "pingEnabled": false
     },
+    "stream": {
+      "minResponseMs": 334
+    },
     "ws": {
       "allowedHosts": ["^ws\\.scytta\\.com(:443)?$"]
     }

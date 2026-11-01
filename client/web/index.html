@@ -66,7 +66,8 @@
                 border: 1px solid rgba(255, 255, 255, 0.3);
                 border-radius: 4px;
             }
-            #nav select {
+            #nav select,
+            #local-login {
                 color: #fff;
                 font-family: monospace;
                 font-size: 14px;
@@ -77,7 +78,12 @@
                 cursor: pointer;
                 outline: none;
             }
-            #nav select:hover {
+            #local-login {
+                text-align: center;
+                text-decoration: none;
+            }
+            #nav select:hover,
+            #local-login:hover {
                 background: rgba(60, 60, 90, 0.9);
                 border-color: rgba(255, 255, 255, 0.5);
             }
@@ -101,7 +107,9 @@
                     <option value="tile-chunk">Tile Chunk</option>
                     <option value="instanced-color-mesh">Instanced Color Mesh</option>
                     <option value="asset-viewer">Asset Viewer</option>
+                    <option value="pixel-map">Pixel Map</option>
                 </select>
+                <a id="local-login" href="" hidden>Local OIDC login</a>
                 <div id="heap-stats"></div>
             </div>
         </div>
@@ -110,11 +118,24 @@
             const nav = document.getElementById('nav');
             const toggle = document.getElementById('nav-toggle');
             const select = document.getElementById('scene-select');
+            const login = document.getElementById('local-login');
 
             toggle.addEventListener('click', () => {
                 const collapsed = nav.classList.toggle('collapsed');
                 toggle.setAttribute('aria-expanded', String(!collapsed));
             });
+
+            const isLocalMockClient =
+                window.location.hostname === 'local.scytta.com' && window.location.port === '5173';
+            if (isLocalMockClient) {
+                const authUrl = new URL('https://cloud.local.scytta.com:8443/identity/auth/openid_flow/login');
+                authUrl.searchParams.set('redirectUrl', window.location.href);
+                authUrl.searchParams.set('errorUrl', window.location.href);
+                authUrl.searchParams.set('rememberMe', 'true');
+                authUrl.searchParams.set('captcha', 'skip');
+                login.href = authUrl.toString();
+                login.hidden = false;
+            }
 
             // Update select based on hash
             function updateSelect() {
