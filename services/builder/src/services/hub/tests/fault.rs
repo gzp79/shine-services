@@ -7,7 +7,7 @@
 use crate::{
     models::messages::{DisconnectReason, HubEvent, HubMessage},
     services::hub_test_utils::{
-        assert_consistent, barrier, closed_with, connect, connect_with_key, create_test_hub, delete_key,
+        assert_consistent, barrier, closed_with, connect, connect_with_key, create_test_hub, direct_delete_key,
         direct_registry, dropped, drops, egress_state, find_registry_connection, key, lifecycle_of, open, registry_key,
         seed_session, wait_event, Lifecycle, TestHub, TestHubOptions, BARRIER_TIMEOUT,
     },
@@ -171,7 +171,7 @@ async fn disconnect_during_an_outage_releases_the_socket_and_leaves_the_row_to_t
         "the registry row could not be removed; its TTL cleans it up"
     );
 
-    delete_key(&test.redis, &registry_key(user)).await;
+    direct_delete_key(&registry_key(user)).await;
 }
 
 #[test(serial = "hub-service")]

@@ -349,9 +349,13 @@ pub fn registry_key(user_id: Uuid) -> String {
 
 /// A registry on the test Redis, bypassing any proxy of the hub under test.
 pub async fn direct_registry() -> RedisHubConnectionDb {
-    let cns = get_redis_cns().unwrap();
-    let redis = create_redis_pool(&cns).await.unwrap();
+    let redis = direct_redis_pool().await;
     RedisHubConnectionDb::new(&redis, 120).await.unwrap()
+}
+
+async fn direct_redis_pool() -> RedisConnectionPool {
+    let cns = get_redis_cns().unwrap();
+    create_redis_pool(&cns).await.unwrap()
 }
 
 /// Stores a valid session, as the identity service does at login.
@@ -371,6 +375,11 @@ pub async fn seed_session(redis: &RedisConnectionPool, user_id: Uuid, session_ke
 pub async fn delete_key(redis: &RedisConnectionPool, key: &str) {
     let mut conn = redis.get().await.unwrap();
     let _: () = redis::cmd("DEL").arg(key).query_async(&mut *conn).await.unwrap();
+}
+
+pub async fn direct_delete_key(key: &str) {
+    let redis = direct_redis_pool().await;
+    delete_key(&redis, key).await;
 }
 
 /// Requests a connection with a given session key, on the Chat topic.
