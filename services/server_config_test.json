@@ -16,8 +16,11 @@
 
   "telemetry": {
     "allowReconfigure": true,
-    "enableConsoleLog": true,
     "defaultLevel": "INFO,shine_core=TRACE,shine_infra=TRACE,shine_identity=TRACE,shine_builder=TRACE",
+    "logging": {
+      "type": "console",
+      "format": "compact"
+    },
     "metrics": {
       "type": "none"
     },

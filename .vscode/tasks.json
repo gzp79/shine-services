@@ -167,6 +167,8 @@
           "SHINE--SERVICE--PORT": "8444",
           "SHINE--TELEMETRY--METRICS--TYPE": "otlp",
           "SHINE--TELEMETRY--METRICS--ENDPOINT": "http://localhost:4317",
+          "SHINE--TELEMETRY--LOGGING--TYPE": "otlp",
+          "SHINE--TELEMETRY--LOGGING--ENDPOINT": "http://localhost:4317",
           "SHINE--TELEMETRY--TRACING--TYPE": "otlp",
           "SHINE--TELEMETRY--TRACING--ENDPOINT": "http://localhost:4317",
           "SHINE--TELEMETRY--DEFAULT_LEVEL": "INFO,shine=DEBUG"

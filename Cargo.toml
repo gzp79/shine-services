@@ -76,8 +76,14 @@ lock_api = "0.4"
 ############################# TRACING #############################
 tracing = "0.1"
 tracing-log = "0.2"
+tracing-opentelemetry = "0.34"
+tracing-opentelemetry-instrumentation-sdk = "0.42"
 tracing-subscriber = { version = "0.3", default-features = false }
 opentelemetry = "0.33"
+opentelemetry-appender-tracing = "0.33"
+opentelemetry-application-insights = "0.46"
+opentelemetry-otlp = "0.33"
+opentelemetry_sdk = "0.33"
 
 ############################# DB #############################
 bb8 = "0.9"
