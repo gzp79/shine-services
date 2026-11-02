@@ -171,7 +171,7 @@
           "SHINE--TELEMETRY--LOGGING--ENDPOINT": "http://localhost:4317",
           "SHINE--TELEMETRY--TRACING--TYPE": "otlp",
           "SHINE--TELEMETRY--TRACING--ENDPOINT": "http://localhost:4317",
-          "SHINE--TELEMETRY--DEFAULT_LEVEL": "INFO,shine=DEBUG"
+          "SHINE--TELEMETRY--DEFAULT_LEVEL": "info,shine_game=trace,shine_forge=trace,shine_infra=trace,test_map=trace"
         }
       },
       "problemMatcher": ["$rustc"],

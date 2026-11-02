@@ -1,5 +1,5 @@
 use crate::telemetry::log_metrics::LogMetricsLayer;
-use crate::telemetry::otel_http::{CONSOLE_TARGET, TRACING_TARGET};
+use crate::telemetry::otel_http::TRACING_TARGET;
 use crate::telemetry::{
     ConsoleLogFormat, Logging, Metering, OtelLayer, TelemetryBuildError, TelemetryConfig, TelemetryError, Tracing,
 };
@@ -247,10 +247,7 @@ impl TelemetryService {
         let tracer = provider.tracer_with_scope(scope.clone());
         self.tracer_provider = Some(provider);
 
-        Ok(OpenTelemetryLayer::new(tracer)
-            .with_tracked_inactivity(true)
-            // Filter out console-only spans from the OpenTelemetry layer
-            .with_filter(filter_fn(|meta| !(meta.is_span() && meta.target() == CONSOLE_TARGET))))
+        Ok(OpenTelemetryLayer::new(tracer).with_tracked_inactivity(true))
     }
 
     fn install_trace(
