@@ -3,49 +3,26 @@ $ErrorActionPreference = "Stop"
 # Resolve the repo root from the script location so the script works regardless of the caller's cwd.
 $repoRoot = Split-Path -Parent $PSScriptRoot
 
-# Push-Location records the caller's directory; the finally block restores it even on error/exit.
-Push-Location $repoRoot
+function Invoke-Pnpm {
+    param([Parameter(Mandatory)][string[]]$Arguments)
+
+    & pnpm @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "pnpm $($Arguments -join ' ') failed with exit code $LASTEXITCODE"
+    }
+}
+
+# Keep the local commands aligned with .github/workflows/web_client_ci.yml.
+Push-Location (Join-Path $repoRoot "client/web")
 try {
-    $profile="release"
-    #$exampleWasmFiles = "camera_follow camera_free camera_look_at camera_orbit input_drivers input_process input_multiplayer input_gesture pinch_zoom curve" -split ' '
-    $exampleWasmFiles = "asset" -split ' '
-    $bindgen=$true
-    $opt=$false
+    Write-Host "Install dependencies"
+    Invoke-Pnpm -Arguments @("install")
 
     Write-Host "Build"
-    cargo build --target=wasm32-unknown-unknown -p shine-client --profile ${profile}
+    Invoke-Pnpm -Arguments @("build")
 
-    Write-Host "Build examples"
-    cargo build --target=wasm32-unknown-unknown -p shine-client --profile ${profile} --examples
-
-    Write-Host "Creating latest.json"
-    echo "{ ""version"": ""custom"" }" > ./dist/latest.json
-    New-Item -ItemType Directory -Force -Path ./dist/custom | Out-Null
-
-    $wasmFiles = @("shine-client") + $exampleWasmFiles
-    foreach ($wasmFile in $wasmFiles) {
-        Write-Host "${wasmFile}.html"
-        # replace shine-client to example.js in index.html
-        (Get-Content ./client/index.html) -replace "shine-client", "${wasmFile}" | Set-Content ./dist/custom/${wasmFile}.html
-    }
-
-    if ($bindgen) {
-        Write-Host "Pack client"
-        wasm-bindgen --no-typescript --target web --out-dir ./dist/custom .\target\wasm32-unknown-unknown\${profile}\shine-client.wasm
-        foreach ($exampleWasmFile in $exampleWasmFiles) {
-            Write-Host "Pack example" $exampleWasmFile
-            wasm-bindgen --no-typescript --target web --out-name ${exampleWasmFile} --out-dir ./dist/custom .\target\wasm32-unknown-unknown\${profile}\examples\${exampleWasmFile}.wasm
-        }
-    }
-
-    if ($opt) {
-        foreach ($wasmFile in $wasmFiles) {
-            Write-Host "Opt $wasmFile"
-            wasm-opt -Oz --strip-debug -o ./dist/custom/${wasmFile}_opt.wasm ./dist/custom/${wasmFile}_bg.wasm
-            del ./dist/custom/${wasmFile}_bg.wasm
-            move ./dist/custom/${wasmFile}_opt.wasm ./dist/custom/${wasmFile}_bg.wasm
-        }
-    }
+    Write-Host "Test"
+    Invoke-Pnpm -Arguments @("test")
 }
 finally {
     Pop-Location
