@@ -4,4 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-shine-infra = { workspace = true, features = ["testing"] }
+tracing = { workspace = true }
+
+shine-infra = { workspace = true }
+shine-test = { workspace = true, features = [ "toxiproxy" ] }
+

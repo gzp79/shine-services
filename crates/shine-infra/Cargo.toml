@@ -13,8 +13,7 @@ ot_otlp = [
     "opentelemetry-otlp",
     "opentelemetry-appender-tracing",
 ]
-ot_app_insight = ["opentelemetry-application-insights"]
-testing = []
+ot_app_insight = [ "opentelemetry-application-insights" ]
 
 [dependencies]
 log = { workspace = true }

@@ -7,6 +7,3 @@ pub use self::{
     hub::{hub_metrics, HubConfig, HubService, HubStatus},
     stream_authorize::StreamAuthorizeService,
 };
-
-#[cfg(test)]
-pub use self::hub::hub_test_utils;

@@ -51,7 +51,7 @@ impl DisconnectReason {
         }
     }
 
-    /// Whether the hub removed the connection, as opposed to the client leaving.
+    /// Return if the disconnect reason represents a drop rather than a client-initiated disconnect.
     pub fn is_drop(self) -> bool {
         self != DisconnectReason::Client
     }

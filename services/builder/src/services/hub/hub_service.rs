@@ -36,7 +36,10 @@ use std::collections::VecDeque;
 use std::time::Instant;
 use std::{sync::Arc, time::Duration};
 use thiserror::Error as ThisError;
-use tokio::{sync::mpsc, task::JoinHandle};
+use tokio::{
+    sync::{mpsc, watch},
+    task::JoinHandle,
+};
 use tracing::{info_span, Instrument};
 use uuid::Uuid;
 
@@ -161,10 +164,12 @@ impl HubServiceBuilder {
         let hub_registry = hub_registry.ok_or(HubServiceBuilderError::MissingHubRegistry)?;
         let stream_authorize_service =
             stream_authorize_service.ok_or(HubServiceBuilderError::MissingStreamAuthorizeService)?;
+        let (shutdown_complete_tx, shutdown_complete_rx) = watch::channel(false);
 
         let service = HubService {
             inner: Arc::new(Inner {
                 control_tx,
+                shutdown_complete: shutdown_complete_rx,
                 connections,
                 subscribers: Subscribers::new(),
                 hub_registry,
@@ -189,7 +194,7 @@ impl HubServiceBuilder {
             registry.listen().await?;
             StreamDispatcher::start(service.clone(), registry, config.stream_shutdown_timeout).await;
         }
-        HubService::start_dispatcher(service.clone(), control_rx, background_tasks);
+        HubService::start_dispatcher(service.clone(), control_rx, background_tasks, shutdown_complete_tx);
         Ok(service)
     }
 }
@@ -227,6 +232,7 @@ impl StreamEgress for HubStreamEgress {
 
 struct Inner {
     control_tx: mpsc::UnboundedSender<ControlMessage>,
+    shutdown_complete: watch::Receiver<bool>,
     connections: Arc<Connections>,
     subscribers: Subscribers,
     hub_registry: RedisHubConnectionDb,
@@ -388,6 +394,16 @@ impl HubService {
         self.send_control(ControlCommand::Shutdown)
     }
 
+    pub async fn wait_shutdown_complete(&self) {
+        let mut shutdown_complete = self.inner.shutdown_complete.clone();
+        while !*shutdown_complete.borrow_and_update() {
+            shutdown_complete
+                .changed()
+                .await
+                .expect("hub dispatcher dropped its shutdown signal");
+        }
+    }
+
     /// Notifies the hub that a user's registry entry changed, prompting an active-connection recheck.
     pub fn notify_registry_changed(&self, user_id: Uuid) -> Result<(), HubError> {
         self.send_control(ControlCommand::HubRegistryChanged { user_id })
@@ -442,6 +458,7 @@ impl HubService {
         service: HubService,
         mut control_rx: mpsc::UnboundedReceiver<ControlMessage>,
         background_tasks: Vec<JoinHandle<()>>,
+        shutdown_complete: watch::Sender<bool>,
     ) {
         tokio::spawn(async move {
             while let Some((command, origin, queued_at)) = control_rx.recv().await {
@@ -471,9 +488,18 @@ impl HubService {
                 }
             }
             tracing::info!("Hub command loop stopped");
-            for task in background_tasks {
+            for task in &background_tasks {
                 task.abort();
             }
+            for task in background_tasks {
+                if let Err(err) = task.await {
+                    if !err.is_cancelled() {
+                        tracing::error!("Hub background task failed while stopping: {err}");
+                    }
+                }
+            }
+            drop(control_rx);
+            shutdown_complete.send_replace(true);
         });
     }
 

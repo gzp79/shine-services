@@ -1,7 +1,7 @@
 //! Unit tests of [`Subscribers`]: topic filter, lossless delivery, release.
 
 use super::*;
-use crate::services::hub_test_utils::ping;
+use crate::testing::hub::ping;
 use shine_test::test;
 use tokio::sync::mpsc;
 

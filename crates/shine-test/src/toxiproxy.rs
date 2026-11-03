@@ -61,6 +61,7 @@ impl Toxiproxy {
             toxiproxy: self,
             name: name.to_string(),
             listen: info["listen"].as_str().unwrap_or_default().to_string(),
+            upstream: info["upstream"].as_str().unwrap_or_default().to_string(),
         }
     }
 
@@ -80,7 +81,6 @@ pub struct ResetGuard {
 
 impl Drop for ResetGuard {
     fn drop(&mut self) {
-        // Drop cannot await, and may run on a runtime thread: reset from a thread with its own runtime.
         let url = self.url.clone();
         let reset = std::thread::spawn(move || {
             let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
@@ -103,6 +103,7 @@ pub struct Proxy<'a> {
     toxiproxy: &'a Toxiproxy,
     name: String,
     listen: String,
+    upstream: String,
 }
 
 impl Proxy<'_> {
@@ -118,6 +119,11 @@ impl Proxy<'_> {
             .next()
             .and_then(|port| port.parse().ok())
             .unwrap_or_else(|| panic!("unexpected listen address of proxy {}: {}", self.name, self.listen))
+    }
+
+    /// The upstream address as reported by toxiproxy, e.g. `127.0.0.1:6379`.
+    pub fn upstream(&self) -> &str {
+        &self.upstream
     }
 
     /// A disabled proxy refuses new connections and closes the open ones.

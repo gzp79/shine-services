@@ -3,12 +3,8 @@
 
 use crate::{
     models::messages::{DisconnectReason, HubEvent, TopicKey},
-    services::hub_test_utils::{
-        assert_consistent, barrier, closed_with, connect, connect_on, count_connects, create_test_hub, dropped, drops,
-        egress_state, find_registry_connection, lifecycle_by_user, lifecycle_of, open, ping, replay, spawn_reader,
-        wait_event, Egress, EgressState, Lifecycle, Rng, TestHub, TestHubOptions, BARRIER_TIMEOUT,
-    },
     services::HubService,
+    testing::{Egress, EgressState, Lifecycle, Rng, TestHub, TestHubOptions},
 };
 use shine_test::test;
 use std::{
@@ -17,8 +13,6 @@ use std::{
 };
 use tokio::{sync::mpsc, task::JoinHandle, time::timeout};
 use uuid::Uuid;
-
-// --- Parallel contention ------------------------------------------------------------------------
 
 /// The expected outcome of one user's command script: commands of one sender are processed in order,
 /// so a user driven by a single task has a fully predictable lifecycle.
@@ -450,60 +444,56 @@ async fn churn_under_traffic_stays_consistent() {
     assert_eq!(hub.stats().await.connections, 0);
 }
 
-// --- Two instances ------------------------------------------------------------------------------
-
 #[test(serial = "hub-service")]
 async fn a_connect_on_another_instance_takes_the_user_over() {
-    let (Some(mut a), Some(mut b)) = (
-        create_test_hub(TestHubOptions::default()).await,
-        create_test_hub(TestHubOptions::default()).await,
-    ) else {
-        return;
-    };
+    let toxiproxy = Toxiproxy::from_env().unwrap();
+    let mut a = TestHub::new(&toxiproxy, TestHubOptions::default()).await;
+    let mut b = TestHub::new(&toxiproxy, TestHubOptions::default()).await;
+
     let user = Uuid::new_v4();
 
-    let (on_a, mut a_rx) = connect(&a.hub, user, 8);
-    barrier(&a.hub, &mut a.events).await;
-    let (on_b, mut b_rx) = connect(&b.hub, user, 8);
-    let seen_b = barrier(&b.hub, &mut b.events).await;
+    let (on_a, mut a_rx) = a.connect_ping(user, 8);
+    a.wait_for_events().await;
 
-    // A learns about B's connect from the registry change notice, which is not ordered with A's commands.
-    let seen = wait_event(
-        &mut a.events,
-        BARRIER_TIMEOUT,
-        |event| matches!(event, HubEvent::UserDisconnected { connection_id, .. } if *connection_id == on_a),
-    )
-    .await
-    .expect("the instance that lost the user must drop its connection");
-    assert_eq!(lifecycle_of(&seen, user), [Lifecycle::Disconnected(on_a)]);
-    let seen = [seen, barrier(&a.hub, &mut a.events).await].concat();
+    let (on_b, mut b_rx) = b.connect_ping(user, 8);
+    let seen_b = b.wait_for_events().await;
 
-    assert_eq!(
-        egress_state(&mut a_rx),
-        closed_with(Some(DisconnectReason::RegistryInactive))
-    );
-    assert_eq!(egress_state(&mut b_rx), open());
-    assert_eq!(drops(&seen), dropped(&[(DisconnectReason::RegistryInactive, 1)]));
-    assert_eq!(drops(&seen_b), dropped(&[]));
-    assert_consistent(&a.hub, &a.registry, [], &HashMap::new()).await;
-    assert_consistent(&b.hub, &b.registry, [user], &HashMap::from([(user, on_b)])).await;
+    // A learns about B's connect from the registry change notice.
+    let seen_a = {
+        let seen = a
+            .wait_for_event(
+                None,
+                |event| matches!(event, HubEvent::UserDisconnected { connection_id, .. } if connection_id == on_a),
+            )
+            .await
+            .expect("the instance that lost the user must drop its connection");
+
+        Lifecycle::assert_by_user(&seen, user, &[Lifecycle::Disconnected(on_a)]);
+        [seen_a, a.wait_for_events().await].concat()
+    };
+
+    EgressState::from_egress(&mut a_rx).assert_closed_with(Some(DisconnectReason::RegistryInactive));
+    EgressState::from_egress(&mut b_rx).assert_open();
+    Lifecycle::assert_drops(&seen_a, &[(DisconnectReason::RegistryInactive, 1)]);
+    Lifecycle::assert_drops(&seen_b, &[]);
+    a.assert_consistent([], &HashMap::new()).await;
+    b.assert_consistent([user], &HashMap::from([(user, on_b)])).await;
 
     // B's disconnect removes the row; A has nothing left to drop.
     b.hub.request_disconnection(user, on_b).unwrap();
-    barrier(&b.hub, &mut b.events).await;
+    a.wait_for_events().await;
     tokio::time::sleep(Duration::from_millis(200)).await;
+
     assert_eq!(lifecycle_of(&barrier(&a.hub, &mut a.events).await, user), []);
     assert_eq!(find_registry_connection(&a.registry, user).await, None);
 }
 
 #[test(serial = "hub-service")]
 async fn users_bouncing_between_instances_converge_to_the_registry() {
-    let (Some(mut a), Some(mut b)) = (
-        create_test_hub(TestHubOptions::default()).await,
-        create_test_hub(TestHubOptions::default()).await,
-    ) else {
-        return;
-    };
+    let toxiproxy = Toxiproxy::from_env().unwrap();
+    let mut a = TestHub::new(&toxiproxy, TestHubOptions::default()).await;
+    let mut b = TestHub::new(&toxiproxy, TestHubOptions::default()).await;
+
     const USERS: u64 = 16;
     const ITERATIONS: usize = 20;
     let users: Vec<Uuid> = (0..USERS).map(|_| Uuid::new_v4()).collect();

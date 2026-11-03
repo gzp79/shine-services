@@ -15,5 +15,3 @@ pub use self::{
 
 #[cfg(test)]
 mod tests;
-#[cfg(test)]
-pub use self::tests::test_utils as hub_test_utils;

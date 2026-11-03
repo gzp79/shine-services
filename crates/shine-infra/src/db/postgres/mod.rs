@@ -5,8 +5,6 @@ mod pg_listener;
 mod pg_type;
 mod query_builder;
 
-pub mod testing;
-
 pub use self::{
     error_check::PgErrorChecks,
     pg_connection::{

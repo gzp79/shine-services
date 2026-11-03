@@ -4154,6 +4154,8 @@ name = "shine-infra-testing"
 version = "0.1.0"
 dependencies = [
  "shine-infra",
+ "shine-test",
+ "tracing",
 ]
 
 [[package]]
