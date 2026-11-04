@@ -7,35 +7,45 @@
       "label": "format",
       "type": "shell",
       "command": "cargo fmt",
-      "problemMatcher": ["$rustc"],
+      "problemMatcher": [
+        "$rustc"
+      ],
       "group": "build"
     },
     {
       "label": "clippy",
       "type": "shell",
       "command": "cargo clippy ${input:projects} --all-targets",
-      "problemMatcher": ["$rustc"],
+      "problemMatcher": [
+        "$rustc"
+      ],
       "group": "build"
     },
     {
       "label": "clippy wasm",
       "type": "shell",
       "command": "cargo clippy --target wasm32-unknown-unknown ${input:wasm-projects} --all-targets",
-      "problemMatcher": ["$rustc"],
+      "problemMatcher": [
+        "$rustc"
+      ],
       "group": "build"
     },
     {
       "label": "build",
       "type": "shell",
       "command": "cargo build --release ${input:projects} --all-targets",
-      "problemMatcher": ["$rustc"],
+      "problemMatcher": [
+        "$rustc"
+      ],
       "group": "build"
     },
     {
       "label": "build wasm",
       "type": "shell",
       "command": "cargo build --target wasm32-unknown-unknown --release ${input:wasm-projects} --all-targets",
-      "problemMatcher": ["$rustc"],
+      "problemMatcher": [
+        "$rustc"
+      ],
       "group": "build"
     },
     {
@@ -46,11 +56,16 @@
         "env": {
           "RUST_LOG": "warn",
           "RUST_BACKTRACE": "full",
-          "SHINE_TEST_PG_CNS_": "postgres://username:password@localhost:5432/database-test?sslmode=disable",
-          "SHINE_TEST_REDIS_CNS": "redis://localhost:6379"
+          "SHINE_TEST_TOXIPROXY_URL": "http://localhost:8474",
+          "SHINE_TEST_PG_CNS": "postgres://username:password@localhost:5432/database-test?sslmode=disable",
+          "SHINE_TEST_PG_CNS_DIRECT": "postgres://username:password@localhost:25432/database-test?sslmode=disable",
+          "SHINE_TEST_REDIS_CNS": "redis://localhost:6379",
+          "SHINE_TEST_REDIS_CNS_DIRECT": "redis://localhost:26379"
         }
       },
-      "problemMatcher": ["$rustc"],
+      "problemMatcher": [
+        "$rustc"
+      ],
       "group": "build"
     },
     {
@@ -65,7 +80,9 @@
           "_GECKODRIVER": "${workspaceFolder}\\target\\browser-drivers\\geckodriver.exe"
         }
       },
-      "problemMatcher": ["$rustc"],
+      "problemMatcher": [
+        "$rustc"
+      ],
       "group": "build"
     },
     {
@@ -78,7 +95,9 @@
           "RUST_BACKTRACE": "full"
         }
       },
-      "problemMatcher": ["$rustc"],
+      "problemMatcher": [
+        "$rustc"
+      ],
       "group": "build"
     },
     {
@@ -114,7 +133,9 @@
           "SHINE--IDENTITY--DB--REDIS_CNS": "${env:SHINE_REDIS_CNS}"
         }
       },
-      "problemMatcher": ["$rustc"],
+      "problemMatcher": [
+        "$rustc"
+      ],
       "group": "build"
     },
     {
@@ -135,7 +156,9 @@
           "SHINE--TELEMETRY--DEFAULT_LEVEL": "INFO,shine=DEBUG"
         }
       },
-      "problemMatcher": ["$rustc"],
+      "problemMatcher": [
+        "$rustc"
+      ],
       "group": "build"
     },
     {
@@ -150,7 +173,9 @@
           "SHINE--SERVICE--POSRT": "8443"
         }
       },
-      "problemMatcher": ["$rustc"],
+      "problemMatcher": [
+        "$rustc"
+      ],
       "group": "build"
     },
     {
@@ -174,7 +199,9 @@
           "SHINE--TELEMETRY--DEFAULT_LEVEL": "info,shine_game=trace,shine_forge=trace,shine_infra=trace,test_map=trace"
         }
       },
-      "problemMatcher": ["$rustc"],
+      "problemMatcher": [
+        "$rustc"
+      ],
       "group": "build"
     }
   ],
@@ -184,16 +211,46 @@
       "id": "projects",
       "description": "Select project",
       "options": [
-        { "label": "all", "value": "" },
-        { "label": "shine-builder", "value": "-p shine-builder" },
-        { "label": "shine-identity", "value": "-p shine-identity" },
-        { "label": "shine-infra", "value": "-p shine-infra" },
-        { "label": "shine-infra-macros", "value": "-p shine-infra-macros" },
-        { "label": "shine-infra-testing", "value": "-p shine-infra-testing" },
-        { "label": "shine-core", "value": "-p shine-core" },
-        { "label": "shine-game", "value": "-p shine-game" },
-        { "label": "shine-test", "value": "-p shine-test" },
-        { "label": "shine-test-macros", "value": "-p shine-test-macros" }
+        {
+          "label": "all",
+          "value": ""
+        },
+        {
+          "label": "shine-builder",
+          "value": "-p shine-builder"
+        },
+        {
+          "label": "shine-identity",
+          "value": "-p shine-identity"
+        },
+        {
+          "label": "shine-infra",
+          "value": "-p shine-infra"
+        },
+        {
+          "label": "shine-infra-macros",
+          "value": "-p shine-infra-macros"
+        },
+        {
+          "label": "shine-infra-testing",
+          "value": "-p shine-infra-testing"
+        },
+        {
+          "label": "shine-core",
+          "value": "-p shine-core"
+        },
+        {
+          "label": "shine-game",
+          "value": "-p shine-game"
+        },
+        {
+          "label": "shine-test",
+          "value": "-p shine-test"
+        },
+        {
+          "label": "shine-test-macros",
+          "value": "-p shine-test-macros"
+        }
       ],
       "default": "asset-service"
     },
@@ -206,9 +263,18 @@
           "label": "all",
           "value": "-p shine-core -p shine-game -p shine-test"
         },
-        { "label": "shine-core", "value": "-p shine-core" },
-        { "label": "shine-game", "value": "-p shine-game" },
-        { "label": "shine-test", "value": "-p shine-test" }
+        {
+          "label": "shine-core",
+          "value": "-p shine-core"
+        },
+        {
+          "label": "shine-game",
+          "value": "-p shine-game"
+        },
+        {
+          "label": "shine-test",
+          "value": "-p shine-test"
+        }
       ],
       "default": "asset-service"
     },
@@ -217,11 +283,26 @@
       "id": "env-task",
       "description": "Select env task",
       "options": [
-        { "label": "start (rebuild)", "value": "up --build" },
-        { "label": "start", "value": "up" },
-        { "label": "start (with trace dashboard)", "value": "--profile observe up" },
-        { "label": "stop", "value": "down" },
-        { "label": "status", "value": "ps" }
+        {
+          "label": "start (rebuild)",
+          "value": "up --build"
+        },
+        {
+          "label": "start",
+          "value": "up"
+        },
+        {
+          "label": "start (with trace dashboard)",
+          "value": "--profile observe up"
+        },
+        {
+          "label": "stop",
+          "value": "down"
+        },
+        {
+          "label": "status",
+          "value": "ps"
+        }
       ],
       "default": "asset-service"
     }

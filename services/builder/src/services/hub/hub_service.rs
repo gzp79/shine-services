@@ -257,11 +257,6 @@ impl HubService {
         self.inner.ping_enabled
     }
 
-    /// The stream workers of this instance, if the hub serves streams.
-    pub fn stream_registry(&self) -> Option<&StreamRegistry<RedisCommandInboxDb, PgCommandLogDb>> {
-        self.inner.stream_registry.as_ref()
-    }
-
     /// Subscribes the connection to a stream (or asks for it to be synced again), as `requested_kind` if the
     /// stream is new. What the stream carries is then sent to the connection through the hub. This is the way
     /// for every transport.

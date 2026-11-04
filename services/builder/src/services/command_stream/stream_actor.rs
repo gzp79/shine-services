@@ -405,3 +405,7 @@ where
         }
     }
 }
+
+#[cfg(test)]
+#[path = "stream_actor_test.rs"]
+mod stream_actor_test;

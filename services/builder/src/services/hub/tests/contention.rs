@@ -2,10 +2,12 @@
 //! one Redis registry.
 
 use crate::{
-    models::messages::{DisconnectReason, HubEvent, TopicKey},
+    models::messages::{DisconnectReason, HubEvent, HubMessage, PingEvent, TopicKey},
     services::HubService,
-    testing::{Egress, EgressState, Lifecycle, Rng, TestHub, TestHubOptions},
+    testing::hub::{Egress, EgressState, Lifecycle, TestHub},
 };
+use ring::rand::SystemRandom;
+use shine_infra::session::SessionKey;
 use shine_test::test;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -13,6 +15,75 @@ use std::{
 };
 use tokio::{sync::mpsc, task::JoinHandle, time::timeout};
 use uuid::Uuid;
+
+const BARRIER_TIMEOUT: Duration = Duration::from_secs(30);
+
+struct Rng(u64);
+
+impl Rng {
+    fn below(&mut self, bound: u64) -> u64 {
+        assert!(bound > 0);
+        self.0 = self.0.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+        self.0 % bound
+    }
+}
+
+fn connect(hub: &HubService, user_id: Uuid, capacity: usize) -> (Uuid, Egress) {
+    connect_on(hub, user_id, capacity, vec![TopicKey::Ping])
+}
+
+fn connect_on(hub: &HubService, user_id: Uuid, capacity: usize, topics: Vec<TopicKey>) -> (Uuid, Egress) {
+    let (tx, rx) = mpsc::channel(capacity);
+    let session_key = SessionKey::new_random(&SystemRandom::new()).unwrap();
+    let connection_id = hub.request_connection(user_id, session_key, tx, topics).unwrap();
+    (connection_id, rx)
+}
+
+fn replay(events: &[HubEvent]) -> HashMap<Uuid, Uuid> {
+    let mut active = HashMap::new();
+    for event in events {
+        match event {
+            HubEvent::UserConnected { user_id, connection_id, .. } => {
+                active.insert(*user_id, *connection_id);
+            }
+            HubEvent::UserDisconnected { user_id, connection_id, .. } if active.get(user_id) == Some(connection_id) => {
+                active.remove(user_id);
+            }
+            HubEvent::UserDisconnected { .. } | HubEvent::Shutdown => {}
+        }
+    }
+    active
+}
+
+fn drops(events: &[HubEvent]) -> BTreeMap<DisconnectReason, u64> {
+    Lifecycle::collect_drops(events)
+}
+
+fn count_connects(events: &[HubEvent]) -> usize {
+    events
+        .iter()
+        .filter(|event| matches!(event, HubEvent::UserConnected { .. }))
+        .count()
+}
+
+fn egress_state(egress: &mut Egress) -> EgressState {
+    EgressState::from_egress(egress)
+}
+
+fn spawn_reader(connection_id: Uuid, mut egress: Egress) -> JoinHandle<EgressState> {
+    tokio::spawn(async move {
+        let mut state = EgressState::default();
+        while let Some(message) = egress.recv().await {
+            state.record(message, Some(connection_id));
+        }
+        state.closed = true;
+        state
+    })
+}
+
+fn ping(id: impl Into<String>) -> HubMessage {
+    HubMessage::Ping(PingEvent { id: id.into() })
+}
 
 /// The expected outcome of one user's command script: commands of one sender are processed in order,
 /// so a user driven by a single task has a fully predictable lifecycle.
@@ -110,9 +181,8 @@ async fn run_user_script(hub: HubService, user_id: Uuid, seed: u64, steps: usize
 
 #[test(serial = "hub-service")]
 async fn parallel_users_each_follow_their_own_command_order() {
-    let Some(TestHub { hub, registry, mut events, .. }) = create_test_hub(TestHubOptions::default()).await else {
-        return;
-    };
+    let mut test = TestHub::default_from_env().await.unwrap();
+    let hub = test.hub.clone();
     const USERS: u64 = 48;
     const STEPS: usize = 40;
 
@@ -125,9 +195,9 @@ async fn parallel_users_each_follow_their_own_command_order() {
     for task in tasks {
         outcomes.push(task.await.unwrap());
     }
-    let seen = barrier(&hub, &mut events).await;
+    let seen = test.wait_all_commands().await;
 
-    let lifecycle = lifecycle_by_user(&seen);
+    let lifecycle = Lifecycle::collect(&seen);
     let active = replay(&seen);
     let mut expected_active = HashMap::new();
     let mut expected_dropped = BTreeMap::<DisconnectReason, u64>::new();
@@ -144,30 +214,46 @@ async fn parallel_users_each_follow_their_own_command_order() {
             *expected_dropped.entry(*reason).or_default() += count;
         }
         for (connection_id, rx) in receivers.iter_mut() {
-            let expected = if model.active == Some(*connection_id) {
-                open()
+            if model.active == Some(*connection_id) {
+                let state = egress_state(rx);
+                assert!(state.pings.is_empty(), "unexpected pings for {connection_id}");
+                assert!(
+                    state.disconnects.is_empty(),
+                    "unexpected drop notice for {connection_id}"
+                );
+                assert!(!state.closed, "active connection {connection_id} was closed");
             } else {
-                closed_with(model.notices.get(connection_id).copied())
-            };
-            assert_eq!(egress_state(rx), expected, "egress of {connection_id} (seed {seed:#x})");
+                let state = egress_state(rx);
+                assert!(state.pings.is_empty(), "unexpected pings for {connection_id}");
+                assert_eq!(
+                    state.disconnects,
+                    model
+                        .notices
+                        .get(connection_id)
+                        .copied()
+                        .into_iter()
+                        .collect::<Vec<_>>(),
+                    "drop notice for {connection_id}"
+                );
+                assert!(state.closed, "inactive connection {connection_id} stayed open");
+            }
         }
     }
     assert_eq!(active, expected_active);
     assert_eq!(drops(&seen), expected_dropped);
-    assert_consistent(&hub, &registry, users.iter().map(|(u, _)| *u), &active).await;
+    test.assert_consistent(users.iter().map(|(u, _)| *u), &active).await;
 
     for (user_id, connection_id) in &active {
         hub.request_disconnection(*user_id, *connection_id).unwrap();
     }
-    barrier(&hub, &mut events).await;
+    test.wait_all_commands().await;
     assert_eq!(hub.stats().await.connections, 0);
 }
 
 #[test(serial = "hub-service")]
 async fn same_user_contention_keeps_a_single_active_connection() {
-    let Some(TestHub { hub, registry, mut events, .. }) = create_test_hub(TestHubOptions::default()).await else {
-        return;
-    };
+    let mut test = TestHub::default_from_env().await.unwrap();
+    let hub = test.hub.clone();
     const TASKS: u64 = 16;
     const ITERATIONS: usize = 25;
     let user = Uuid::new_v4();
@@ -217,7 +303,7 @@ async fn same_user_contention_keeps_a_single_active_connection() {
         disconnected.extend(task_disconnected);
         forced.extend(task_forced);
     }
-    let seen = barrier(&hub, &mut events).await;
+    let seen = test.wait_all_commands().await;
 
     let active = replay(&seen);
     let connects = seen
@@ -239,7 +325,7 @@ async fn same_user_contention_keeps_a_single_active_connection() {
         if state.closed {
             closed += 1;
         }
-        match state.notices.as_slice() {
+        match state.disconnects.as_slice() {
             [] if state.closed => assert!(
                 disconnected.contains(connection_id),
                 "{connection_id} closed without a notice, but no disconnect was requested for it"
@@ -250,7 +336,7 @@ async fn same_user_contention_keeps_a_single_active_connection() {
             }
             other => panic!("{connection_id} got unexpected close notices: {other:?}"),
         }
-        for notice in state.notices {
+        for notice in state.disconnects {
             *notices.entry(notice).or_default() += 1;
         }
     }
@@ -261,12 +347,12 @@ async fn same_user_contention_keeps_a_single_active_connection() {
     assert_eq!(closed, disconnects, "a channel is released for every disconnect");
     // No socket went away, so every forced drop delivered its notice.
     assert_eq!(drops(&seen), notices);
-    assert_consistent(&hub, &registry, [user], &active).await;
+    test.assert_consistent([user], &active).await;
 
     if let Some(connection_id) = active.get(&user) {
         hub.request_disconnection(user, *connection_id).unwrap();
     }
-    barrier(&hub, &mut events).await;
+    test.wait_all_commands().await;
     assert_eq!(hub.stats().await.connections, 0);
 }
 
@@ -277,9 +363,8 @@ enum Client {
 
 #[test(serial = "hub-service")]
 async fn churn_under_traffic_stays_consistent() {
-    let Some(TestHub { hub, registry, mut events, .. }) = create_test_hub(TestHubOptions::default()).await else {
-        return;
-    };
+    let mut test = TestHub::default_from_env().await.unwrap();
+    let hub = test.hub.clone();
     const USERS: usize = 12;
     const TASKS_PER_USER: u64 = 2;
     const ITERATIONS: usize = 20;
@@ -288,7 +373,7 @@ async fn churn_under_traffic_stays_consistent() {
     // A slow client that never reads: the broadcast traffic must get it dropped as a slow consumer.
     let slow_user = Uuid::new_v4();
     let (slow_connection, mut slow_rx) = connect(&hub, slow_user, 2);
-    let mut seen = barrier(&hub, &mut events).await;
+    let mut seen = test.wait_all_commands().await;
 
     let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
     let (known_tx, mut known_rx) = mpsc::unbounded_channel::<Uuid>();
@@ -374,30 +459,25 @@ async fn churn_under_traffic_stays_consistent() {
     broadcaster.await.unwrap();
     direct_sender.await.unwrap();
 
-    seen.extend(barrier(&hub, &mut events).await);
+    seen.extend(test.wait_all_commands().await);
     let active = replay(&seen);
     assert!(
         !active.contains_key(&slow_user),
         "the slow client must have been dropped"
     );
-    assert_consistent(&hub, &registry, users.iter().copied(), &active).await;
-    assert_eq!(
-        egress_state(&mut slow_rx),
-        EgressState {
-            pings: vec!["b-00000000".into(), "b-00000001".into()],
-            notices: vec![],
-            closed: true,
-        },
-        "the slow client {slow_connection} keeps its buffered messages"
-    );
+    test.assert_consistent(users.iter().copied(), &active).await;
+    let slow_state = egress_state(&mut slow_rx);
+    assert_eq!(slow_state.pings, ["b-00000000".to_string(), "b-00000001".to_string()]);
+    assert!(slow_state.disconnects.is_empty());
+    assert!(slow_state.closed, "the slow client {slow_connection} was not released");
 
     // Release the survivors so every channel ends, then check what each client saw.
     for (user_id, connection_id) in &active {
         hub.request_disconnection(*user_id, *connection_id).unwrap();
     }
-    seen.extend(barrier(&hub, &mut events).await);
+    seen.extend(test.wait_all_commands().await);
     assert!(replay(&seen).is_empty());
-    assert_consistent(&hub, &registry, users.iter().copied(), &HashMap::new()).await;
+    test.assert_consistent(users.iter().copied(), &HashMap::new()).await;
 
     let connects = seen
         .iter()
@@ -416,16 +496,16 @@ async fn churn_under_traffic_stays_consistent() {
         };
         assert!(state.closed, "the channel of {connection_id} was never released");
         assert!(
-            state.notices.len() <= 1,
+            state.disconnects.len() <= 1,
             "{connection_id} got several notices: {:?}",
-            state.notices
+            state.disconnects
         );
         let broadcasts: Vec<_> = state.pings.iter().filter(|id| id.starts_with("b-")).collect();
         assert!(
             broadcasts.windows(2).all(|pair| pair[0] < pair[1]),
             "{connection_id} got broadcasts out of order"
         );
-        for notice in state.notices {
+        for notice in state.disconnects {
             *notices.entry(notice).or_default() += 1;
         }
     }
@@ -446,33 +526,31 @@ async fn churn_under_traffic_stays_consistent() {
 
 #[test(serial = "hub-service")]
 async fn a_connect_on_another_instance_takes_the_user_over() {
-    let toxiproxy = Toxiproxy::from_env().unwrap();
-    let mut a = TestHub::new(&toxiproxy, TestHubOptions::default()).await;
-    let mut b = TestHub::new(&toxiproxy, TestHubOptions::default()).await;
+    let mut a = TestHub::default_from_env().await.unwrap();
+    let mut b = TestHub::default_from_env().await.unwrap();
 
     let user = Uuid::new_v4();
 
     let (on_a, mut a_rx) = a.connect_ping(user, 8);
-    a.wait_for_events().await;
+    a.wait_all_commands().await;
 
     let (on_b, mut b_rx) = b.connect_ping(user, 8);
-    let seen_b = b.wait_for_events().await;
+    let seen_b = b.wait_all_commands().await;
 
     // A learns about B's connect from the registry change notice.
-    let seen_a = {
-        let seen = a
-            .wait_for_event(
-                None,
-                |event| matches!(event, HubEvent::UserDisconnected { connection_id, .. } if connection_id == on_a),
-            )
-            .await
-            .expect("the instance that lost the user must drop its connection");
+    let mut seen_a = a
+        .wait_event(
+            None,
+            |event| matches!(event, HubEvent::UserDisconnected { connection_id, .. } if *connection_id == on_a),
+        )
+        .await
+        .expect("the instance that lost the user must drop its connection");
+    seen_a.extend(a.wait_all_commands().await);
+    Lifecycle::assert_by_user(&seen_a, user, &[Lifecycle::Disconnected(on_a)]);
 
-        Lifecycle::assert_by_user(&seen, user, &[Lifecycle::Disconnected(on_a)]);
-        [seen_a, a.wait_for_events().await].concat()
-    };
-
-    EgressState::from_egress(&mut a_rx).assert_closed_with(Some(DisconnectReason::RegistryInactive));
+    EgressState::from_egress(&mut a_rx)
+        .assert_closed()
+        .assert_disconnects(&[DisconnectReason::RegistryInactive]);
     EgressState::from_egress(&mut b_rx).assert_open();
     Lifecycle::assert_drops(&seen_a, &[(DisconnectReason::RegistryInactive, 1)]);
     Lifecycle::assert_drops(&seen_b, &[]);
@@ -481,18 +559,17 @@ async fn a_connect_on_another_instance_takes_the_user_over() {
 
     // B's disconnect removes the row; A has nothing left to drop.
     b.hub.request_disconnection(user, on_b).unwrap();
-    a.wait_for_events().await;
+    b.wait_all_commands().await;
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    assert_eq!(lifecycle_of(&barrier(&a.hub, &mut a.events).await, user), []);
-    assert_eq!(find_registry_connection(&a.registry, user).await, None);
+    assert_eq!(Lifecycle::collect_by_user(&a.wait_all_commands().await, user), []);
+    assert_eq!(a.find_connection_by_user(user).await, None);
 }
 
 #[test(serial = "hub-service")]
 async fn users_bouncing_between_instances_converge_to_the_registry() {
-    let toxiproxy = Toxiproxy::from_env().unwrap();
-    let mut a = TestHub::new(&toxiproxy, TestHubOptions::default()).await;
-    let mut b = TestHub::new(&toxiproxy, TestHubOptions::default()).await;
+    let mut a = TestHub::default_from_env().await.unwrap();
+    let mut b = TestHub::default_from_env().await.unwrap();
 
     const USERS: u64 = 16;
     const ITERATIONS: usize = 20;
@@ -535,8 +612,8 @@ async fn users_bouncing_between_instances_converge_to_the_registry() {
     let (mut seen_a, mut seen_b) = (vec![], vec![]);
     let deadline = tokio::time::Instant::now() + BARRIER_TIMEOUT;
     let (active_a, active_b) = loop {
-        seen_a.extend(barrier(&a.hub, &mut a.events).await);
-        seen_b.extend(barrier(&b.hub, &mut b.events).await);
+        seen_a.extend(a.wait_all_commands().await);
+        seen_b.extend(b.wait_all_commands().await);
         let (active_a, active_b) = (replay(&seen_a), replay(&seen_b));
         let mut converged = true;
         for user in &users {
@@ -545,7 +622,7 @@ async fn users_bouncing_between_instances_converge_to_the_registry() {
                 .flatten()
                 .copied()
                 .collect();
-            let held: Vec<Uuid> = find_registry_connection(&a.registry, *user).await.into_iter().collect();
+            let held: Vec<Uuid> = a.find_connection_by_user(*user).await.into_iter().collect();
             converged &= local == held;
         }
         if converged {
@@ -570,7 +647,7 @@ async fn users_bouncing_between_instances_converge_to_the_registry() {
             state.closed, !active,
             "only the converged connections stay open: {connection_id}"
         );
-        match state.notices.as_slice() {
+        match state.disconnects.as_slice() {
             [] if state.closed => assert!(
                 disconnected.contains(connection_id),
                 "{connection_id} closed without a notice, but no disconnect was requested for it"
@@ -578,7 +655,7 @@ async fn users_bouncing_between_instances_converge_to_the_registry() {
             [] | [DisconnectReason::Replaced] | [DisconnectReason::RegistryInactive] => {}
             other => panic!("{connection_id} got unexpected close notices: {other:?}"),
         }
-        for notice in state.notices {
+        for notice in state.disconnects {
             *notices.entry(notice).or_default() += 1;
         }
     }
@@ -589,10 +666,10 @@ async fn users_bouncing_between_instances_converge_to_the_registry() {
     }
     assert_eq!(dropped, notices);
 
-    for (test, active) in [(&mut a, &active_a), (&mut b, &active_b)] {
+    for (test_hub, active) in [(&mut a, &active_a), (&mut b, &active_b)] {
         for (user, connection_id) in active {
-            test.hub.request_disconnection(*user, *connection_id).unwrap();
+            test_hub.hub.request_disconnection(*user, *connection_id).unwrap();
         }
-        barrier(&test.hub, &mut test.events).await;
+        test_hub.wait_all_commands().await;
     }
 }

@@ -1,5 +1,5 @@
+use crate::db::redis::{get_redis_cns, get_redis_cns_direct};
 use shine_infra::db::redis::{RedisConnectionPool, create_redis_pool};
-use shine_test::toxiproxy::Toxiproxy;
 
 pub struct TestRedis {
     pub pool: RedisConnectionPool,
@@ -7,17 +7,12 @@ pub struct TestRedis {
 }
 
 impl TestRedis {
-    pub async fn new(toxiproxy: &Toxiproxy) -> Self {
-        let proxy = toxiproxy.proxy("postgres").await;
-        let listen = proxy.listen();
-        let upstream = proxy.upstream();
-        tracing::info!("Using redis proxy listen: {listen}, upstream: {upstream}");
-
-        let cns = format!("redis://{listen}?timeout=1000&pool_timeout=500");
+    pub async fn from_env() -> Option<Self> {
+        let cns = get_redis_cns()?;
         let pool = create_redis_pool(&cns).await.unwrap();
 
-        let cns = format!("redis://{upstream}?timeout=1000&pool_timeout=500");
+        let cns = get_redis_cns_direct()?;
         let direct_pool = create_redis_pool(&cns).await.unwrap();
-        Self { pool, direct_pool }
+        Some(Self { pool, direct_pool })
     }
 }

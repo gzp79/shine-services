@@ -1,4 +1,7 @@
 mod test_pg;
 mod utils;
 
-pub use self::{test_pg::TestPg, utils::get_postgres_cns};
+pub use self::{
+    test_pg::TestPg,
+    utils::{get_postgres_cns, get_postgres_cns_direct},
+};

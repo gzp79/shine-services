@@ -1,7 +1,7 @@
 //! Hub behavior under Redis faults.
 
 use crate::{
-    models::messages::{DisconnectReason, HubEvent, HubMessage},
+    models::messages::{DisconnectReason, HubEvent, HubMessage, TopicKey},
     testing::hub::{EgressState, Lifecycle, TestHub, TestHubOptions},
 };
 use shine_test::{
@@ -24,7 +24,7 @@ async fn connect_proceeds_when_the_registry_write_landed_but_its_reply_was_lost(
     let toxiproxy = Toxiproxy::from_env().unwrap();
     let _reset = toxiproxy.reset_guard().await;
 
-    let mut test = TestHub::from_toxiproxy(&toxiproxy, TestHubOptions::default()).await;
+    let mut test = TestHub::default_from_env().await.unwrap();
 
     let user = Uuid::new_v4();
 
@@ -67,7 +67,7 @@ async fn connect_is_rejected_when_the_registry_write_did_not_land() {
     let toxiproxy = Toxiproxy::from_env().unwrap();
     let _reset = toxiproxy.reset_guard().await;
 
-    let mut test = TestHub::from_toxiproxy(&toxiproxy, TestHubOptions::default()).await;
+    let mut test = TestHub::default_from_env().await.unwrap();
     let user = Uuid::new_v4();
 
     let (first, mut first_rx) = test.connect_ping(user, 8);
@@ -101,7 +101,7 @@ async fn disconnect_during_an_outage_releases_the_socket_and_leaves_the_row_to_t
     let toxiproxy = Toxiproxy::from_env().unwrap();
     let _reset = toxiproxy.reset_guard().await;
 
-    let mut test = TestHub::from_toxiproxy(&toxiproxy, TestHubOptions::default()).await;
+    let mut test = TestHub::default_from_env().await.unwrap();
     let user = Uuid::new_v4();
 
     let (connection, mut rx) = test.connect_ping(user, 8);
@@ -134,58 +134,47 @@ async fn disconnect_during_an_outage_releases_the_socket_and_leaves_the_row_to_t
     test.delete_connection_by_user(user).await;
 }
 
-// todo: #[test(serial = "hub-service")]
-// async fn an_outage_keeps_live_connections_and_rejects_new_ones() {
-//     let tick = Duration::from_millis(100);
+#[test(serial = "hub-service")]
+async fn an_outage_keeps_live_connections_and_rejects_new_ones() {
+    let tick = Duration::from_millis(100);
 
-//     let toxiproxy = Toxiproxy::from_env().unwrap();
-//     let _reset = toxiproxy.reset_guard().await;
+    let toxiproxy = Toxiproxy::from_env().unwrap();
+    let _reset = toxiproxy.reset_guard().await;
 
-//     let mut test = TestHub::from_toxiproxy(
-//         &toxiproxy,
-//         TestHubOptions {
-//             heartbeat: tick,
-//             session_check: tick,
-//             ..Default::default()
-//         },
-//     );
-//     let user = Uuid::new_v4();
-//     let session_key = key();
-//     seed_session(&test.redis, user, session_key).await;
+    let mut test = TestHub::from_env(TestHubOptions {
+        heartbeat: tick,
+        session_check: tick,
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+    let user = Uuid::new_v4();
+    let session_key = test.seed_session(user).await;
 
-//     let (connection, mut rx) = connect_with_key(&test.hub, user, session_key, 8);
-//     barrier(&test.hub, &mut test.events).await;
+    let (connection, mut rx) = test.connect(user, 8, vec![TopicKey::Ping], Some(session_key));
+    test.wait_all_commands().await;
 
-//     // Heartbeats and session checks fail for many ticks: a transient error must not disconnect anybody.
-//     let proxy = toxiproxy.proxy("redis").await;
-//     proxy.set_enabled(false).await;
-//     let new_user = Uuid::new_v4();
-//     let (_rejected, mut rejected_rx) = connect(&test.hub, new_user, 8);
-//     let during = wait_event(&mut test.events, tick * 10, |_| true).await;
-//     assert!(during.is_none(), "nothing may change during the outage: {during:?}");
-//     assert!(
-//         tokio::time::timeout(BARRIER_TIMEOUT, rejected_rx.recv())
-//             .await
-//             .unwrap()
-//             .is_none(),
-//         "a connect during the outage is rejected"
-//     );
-//     proxy.set_enabled(true).await;
+    // Heartbeats and session checks fail for many ticks: a transient error must not disconnect anybody.
+    let proxy = toxiproxy.proxy("redis").await;
+    proxy.set_enabled(false).await;
+    let new_user = Uuid::new_v4();
+    let (_rejected, mut rejected_rx) = test.connect_ping(new_user, 8);
+    let during = test.wait_event(Some(tick * 10), |_| true).await;
+    assert!(during.is_none(), "nothing may change during the outage: {during:?}");
+    assert!(
+        EgressState::poll(&mut rejected_rx).await.is_none(),
+        "a connect during the outage is rejected"
+    );
+    proxy.set_enabled(true).await;
 
-//     // After the outage the ticks succeed again and the live connection is still there.
-//     tokio::time::sleep(tick * 5).await;
-//     let seen = barrier(&test.hub, &mut test.events).await;
-//     assert_eq!(lifecycle_of(&seen, user), []);
-//     assert_eq!(EgressSstate::from_egress(&mut rx).closed, false);
-//     assert_eq!(drops(&seen), dropped(&[]));
-//     assert_consistent(
-//         &test.hub,
-//         &registry,
-//         [user, new_user],
-//         &HashMap::from([(user, connection)]),
-//     )
-//     .await;
+    // After the outage the ticks succeed again and the live connection is still there.
+    tokio::time::sleep(tick * 5).await;
+    let seen = test.wait_all_commands().await;
+    assert_eq!(Lifecycle::collect_by_user(&seen, user), []);
+    EgressState::from_egress(&mut rx).assert_open();
+    Lifecycle::assert_drops(&seen, &[]);
+    test.assert_consistent([user, new_user], &HashMap::from([(user, connection)]))
+        .await;
 
-//     test.hub.request_disconnection(user, connection).unwrap();
-//     barrier(&test.hub, &mut test.events).await;
-// }
+    test.cleanup_connection(user, connection).await;
+}

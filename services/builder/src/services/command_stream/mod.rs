@@ -23,14 +23,3 @@ pub use self::{
     stream_state::StreamState,
     stream_worker::StreamWorker,
 };
-
-#[cfg(test)]
-mod stream_actor_test;
-#[cfg(test)]
-mod stream_log_service_test;
-#[cfg(test)]
-mod stream_persistence_test;
-#[cfg(test)]
-mod stream_registry_test;
-#[cfg(test)]
-mod stream_worker_test;

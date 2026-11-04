@@ -13,5 +13,4 @@ pub use self::{
     hub_status::HubStatus,
 };
 
-#[cfg(test)]
 mod tests;

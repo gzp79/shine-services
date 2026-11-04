@@ -1,6 +1,6 @@
 use crate::{
     models::{
-        messages::{DisconnectReason, HubEvent, HubMessage, PingEvent, TopicKey},
+        messages::{DisconnectReason, HubEvent, HubMessage, PingEvent, SubscribeFailure, TopicKey},
         HubError,
     },
     repositories::{
@@ -8,15 +8,16 @@ use crate::{
         command_log::pg::PgCommandLogDb,
         hub_registry::{redis::RedisHubConnectionDb, HubConnectionDb, HubRegistry},
     },
-    services::{standard_registry, HubConfig, HubService, StreamAuthorizeService, StreamConfig},
+    services::{standard_registry, HubConfig, HubService, StreamAuthorizeService, StreamConfig, StreamRegistry},
+    testing::command_stream::{TestInbox, TestLog},
 };
 use ring::rand::SystemRandom;
+use shine_game::replica::StreamId;
 use shine_infra::{
     db::redis::RedisConnectionPool,
     session::{CurrentUserService, SessionKey},
 };
 use shine_infra_testing::db::redis::TestRedis;
-use shine_test::toxiproxy::Toxiproxy;
 use std::{
     collections::{BTreeMap, HashMap},
     sync::Arc,
@@ -173,7 +174,7 @@ pub struct TestHubOptions {
     pub heartbeat: Duration,
     pub session_check: Duration,
     pub ping_enabled: bool,
-    pub streams: Option<(PgCommandLogDb, RedisCommandInboxDb, StreamConfig)>,
+    pub with_streams: Option<StreamConfig>,
 }
 
 impl Default for TestHubOptions {
@@ -182,13 +183,18 @@ impl Default for TestHubOptions {
             heartbeat: IDLE,
             session_check: IDLE,
             ping_enabled: true,
-            streams: None,
+            with_streams: None,
         }
     }
 }
 
 pub struct TestHub {
     pub hub: HubService,
+
+    pub stream_inbox: Option<TestInbox>,
+    pub stream_log: Option<TestLog>,
+    pub stream_registry: Option<StreamRegistry<RedisCommandInboxDb, PgCommandLogDb>>,
+
     pub redis: RedisConnectionPool,
     pub registry: RedisHubConnectionDb,
     pub direct_redis: RedisConnectionPool,
@@ -197,19 +203,15 @@ pub struct TestHub {
 }
 
 impl TestHub {
-    pub async fn new_default() -> Self {
-        Self::new(TestHubOptions::default()).await
-    }
-    pub async fn new(options: TestHubOptions) -> Self {
-        let toxiproxy = Toxiproxy::from_env().unwrap();
-        Self::from_toxiproxy(&toxiproxy, options).await
+    pub async fn default_from_env() -> Option<Self> {
+        Self::from_env(TestHubOptions::default()).await
     }
 
-    pub async fn from_toxiproxy(toxiproxy: &Toxiproxy, options: TestHubOptions) -> Self {
+    pub async fn from_env(options: TestHubOptions) -> Option<Self> {
         let TestRedis {
             pool: redis,
             direct_pool: direct_redis,
-        } = TestRedis::new(toxiproxy).await;
+        } = TestRedis::from_env().await?;
 
         let hub_config = HubConfig {
             heartbeat: options.heartbeat,
@@ -224,27 +226,41 @@ impl TestHub {
 
         let registry = RedisHubConnectionDb::new(&redis, 120).await.unwrap();
         let direct_registry = RedisHubConnectionDb::new(&direct_redis, 120).await.unwrap();
+        let mut stream_inbox = None;
+        let mut stream_log = None;
+        let mut stream_registry = None;
 
         let mut hub_builder = HubService::builder(hub_config)
             .with_session_service(session_service)
-            .with_hub_registry(registry.clone())
-            .with_stream_authorize_service(StreamAuthorizeService::new);
-        if let Some((log_db, inbox_db, config)) = options.streams {
+            .with_hub_registry(registry.clone());
+        if let Some(config) = options.with_streams {
+            let si = TestInbox::from_db(redis.clone()).await.unwrap();
+            let sl = TestLog::from_env().await.unwrap();
             hub_builder = hub_builder
-                .with_stream_registry(|egress| standard_registry(inbox_db, log_db, egress, config))
+                .with_stream_authorize_service(StreamAuthorizeService::new)
+                .with_stream_registry(|egress| {
+                    let sr = standard_registry(si.db.clone(), sl.db.clone(), egress, config)?;
+                    stream_inbox = Some(si);
+                    stream_log = Some(sl);
+                    stream_registry = Some(sr.clone());
+                    Ok(sr)
+                })
                 .unwrap()
-        };
+        }
         let hub = hub_builder.build().await.unwrap();
 
         let events = hub.subscribe(vec![TopicKey::Hub]).await;
-        TestHub {
+        Some(TestHub {
             hub,
+            stream_inbox,
+            stream_log,
+            stream_registry,
             redis,
             registry,
             direct_redis,
             direct_registry,
             events,
-        }
+        })
     }
 
     /// Warms up the connection pool by performing a few registry lookups.
@@ -309,6 +325,17 @@ impl TestHub {
 
     pub async fn send_ping_to_all(&self, id: impl Into<String>) -> Result<(), HubError> {
         self.hub.broadcast(HubMessage::Ping(PingEvent { id: id.into() })).await
+    }
+
+    pub async fn stream_subscribe(
+        &self,
+        connection_id: Uuid,
+        user_id: Uuid,
+        stream_id: &StreamId,
+    ) -> Result<(), SubscribeFailure> {
+        self.hub
+            .subscribe_stream(connection_id, user_id, stream_id.clone())
+            .await
     }
 
     /// Waits for the next event matching `predicate`, collecting the ones before it.

@@ -8,11 +8,29 @@ use tokio::{sync::mpsc, time::timeout};
 const WAKE_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub struct TestInbox {
+    pub redis: RedisConnectionPool,
     pub db: RedisCommandInboxDb,
-    redis: RedisConnectionPool,
 }
 
 impl TestInbox {
+    pub fn new(redis: RedisConnectionPool, db: RedisCommandInboxDb) -> TestInbox {
+        TestInbox { redis, db }
+    }
+
+    /// An inbox on the test Redis, or `None` (the test skips) when none is configured. Tests share the
+    /// Redis and stay apart by using a stream of their own.
+    pub async fn from_env() -> Option<TestInbox> {
+        let cns = get_redis_cns()?;
+        let redis = create_redis_pool(&cns).await.unwrap();
+        let db = RedisCommandInboxDb::new(&redis, 60).await.unwrap();
+        Some(TestInbox { redis, db })
+    }
+
+    pub async fn from_db(redis: RedisConnectionPool) -> Option<TestInbox> {
+        let db = RedisCommandInboxDb::new(&redis, 60).await.unwrap();
+        Some(TestInbox { redis, db })
+    }
+
     /// Adds a raw entry, to put in the inbox what the repository itself never would.
     pub async fn raw_add(&self, stream_id: &StreamId, fields: &[(&str, &str)]) -> InboxId {
         let mut client = self.redis.get().await.unwrap();
@@ -86,28 +104,19 @@ impl TestInbox {
             .unwrap();
         rx
     }
-}
 
-/// An inbox on the test Redis, or `None` (the test skips) when none is configured. Tests share the
-/// Redis and stay apart by using a stream of their own.
-pub async fn create_test_inbox(ttl_seconds: u64) -> Option<TestInbox> {
-    let cns = get_redis_cns()?;
-    let redis = create_redis_pool(&cns).await.unwrap();
-    let db = RedisCommandInboxDb::new(&redis, ttl_seconds).await.unwrap();
-    Some(TestInbox { db, redis })
-}
-
-/// The next wake of `stream_id`; wakes of other streams are skipped.
-pub async fn wait_inbox_wake(rx: &mut mpsc::UnboundedReceiver<InboxWake>, stream_id: &StreamId) -> InboxWake {
-    timeout(WAKE_TIMEOUT, async {
-        loop {
-            let wake = rx.recv().await.expect("the listener is open");
-            match &wake {
-                InboxWake::Stream { stream_id: woken, .. } if woken == stream_id => return wake,
-                _ => {}
+    /// The next wake of `stream_id`; wakes of other streams are skipped.
+    pub async fn wait_inbox_wake(rx: &mut mpsc::UnboundedReceiver<InboxWake>, stream_id: &StreamId) -> InboxWake {
+        timeout(WAKE_TIMEOUT, async {
+            loop {
+                let wake = rx.recv().await.expect("the listener is open");
+                match &wake {
+                    InboxWake::Stream { stream_id: woken, .. } if woken == stream_id => return wake,
+                    _ => {}
+                }
             }
-        }
-    })
-    .await
-    .expect("a wake of the stream")
+        })
+        .await
+        .expect("a wake of the stream")
+    }
 }

@@ -9,9 +9,6 @@
 use serde_json::{json, Value};
 use std::env;
 
-/// Toxiproxy API endpoint, e.g. `http://localhost:8474`.
-pub const TOXIPROXY_URL_ENV: &str = "SHINE_TEST_TOXIPROXY_URL";
-
 pub struct Toxiproxy {
     client: reqwest::Client,
     url: String,
@@ -25,12 +22,12 @@ impl Toxiproxy {
         }
     }
 
-    /// The toxiproxy of [`TOXIPROXY_URL_ENV`], `None` (skip the test) when it is not set.
+    /// The toxiproxy of [`SHINE_TEST_TOXIPROXY_URL`], `None` when it is not set.
     pub fn from_env() -> Option<Self> {
-        match env::var(TOXIPROXY_URL_ENV) {
+        match env::var("SHINE_TEST_TOXIPROXY_URL") {
             Ok(url) => Some(Self::new(url)),
             Err(_) => {
-                tracing::warn!("Missing {TOXIPROXY_URL_ENV}, skipping test");
+                tracing::warn!("Missing SHINE_TEST_TOXIPROXY_URL");
                 None
             }
         }
@@ -57,11 +54,10 @@ impl Toxiproxy {
 
     pub async fn proxy(&self, name: &str) -> Proxy<'_> {
         let info = self.call(self.client.get(format!("{}/proxies/{name}", self.url))).await;
+        tracing::debug!("Proxy info: {}", info);
         Proxy {
             toxiproxy: self,
             name: name.to_string(),
-            listen: info["listen"].as_str().unwrap_or_default().to_string(),
-            upstream: info["upstream"].as_str().unwrap_or_default().to_string(),
         }
     }
 
@@ -102,30 +98,9 @@ impl Drop for ResetGuard {
 pub struct Proxy<'a> {
     toxiproxy: &'a Toxiproxy,
     name: String,
-    listen: String,
-    upstream: String,
 }
 
 impl Proxy<'_> {
-    /// The listen address as reported by toxiproxy, e.g. `[::]:6379`.
-    pub fn listen(&self) -> &str {
-        &self.listen
-    }
-
-    /// The port clients connect to.
-    pub fn listen_port(&self) -> u16 {
-        self.listen
-            .rsplit(':')
-            .next()
-            .and_then(|port| port.parse().ok())
-            .unwrap_or_else(|| panic!("unexpected listen address of proxy {}: {}", self.name, self.listen))
-    }
-
-    /// The upstream address as reported by toxiproxy, e.g. `127.0.0.1:6379`.
-    pub fn upstream(&self) -> &str {
-        &self.upstream
-    }
-
     /// A disabled proxy refuses new connections and closes the open ones.
     pub async fn set_enabled(&self, enabled: bool) {
         let url = format!("{}/proxies/{}", self.toxiproxy.url, self.name);

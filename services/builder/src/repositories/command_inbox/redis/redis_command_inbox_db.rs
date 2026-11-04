@@ -81,3 +81,7 @@ impl CommandInboxDb for RedisCommandInboxDb {
         Ok(wake::unlisten(self).await?)
     }
 }
+
+#[cfg(test)]
+#[path = "redis_command_inbox_db_test.rs"]
+mod redis_command_inbox_db_test;

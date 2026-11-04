@@ -175,3 +175,7 @@ impl<I: CommandInboxDb, L: CommandLogDb> StreamLogService<I, L> {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "stream_log_service_test.rs"]
+mod stream_log_service_test;

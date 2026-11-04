@@ -279,3 +279,7 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
         self.purge();
     }
 }
+
+#[cfg(test)]
+#[path = "stream_registry_test.rs"]
+mod stream_registry_test;

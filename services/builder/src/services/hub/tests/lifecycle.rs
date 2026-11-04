@@ -13,8 +13,7 @@ use uuid::Uuid;
 
 #[test(serial = "hub-service")]
 async fn replaced_connection_gets_close_notice_and_one_drop() {
-    let mut test = TestHub::new_default().await;
-
+    let mut test = TestHub::default_from_env().await.unwrap();
     let user = Uuid::new_v4();
     let (first, mut first_rx) = test.connect_ping(user, 8);
     let (second, mut second_rx) = test.connect_ping(user, 8);
@@ -43,7 +42,7 @@ async fn replaced_connection_gets_close_notice_and_one_drop() {
 
 #[test(serial = "hub-service")]
 async fn stale_unknown_and_repeated_disconnects_are_noops() {
-    let mut test = TestHub::new_default().await;
+    let mut test = TestHub::default_from_env().await.unwrap();
     let user = Uuid::new_v4();
 
     // Unknown user and unknown connection.
@@ -85,7 +84,7 @@ async fn stale_unknown_and_repeated_disconnects_are_noops() {
 
 #[test(serial = "hub-service")]
 async fn forced_drop_tells_the_socket_why() {
-    let mut test = TestHub::new_default().await;
+    let mut test = TestHub::default_from_env().await.unwrap();
     let user = Uuid::new_v4();
 
     let (connection, mut rx) = test.connect_ping(user, 8);
@@ -109,7 +108,7 @@ async fn forced_drop_tells_the_socket_why() {
 
 #[test(serial = "hub-service")]
 async fn client_close_while_connect_is_queued_is_not_a_drop() {
-    let mut test = TestHub::new_default().await;
+    let mut test = TestHub::default_from_env().await.unwrap();
 
     // The socket closes before the hub has even processed its connect, as a ws client that goes away
     // right after the upgrade. Off the Hub topic, nothing is sent to it in between.
@@ -149,7 +148,7 @@ async fn client_close_while_connect_is_queued_is_not_a_drop() {
 
 #[test(serial = "hub-service")]
 async fn dead_channel_is_pruned_once() {
-    let mut test = TestHub::new_default().await;
+    let mut test = TestHub::default_from_env().await.unwrap();
     let user = Uuid::new_v4();
 
     let (connection, rx) = test.connect_ping(user, 8);
@@ -173,7 +172,7 @@ async fn dead_channel_is_pruned_once() {
 
 #[test(serial = "hub-service")]
 async fn slow_consumer_is_dropped_and_its_channel_released() {
-    let mut test = TestHub::new_default().await;
+    let mut test = TestHub::default_from_env().await.unwrap();
     let user = Uuid::new_v4();
 
     let (connection, mut rx) = test.connect_ping(user, 2);
@@ -189,7 +188,7 @@ async fn slow_consumer_is_dropped_and_its_channel_released() {
     Lifecycle::assert_by_user(&seen, user, &[Lifecycle::Disconnected(connection)]);
     EgressState::from_egress(&mut rx)
         .assert_closed()
-        .assert_pings(&["b-0".into(), "b-1".into()])
+        .assert_pings(&["b-0", "b-1"])
         .assert_disconnects(&[]);
     Lifecycle::assert_drops(&seen, &[(DisconnectReason::SlowConsumer, 1)]);
     test.assert_consistent([user], &HashMap::new()).await;
@@ -197,7 +196,7 @@ async fn slow_consumer_is_dropped_and_its_channel_released() {
 
 #[test(serial = "hub-service")]
 async fn send_to_user_reaches_only_the_active_connection() {
-    let mut test = TestHub::new_default().await;
+    let mut test = TestHub::default_from_env().await.unwrap();
     let (user, other) = (Uuid::new_v4(), Uuid::new_v4());
 
     // Unknown user: nothing to send to, not an error.
@@ -232,7 +231,7 @@ async fn send_to_user_reaches_only_the_active_connection() {
 
 #[test(serial = "hub-service")]
 async fn send_to_user_prunes_a_dead_or_slow_connection_once() {
-    let mut test = TestHub::new_default().await;
+    let mut test = TestHub::default_from_env().await.unwrap();
     let (gone_user, slow_user) = (Uuid::new_v4(), Uuid::new_v4());
 
     let (gone, gone_rx) = test.connect_ping(gone_user, 8);
@@ -262,7 +261,7 @@ async fn send_to_user_prunes_a_dead_or_slow_connection_once() {
 
 #[test(serial = "hub-service")]
 async fn directed_and_broadcast_sends_reach_only_their_targets() {
-    let mut test = TestHub::new_default().await;
+    let mut test = TestHub::default_from_env().await.unwrap();
     let (user, other, hub_only) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
 
     let (first, mut first_rx) = test.connect_ping(user, 8);
@@ -283,7 +282,7 @@ async fn directed_and_broadcast_sends_reach_only_their_targets() {
         .assert_pings(&["to-second", "to-all"])
         .assert_open();
     EgressState::from_egress(&mut other_rx)
-        .assert_pings(&["to-all".into()])
+        .assert_pings(&["to-all"])
         .assert_open();
     EgressState::from_egress(&mut hub_only_rx)
         .assert_pings(&[])
@@ -292,7 +291,7 @@ async fn directed_and_broadcast_sends_reach_only_their_targets() {
 
 #[test(serial = "hub-service")]
 async fn a_late_subscriber_sees_only_later_events() {
-    let mut test = TestHub::new_default().await;
+    let mut test = TestHub::default_from_env().await.unwrap();
     let user = Uuid::new_v4();
 
     let (first, _first_rx) = test.connect_ping(user, 8);
@@ -311,7 +310,7 @@ async fn a_late_subscriber_sees_only_later_events() {
 
 #[test(serial = "hub-service")]
 async fn shutdown_drops_every_connection_and_publishes_nothing_after() {
-    let mut test = TestHub::new_default().await;
+    let mut test = TestHub::default_from_env().await.unwrap();
     let users: Vec<Uuid> = (0..3).map(|_| Uuid::new_v4()).collect();
 
     let mut receivers: Vec<_> = users.iter().map(|user| test.connect_ping(*user, 8).1).collect();
@@ -347,7 +346,7 @@ async fn shutdown_drops_every_connection_and_publishes_nothing_after() {
 
 #[test(serial = "hub-service")]
 async fn registry_change_drops_only_a_connection_the_registry_no_longer_holds() {
-    let mut test = TestHub::new_default().await;
+    let mut test = TestHub::default_from_env().await.unwrap();
     let user = Uuid::new_v4();
     let (connection, mut rx) = test.connect_ping(user, 8);
     test.wait_all_commands().await;
@@ -380,11 +379,12 @@ async fn registry_change_drops_only_a_connection_the_registry_no_longer_holds() 
 #[test(serial = "hub-service")]
 async fn heartbeat_refreshes_live_rows_and_drops_expired_ones() {
     let tick = Duration::from_millis(100);
-    let mut test = TestHub::new(TestHubOptions {
+    let mut test = TestHub::from_env(TestHubOptions {
         heartbeat: tick,
         ..Default::default()
     })
-    .await;
+    .await
+    .unwrap();
     let (live_user, expired_user) = (Uuid::new_v4(), Uuid::new_v4());
     let (live, mut live_rx) = test.connect_ping(live_user, 8);
     let (expired, mut expired_rx) = test.connect_ping(expired_user, 8);
@@ -421,11 +421,12 @@ async fn heartbeat_refreshes_live_rows_and_drops_expired_ones() {
 #[test(serial = "hub-service")]
 async fn session_check_drops_only_connections_with_an_invalid_session() {
     let tick = Duration::from_millis(100);
-    let mut test = TestHub::new(TestHubOptions {
+    let mut test = TestHub::from_env(TestHubOptions {
         session_check: tick,
         ..Default::default()
     })
-    .await;
+    .await
+    .unwrap();
     let (valid_user, invalid_user) = (Uuid::new_v4(), Uuid::new_v4());
 
     let valid_key = test.seed_session(valid_user).await;
@@ -456,7 +457,7 @@ async fn session_check_drops_only_connections_with_an_invalid_session() {
 
 #[test(serial = "hub-service")]
 async fn batched_heartbeat_refreshes_active_and_reports_stale() {
-    let mut test = TestHub::new_default().await;
+    let mut test = TestHub::default_from_env().await.unwrap();
     let (active_a, active_b, never_registered) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
     let (conn_a, _rx_a) = test.connect_ping(active_a, 8);
     let (conn_b, _rx_b) = test.connect_ping(active_b, 8);

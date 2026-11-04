@@ -584,3 +584,7 @@ where
         }
     }
 }
+
+#[cfg(test)]
+#[path = "stream_worker_test.rs"]
+mod stream_worker_test;

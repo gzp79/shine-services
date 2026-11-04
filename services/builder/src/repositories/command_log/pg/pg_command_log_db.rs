@@ -131,3 +131,7 @@ impl CommandLogDb for PgCommandLogDb {
         Ok(consistency::check_consistency(self, stream_id).await?)
     }
 }
+
+#[cfg(test)]
+#[path = "pg_command_log_db_test.rs"]
+mod pg_command_log_db_test;

@@ -8,6 +8,3 @@ mod snapshot;
 mod stream;
 
 pub use self::{pg_command_log_db::PgCommandLogDb, pg_command_log_error::PgCommandLogError};
-
-#[cfg(test)]
-mod pg_command_log_db_test;

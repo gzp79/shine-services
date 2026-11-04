@@ -1,4 +1,6 @@
-//todo: mod contention;
+#![cfg(test)]
+
+mod contention;
 mod fault;
 mod lifecycle;
-//todo: mod streams;
+mod streams;
