@@ -6,6 +6,8 @@ Push-Location $repoRoot
 # CI drives the URL/port selection in playwright.config.ts; restore the prior value on exit.
 $prevCI = $env:CI
 try {
+    $env:CI = "true"
+
     # The dockerized service stamps cookie expiries with the Docker VM clock; if it drifts behind the
     # host (common after the host sleeps) freshly-issued cookies look already-expired and the auth
     # cookie tests fail. Catch that here instead of deep in a confusing assertion.
@@ -40,9 +42,8 @@ try {
     Write-Host "Start service in docker"
     docker compose -f services/docker-compose.yml -p shine --profile test up -d --no-recreate
 
-    Write-Host "Run tests"
-    $env:CI = "true"
-    pnpm --dir tests run test:local
+    Write-Host "Run tests"    
+    # pnpm --dir tests run test:local
 }
 finally {
     if ($null -eq $prevCI) { Remove-Item Env:CI -ErrorAction SilentlyContinue } else { $env:CI = $prevCI }

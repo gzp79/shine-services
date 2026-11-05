@@ -10,8 +10,14 @@
   },
 
   "builder": {
-    "hubHeartbeatSeconds": 300,
-    "authCheckInterval": 60,
+    "hub": {
+      "heartbeat": 300,
+      "sessionCheck": 60,
+      "pingEnabled": false
+    },
+    "stream": {
+      "minResponseMs": 334
+    },
     "ws": {
       "allowedHosts": ["^ws\\.scytta\\.com(:443)?$"]
     }

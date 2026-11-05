@@ -17,6 +17,10 @@ use redis::{
 };
 use std::{
     ops::{Deref, DerefMut},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     time::Duration,
 };
 
@@ -31,6 +35,9 @@ pub use shine_infra_macros::RedisJsonValue;
 pub struct RedisConnection {
     listener: RedisListener,
     client: MultiplexedConnection,
+    /// Set once a command sees a dropped connection or another unrecoverable error, so `has_broken`
+    /// can report it without an extra PING on every get from the pool.
+    broken: Arc<AtomicBool>,
 }
 
 impl RedisConnection {
@@ -53,6 +60,16 @@ impl RedisConnection {
     }
 }
 
+/// Marks `broken` when `result` shows the connection is no longer usable, so a later `has_broken`
+/// check can evict it without probing every checkout with a PING.
+fn mark_if_broken<T>(broken: &Arc<AtomicBool>, result: &Result<T, RedisRawError>) {
+    if let Err(err) = result {
+        if err.is_connection_dropped() || err.is_unrecoverable_error() {
+            broken.store(true, Ordering::Relaxed);
+        }
+    }
+}
+
 impl ConnectionLike for RedisConnection {
     fn req_packed_command<'a>(&'a mut self, cmd: &'a Cmd) -> RedisFuture<'a, Value> {
         let name = redis_command_name(cmd);
@@ -65,11 +82,13 @@ impl ConnectionLike for RedisConnection {
             db.operation.name = name,
             db.query.text = name,
         );
-        Box::pin(time_db_operation(
-            "redis",
-            name,
-            self.client.req_packed_command(cmd).instrument(span),
-        ))
+        let broken = self.broken.clone();
+        let client = &mut self.client;
+        Box::pin(async move {
+            let result = time_db_operation("redis", name, client.req_packed_command(cmd).instrument(span)).await;
+            mark_if_broken(&broken, &result);
+            result
+        })
     }
 
     fn req_packed_commands<'a>(
@@ -96,11 +115,18 @@ impl ConnectionLike for RedisConnection {
             span.record("db.operation.batch.size", names.len());
             span.record("db.query.text", names.join("; "));
         }
-        Box::pin(time_db_operation(
-            "redis",
-            "PIPELINE",
-            self.client.req_packed_commands(cmd, offset, count).instrument(span),
-        ))
+        let broken = self.broken.clone();
+        let client = &mut self.client;
+        Box::pin(async move {
+            let result = time_db_operation(
+                "redis",
+                "PIPELINE",
+                client.req_packed_commands(cmd, offset, count).instrument(span),
+            )
+            .await;
+            mark_if_broken(&broken, &result);
+            result
+        })
     }
 
     fn get_db(&self) -> i64 {
@@ -157,6 +183,7 @@ impl ManageConnection for RedisConnectionManager {
         Ok(RedisConnection {
             listener: self.listener.clone(),
             client,
+            broken: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -168,8 +195,8 @@ impl ManageConnection for RedisConnectionManager {
         }
     }
 
-    fn has_broken(&self, _: &mut Self::Connection) -> bool {
-        false
+    fn has_broken(&self, conn: &mut Self::Connection) -> bool {
+        conn.broken.load(Ordering::Relaxed)
     }
 }
 
@@ -265,6 +292,7 @@ pub async fn create_redis_pool(cns: &str) -> Result<RedisConnectionPool, RedisCo
         .max_size(max_size)
         .connection_timeout(pool_timeout)
         .error_sink(Box::new(PoolErrorLogger("redis")))
+        .test_on_check_out(false) // replaced by `has_broken` (the `broken` flag), saving a PING on every checkout.
         .build(redis_manager)
         .await?;
 

@@ -1,10 +1,9 @@
-mod chat_service;
+mod command_stream;
 mod hub;
+mod stream_authorize;
 
 pub use self::{
-    chat_service::ChatService,
-    hub::{hub_metrics, HubIntervals, HubService, HubStatus},
+    command_stream::{standard_registry, StreamConfig, StreamEgress, StreamRegistry, MAX_COMMAND_BYTES},
+    hub::{hub_metrics, HubConfig, HubService, HubStatus},
+    stream_authorize::StreamAuthorizeService,
 };
-
-#[cfg(test)]
-pub use self::hub::hub_test_utils;

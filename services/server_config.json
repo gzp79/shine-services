@@ -13,8 +13,11 @@
   },
   "telemetry": {
     "allowReconfigure": true,
-    "enableConsoleLog": true,
     "defaultLevel": "INFO",
+    "logging": {
+      "type": "console",
+      "format": "compact"
+    },
     "metrics": {
       "type": "otlp",
       "endpoint": "grpc://localhost:4317"

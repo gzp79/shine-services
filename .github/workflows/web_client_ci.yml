@@ -58,26 +58,21 @@ jobs:
             client/web/pnpm-lock.yaml
             tests/pnpm-lock.yaml
 
-      - name: Install dependencies
-        working-directory: client/web
-        run: pnpm install
-
-      - name: Build WASM
-        working-directory: client/web
-        run: pnpm build:wasm
+      - name: Initialize tools
+        working-directory: tests
+        run: |
+          pnpm install
+          pnpm run mkcert
 
       - name: Build
         working-directory: client/web
-        run: pnpm build
+        run: |
+          pnpm install
+          pnpm build
 
       - name: Test
         working-directory: client/web
         run: pnpm test
-
-      - name: Install deploy tooling
-        if: github.ref == 'refs/heads/main'
-        working-directory: tests
-        run: pnpm install
 
       - name: Deploy game bundle
         if: github.ref == 'refs/heads/main'

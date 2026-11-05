@@ -13,17 +13,15 @@ RUN rustc --version \
 WORKDIR /shine
 
 ENV ALL_BINS="services/identity services/builder"
-ENV ALL_LIBS="crates/shine-test-macros crates/shine-test crates/shine-core crates/shine-infra-macros crates/shine-infra crates/shine-game"
+ENV ALL_LIBS="crates/shine-test-macros crates/shine-test crates/shine-core crates/shine-infra-macros crates/shine-infra crates/shine-infra/shine-infra-testing crates/shine-game"
 ENV SERVICE_PROJECTS="shine-test-macros shine-test shine-core shine-infra-macros shine-infra shine-identity shine-builder"
 
-# copy all cargo.toml files
+# Build only dependencies using empty,dummy projects
 COPY --parents ./**/Cargo.toml ./
-# create empty main projects
 RUN for bin in $ALL_BINS; do \
         mkdir -p ./$bin/src; \
         echo "fn main() {}" > ./$bin/src/main.rs; \
     done
-# create empty lib projects
 RUN for lib in $ALL_LIBS; do \
         mkdir -p ./$lib/src; \
         touch ./$lib/src/lib.rs; \
@@ -37,12 +35,11 @@ COPY ./Cargo.lock ./
 RUN for proj in $SERVICE_PROJECTS; do PROJECTS="$PROJECTS -p $proj"; done \
     && cargo build --release $PROJECTS
 
+# Prepare the real source code
 RUN rm -rf ./crates \
     && rm -rf ./services \
     && rm -rf ./target/release/deps/libshine* \
     && rm -rf ./target/release/deps/shine*
-
-# Copy the actual source code
 COPY ./crates ./crates
 COPY ./services ./services
 
@@ -50,14 +47,16 @@ RUN cargo fmt --check
 
 ENV RUST_BACKTRACE=1
 ENV RUST_LOG="debug"
-ENV SHINE_TEST_REDIS_CNS="redis://redis.mockbox.foo:6379"
-ENV SHINE_TEST_PG_CNS="postgres://username:password@postgres.mockbox.foo:5432/database-test?sslmode=disable"
-# Fault-injection tests: the toxiproxy API, its proxies listen on the same host
 ENV SHINE_TEST_TOXIPROXY_URL="http://toxiproxy.mockbox.foo:8474"
+ENV SHINE_TEST_REDIS_CNS="redis://redis.mockbox.foo:6379"
+ENV SHINE_TEST_REDIS_CNS_DIRECT="redis://redis.mockbox.foo:26379"
+ENV SHINE_TEST_PG_CNS="postgres://username:password@postgres.mockbox.foo:5432/database-test?sslmode=disable"
+ENV SHINE_TEST_PG_CNS_DIRECT="postgres://username:password@postgres.mockbox.foo:25432/database-test?sslmode=disable"
 
 # build the final project  
 RUN for proj in $SERVICE_PROJECTS; do PROJECTS="$PROJECTS -p $proj"; done \
   && cargo build --release $PROJECTS
+
 # running tests
 RUN for proj in $SERVICE_PROJECTS; do PROJECTS="$PROJECTS -p $proj"; done \
   && cargo test --release $PROJECTS 

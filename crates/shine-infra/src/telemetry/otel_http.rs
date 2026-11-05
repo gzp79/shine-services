@@ -8,13 +8,6 @@ use tracing::{field::Empty, info_span, Span};
 
 /// Target of spans exported to the trace backend only, they are hidden from the console log.
 pub const TRACING_TARGET: &str = "otel::tracing";
-/// Target of spans shown in the console log only, they are not exported to the trace backend.
-pub const CONSOLE_TARGET: &str = "otel::console";
-
-/// Request span for the console log, a compact counterpart of the span of [`make_span_from_request`].
-pub fn make_console_span<B>(req: &Request<B>) -> Span {
-    info_span!(target: CONSOLE_TARGET, "request", method = %req.method(), path = req.uri().path())
-}
 
 #[inline]
 #[must_use]

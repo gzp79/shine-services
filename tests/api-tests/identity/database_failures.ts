@@ -1,19 +1,11 @@
 import { expect, test } from '$fixtures/setup';
 import { waitForCondition } from '$lib/utils';
-import { Toxiproxy } from 'toxiproxy-node-client';
 
 test.describe('Database failure tests', { tag: '@infrastructure' }, () => {
-    let toxiproxy: Toxiproxy;
+    // Injected toxics affect every service, hence these tests must never overlap with others.
+    test.describe.configure({ mode: 'serial' });
 
-    test.beforeAll(async () => {
-        toxiproxy = new Toxiproxy('http://localhost:8474');
-    });
-
-    test.afterEach(async () => {
-        await toxiproxy.reset();
-    });
-
-    test('Database connection failure shall return 503 and recover', async ({ api }) => {
+    test('Database connection failure shall return 503 and recover', async ({ api, toxiproxy }) => {
         const user = await api.testUsers.createGuest();
 
         // Take PostgreSQL down
@@ -35,7 +27,7 @@ test.describe('Database failure tests', { tag: '@infrastructure' }, () => {
         expect(recovery).toHaveStatus(200);
     });
 
-    test('Database timeout shall not hang requests', async ({ api }) => {
+    test('Database timeout shall not hang requests', async ({ api, toxiproxy }) => {
         const user = await api.testUsers.createGuest();
 
         // Inject 10-second latency

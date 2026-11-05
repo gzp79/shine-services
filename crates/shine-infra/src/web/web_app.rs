@@ -19,11 +19,8 @@ use axum_server::Handle;
 use serde::de::DeserializeOwned;
 use std::{env, fmt::Debug, fs, future::Future, net::SocketAddr, time::Duration as StdDuration};
 use tokio::{net::TcpListener, runtime::Runtime, signal, time::sleep};
-use tower_http::{
-    cors::{AllowOrigin, CorsLayer},
-    trace::{DefaultOnResponse, TraceLayer},
-};
-use tracing::{instrument, level_filters::LevelFilter, Level};
+use tower_http::cors::{AllowOrigin, CorsLayer};
+use tracing::{instrument, level_filters::LevelFilter};
 use tracing_log::LogTracer;
 use tracing_subscriber::EnvFilter;
 use utoipa::{
@@ -212,6 +209,7 @@ async fn load_app_config<A: WebApplication>() -> Result<WebAppConfig<A::AppConfi
     tracing::error!("init-error - tracing: ok");
 
     let config = WebAppConfig::<A::AppConfig>::load(&stage, None).await?;
+    config.feature.validate()?;
     tracing::info!("pre-init completed");
 
     Ok(config)
@@ -244,15 +242,9 @@ async fn create_web_app<A: WebApplication>(
         None
     };
 
-    // Each request has 2 spans:
-    // - a trace-backend-only span (OpenTelemetry attributes)
-    // - a console-only span (method, uri, access log)
-    // Keeping them apart lets each output have its own fields and filters.
+    // The request span carries backend attributes and correlates handler and completion events.
+    // Console logging suppresses the span prefix while retaining events emitted inside it.
     let trace_layer = telemetry_service.create_layer();
-    let console_layer = TraceLayer::new_for_http()
-        .make_span_with(crate::telemetry::make_console_span)
-        .on_response(DefaultOnResponse::new().level(Level::INFO));
-
     // Register built-in status providers
     health_service.add_provider(crate::health::UptimeStatus::new());
     health_service.add_provider(in_flight_service.clone());
@@ -294,9 +286,7 @@ async fn create_web_app<A: WebApplication>(
             .layer(tower::util::option_layer(powered_by_layer))
             .layer(SecurityHeaders::default())
             .layer(cors_layer)
-            // trace_layer must be inside console_layer: the trace span is the current span in the handlers
             .layer(trace_layer)
-            .layer(console_layer)
             .with_state(app_state),
         shutdown_hooks,
     ))

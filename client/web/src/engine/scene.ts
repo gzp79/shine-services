@@ -1,9 +1,11 @@
 import type { WebGPURenderer } from 'three/webgpu';
 import type { AssetCatalogBuilder } from './assets/catalog';
+import type { StreamHub } from './net/stream-hub';
 import type { SceneRuntime } from './scene-runtime';
 
 export interface SceneContext {
     readonly container: HTMLElement;
+    readonly streamHub?: StreamHub;
     readonly renderer: WebGPURenderer;
     readonly runtime: SceneRuntime;
     readonly catalogBuilder: AssetCatalogBuilder;

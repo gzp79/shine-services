@@ -9,8 +9,11 @@ default = [
     "ot_app_insight",
 ]
 
-ot_otlp = ["opentelemetry-otlp"]
-ot_app_insight = ["opentelemetry-application-insights"]
+ot_otlp = [
+    "opentelemetry-otlp",
+    "opentelemetry-appender-tracing",
+]
+ot_app_insight = [ "opentelemetry-application-insights" ]
 
 [dependencies]
 log = { workspace = true }
@@ -45,27 +48,24 @@ tokio = { workspace = true, features = ["macros", "signal", "rt", "rt-multi-thre
 tracing = { workspace = true }
 tracing-log = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["std", "registry", "env-filter", "fmt", "ansi", "json"] }
-
-tracing-opentelemetry = { version = "0.34", features = [
+tracing-opentelemetry = { workspace = true, features = [
     "metrics",
     "tracing-log",
 ] }
-tracing-opentelemetry-instrumentation-sdk = "0.42"
-
+tracing-opentelemetry-instrumentation-sdk = { workspace = true }
 opentelemetry = { workspace = true }
-opentelemetry-semantic-conventions = "0.33"
-opentelemetry_sdk = { version = "0.33", features = [
+opentelemetry_sdk = { workspace = true, features = [
     "rt-tokio",
+    "logs",
     "metrics",
     "trace",
 ] }
-opentelemetry-stdout = { version = "0.33", features = ["logs", "trace"] }
-opentelemetry-otlp = { version = "0.33", features = [
+opentelemetry-appender-tracing = { workspace = true, optional = true }
+opentelemetry-otlp = { workspace = true, features = [
     "tokio",
     "grpc-tonic",
 ], optional = true }
-opentelemetry-application-insights = { version = "0.46", optional = true }
-
+opentelemetry-application-insights = { workspace = true, optional = true }
 
 ############################# DB #############################
 bb8 = { workspace = true }
@@ -107,9 +107,10 @@ axum-extra = { workspace = true, features = [
     "typed-header",
 ] }
 
-############################# MEMBERS #############################
 shine-infra-macros = { workspace = true }
 
 [dev-dependencies]
 shine-test = { workspace = true }
 itertools = { workspace = true }
+postgres-types = { workspace = true, features = ["derive"] }
+shine-infra-testing = { workspace = true }

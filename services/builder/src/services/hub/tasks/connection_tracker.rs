@@ -74,6 +74,7 @@ pub async fn spawn_connection_loop<C: ConnectionConsumer>(
 
 /// Like [`spawn_connection_loop`], but the loop also runs an extra `on_tick` whenever `wake` is
 /// notified.
+#[allow(dead_code)]
 pub async fn spawn_connection_loop_with_wake<C: ConnectionConsumer>(
     service: &HubService,
     interval: Duration,

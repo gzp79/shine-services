@@ -124,11 +124,11 @@ impl ExternalLinks for PgIdentityDbContext<'_> {
             .insert
             .query_one(
                 &self.client,
-                &user_id,
-                &external_user.provider.as_str(),
-                &external_user.provider_id.as_str(),
-                &external_user.name.as_deref(),
-                &encrypted_email.as_deref(),
+                user_id,
+                external_user.provider.as_str(),
+                external_user.provider_id.as_str(),
+                external_user.name.as_deref(),
+                encrypted_email.as_deref(),
             )
             .await
         {
@@ -148,7 +148,7 @@ impl ExternalLinks for PgIdentityDbContext<'_> {
         let links = self
             .stmts_external_links
             .list_by_user_id
-            .query(&self.client, &user_id)
+            .query(&self.client, user_id)
             .await
             .map_err(PgError::from)?
             .into_iter()
@@ -186,7 +186,7 @@ impl ExternalLinks for PgIdentityDbContext<'_> {
         let is_linked = self
             .stmts_external_links
             .exists_by_user_id
-            .query_one(&self.client, &user_id)
+            .query_one(&self.client, user_id)
             .await
             .map_err(PgError::from)?;
 
@@ -202,7 +202,7 @@ impl ExternalLinks for PgIdentityDbContext<'_> {
         let row = self
             .stmts_external_links
             .find_by_provider_id
-            .query_opt(&self.client, &provider, &provider_id)
+            .query_opt(&self.client, provider, provider_id)
             .await
             .map_err(PgError::from)?;
 
@@ -238,7 +238,7 @@ impl ExternalLinks for PgIdentityDbContext<'_> {
         let count = self
             .stmts_external_links
             .delete_link
-            .execute(&self.client, &user_id, &provider, &provider_id)
+            .execute(&self.client, user_id, provider, provider_id)
             .await
             .map_err(PgError::from)?;
 

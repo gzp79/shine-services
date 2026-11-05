@@ -1,11 +1,10 @@
 import * as wasm from '#wasm';
 import { ASSET_KINDS, type AssetCatalog, type AssetKind } from './engine/assets/catalog';
 import { PROCEDURAL_ASSETS } from './engine/assets/procedural';
+import { WebSocketStreamHub } from './engine/net/websocket-stream-hub';
 import { createRoutedScene } from './index';
 
-// Local-dev catalog for the shine-assets bucket. Lives only in the standalone entry, so
-// it stays out of the library bundle a host consumes — that host injects its own catalog
-// with a server-resolved version.
+export const WEB_SOCKET_URL = 'wss://ws.local.scytta.com:8444/builder/api/connect';
 const ASSET_URL = 'https://assets.local.scytta.com:8093';
 const ASSET_PLATFORM = 'web';
 const ASSET_MODULE = 'models';
@@ -111,10 +110,6 @@ function startHeapStats(): void {
     window.setInterval(update, 1000);
 }
 
-const container = document.getElementById('app')!;
-
-// Standalone dev host, standing in for a real embedder: a rejection means the scene failed to
-// start, onError means it died after starting. Both land here; a real host would render its own UI.
 function showFatal(error: unknown): void {
     console.error('[shine-web] scene error:', error);
     container.replaceChildren();
@@ -131,7 +126,6 @@ function showFatal(error: unknown): void {
     container.appendChild(box);
 }
 
-// Full stack plus the cause chain, so the actual throw site is visible without opening the console.
 function describe(error: unknown): string {
     if (!(error instanceof Error)) return String(error);
     let text = error.stack ?? `${error.name}: ${error.message}`;
@@ -143,8 +137,18 @@ function describe(error: unknown): string {
     return text;
 }
 
-// Anything escaping the runtime's error boundary (listeners, timers, foreign promises) would
-// otherwise only show up in the console; surface it in the page too.
+const container = document.getElementById('app')!;
+
+const streamHub = new WebSocketStreamHub(WEB_SOCKET_URL);
+streamHub.connect();
+window.addEventListener(
+    'beforeunload',
+    () => {
+        streamHub.dispose();
+    },
+    { once: true }
+);
+
 window.addEventListener('error', (event) => {
     showFatal(event.error ?? event.message);
 });
@@ -152,4 +156,10 @@ window.addEventListener('unhandledrejection', (event) => {
     showFatal(event.reason);
 });
 
-void createRoutedScene(container, buildDefaultCatalog, showFatal).then(startHeapStats).catch(showFatal);
+void createRoutedScene(container, {
+    catalogBuilder: buildDefaultCatalog,
+    onError: showFatal,
+    streamHub: streamHub
+})
+    .then(startHeapStats)
+    .catch(showFatal);
