@@ -363,6 +363,24 @@ async fn shutdown_drops_every_connection_and_publishes_nothing_after() {
 }
 
 #[test(serial = "hub-service")]
+async fn a_stopped_hub_refuses_every_request() {
+    let mut test = TestHub::default_from_env().await;
+    let (user, connection) = (Uuid::new_v4(), Uuid::new_v4());
+    test.hub.request_shutdown().unwrap();
+    test.wait_for_shutdown_events().await;
+    test.wait_shutdown_complete().await;
+
+    // A socket that connects while the hub stops must be able to tell, to close itself.
+    let session = SessionKey::new_random(&SystemRandom::new()).unwrap();
+    let (tx, _rx) = tokio::sync::mpsc::channel(1);
+    assert!(test.hub.request_connection(user, session, tx, vec![]).is_err());
+    assert!(test.hub.request_disconnection(user, connection).is_err());
+    assert!(test.hub.request_shutdown().is_err());
+    // Waiting for a stop that already happened returns at once.
+    test.wait_shutdown_complete().await;
+}
+
+#[test(serial = "hub-service")]
 async fn registry_change_drops_only_a_connection_the_registry_no_longer_holds() {
     let mut test = TestHub::default_from_env().await;
     let user = Uuid::new_v4();

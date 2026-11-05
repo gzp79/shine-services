@@ -9,7 +9,6 @@ mod stream_kinds;
 mod stream_log_service;
 mod stream_persistence;
 mod stream_registry;
-mod stream_state;
 mod stream_worker;
 
 pub use self::{
@@ -20,6 +19,5 @@ pub use self::{
     stream_log_service::{AppendOutcome, SnapshotOutcome, StoredStream, StreamLogService},
     stream_persistence::{PersistResult, StreamPersistence},
     stream_registry::{StreamRegistry, StreamRegistryBuilder, MAX_COMMAND_BYTES},
-    stream_state::StreamState,
     stream_worker::StreamWorker,
 };

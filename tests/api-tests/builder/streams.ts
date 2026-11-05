@@ -14,6 +14,21 @@ const PIXEL_MAP = 'pixel-map';
 // Stream names are 1 to 64 letters, digits and `_ . : -`. Unique per test, so tests never share a stream.
 const newStreamId = (kind: string, prefix: string) => `${kind}:${prefix}-${randomUUID().replace(/-/g, '')}`;
 
+// The hub closes a socket it drops with this code; the close reason carries why.
+const HUB_DROPPED_CLOSE_CODE = 4000;
+
+const within = async <T>(promise: Promise<T>, ms: number, what: string): Promise<T> => {
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${what} did not happen within ${ms}ms`)), ms);
+    });
+    try {
+        return await Promise.race([promise, timeout]);
+    } finally {
+        clearTimeout(timer);
+    }
+};
+
 const add = (text: string) => ({ type: 'add', text });
 const paint = (x: number, y: number, color: number) => ({ type: 'paint', x, y, color });
 
@@ -235,6 +250,96 @@ test.describe('Builder streams', { tag: ['@regression'] }, () => {
 
         const streamId = newStreamId(CHAT, 'room');
         expect(await a.subscribe(streamId)).toMatchObject({ type: 'streamSync', streamId });
+    });
+
+    test('WS stream binary frame shall be ignored without dropping the connection', async ({
+        homeUrl,
+        builderWSUrl
+    }) => {
+        const a = await connect(homeUrl, builderWSUrl, alice);
+
+        a.sendBinary(Buffer.from([0x00, 0x01, 0x02]));
+
+        expect(await a.subscribe(newStreamId(CHAT, 'room'))).toMatchObject({ type: 'streamSync' });
+    });
+
+    // A command is at most 16 KiB; the socket takes messages up to twice that, so the two limits are apart.
+    test('WS stream command over the size limit shall be refused as invalid', async ({ homeUrl, builderWSUrl }) => {
+        const a = await connect(homeUrl, builderWSUrl, alice);
+        const streamId = newStreamId(PIXEL_MAP, 'canvas');
+        await a.subscribe(streamId);
+        const commandId = randomUUID();
+
+        // Valid but for its size, and small enough for the socket to take the message.
+        a.command(streamId, commandId, { ...paint(1, 1, 1), padding: 'x'.repeat(20_000) });
+
+        expect(await a.waitFrame('streamNack', (f) => f.commandId === commandId)).toMatchObject({
+            streamId,
+            reason: 'invalid'
+        });
+        a.command(streamId, randomUUID(), paint(1, 1, 1));
+        const delivered = await a.waitFrame('streamCommands', (f) => f.streamId === streamId);
+        expect(delivered.commands[0]).toMatchObject({ version: 1 });
+    });
+
+    test('WS stream message over the socket limit shall end the socket and leave the user free to reconnect', async ({
+        homeUrl,
+        builderWSUrl
+    }) => {
+        const a = await connect(homeUrl, builderWSUrl, alice);
+        const streamId = newStreamId(CHAT, 'room');
+        await a.subscribe(streamId);
+
+        a.command(streamId, randomUUID(), { ...add('too much'), padding: 'x'.repeat(40_000) });
+
+        await within(a.closed, 5000, 'the close of the socket');
+        const again = await connect(homeUrl, builderWSUrl, alice);
+        expect(await again.subscribe(streamId)).toMatchObject({ type: 'streamSync', commands: [] });
+    });
+
+    test('WS stream subscribing again shall sync the connection again from the start', async ({
+        homeUrl,
+        builderWSUrl
+    }) => {
+        const streamId = newStreamId(CHAT, 'room');
+        const a = await connect(homeUrl, builderWSUrl, alice);
+        await a.subscribe(streamId);
+        a.command(streamId, randomUUID(), add('one'));
+        await a.waitFrame('streamCommands', (f) => f.streamId === streamId);
+
+        const sync = await a.subscribe(streamId);
+
+        expect(sync.commands.map((c) => c.version)).toEqual([1]);
+        a.command(streamId, randomUUID(), add('two'));
+        const next = await a.waitFrame('streamCommands', (f) => f.streamId === streamId);
+        expect(next.commands.map((c) => c.version)).toEqual([2]);
+    });
+
+    test('WS stream replaced connection shall lose its subscriptions and the new one start from the log', async ({
+        homeUrl,
+        builderWSUrl
+    }) => {
+        const streamId = newStreamId(CHAT, 'room');
+        const first = await connect(homeUrl, builderWSUrl, alice);
+        await first.subscribe(streamId);
+        first.command(streamId, randomUUID(), add('before'));
+        await first.waitFrame('streamCommands', (f) => f.streamId === streamId);
+
+        const second = await connect(homeUrl, builderWSUrl, alice);
+
+        expect(await within(first.closed, 5000, 'the close of the replaced socket')).toEqual({
+            code: HUB_DROPPED_CLOSE_CODE,
+            reason: 'replaced'
+        });
+        // What the user had subscribed to is not carried over: the new connection asks for it again.
+        const refused = randomUUID();
+        second.command(streamId, refused, add('too soon'));
+        expect(await second.waitFrame('streamNack', (f) => f.commandId === refused)).toMatchObject({
+            streamId,
+            reason: 'notSubscribed'
+        });
+        const sync = await second.subscribe(streamId);
+        expect(sync.commands.map((c) => c.command)).toEqual([add('before')]);
     });
 
     // Snapshots are taken every 100 commands. The pixel map is a state worth one: a 32 by 32 grid of colors.

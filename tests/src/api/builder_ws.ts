@@ -64,6 +64,8 @@ export type StreamFrame =
 
 export type StreamFrameOf<T extends StreamFrame['type']> = Extract<StreamFrame, { type: T }>;
 
+export type WsClose = { code: number; reason: string };
+
 // An authenticated socket kept live to talk streams. Frames are buffered in arrival order and each
 // can be taken once by `waitFrame`, so a test reads the conversation like a script.
 export class StreamSession {
@@ -71,7 +73,13 @@ export class StreamSession {
     private readonly waiters: Array<{ predicate: (frame: StreamFrame) => boolean; resolve: (f: StreamFrame) => void }> =
         [];
 
+    // Settles when the socket closes, whoever ended it.
+    readonly closed: Promise<WsClose>;
+
     private constructor(private readonly ws: WebSocket) {
+        this.closed = new Promise((resolve) => {
+            ws.once('close', (code: number, reason: Buffer) => resolve({ code, reason: reason.toString() }));
+        });
         ws.on('message', (data: Buffer) => {
             const frame = JSON.parse(data.toString()) as StreamFrame;
             const index = this.waiters.findIndex((w) => w.predicate(frame));
@@ -106,6 +114,10 @@ export class StreamSession {
 
     sendRaw(text: string): void {
         this.ws.send(text);
+    }
+
+    sendBinary(data: Buffer): void {
+        this.ws.send(data, { binary: true });
     }
 
     // The next frame (not yet taken) that matches, or a rejection after `timeoutMs`.

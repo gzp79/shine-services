@@ -1,10 +1,14 @@
 use crate::{
+    models::messages::StreamMessage,
     repositories::{
-        command_inbox::redis::RedisCommandInboxDb,
+        command_inbox::{redis::RedisCommandInboxDb, CommandInboxDb},
         command_log::{pg::PgCommandLogDb, CommandLogDb, StoredCommand},
     },
     services::command_stream::{PersistResult, StreamActor, StreamConfig, StreamLogService, StreamPersistence},
-    testing::command_stream::{ChatLog, TestEgress, TestInbox, TestLog, TestStreamId},
+    testing::{
+        command_stream::{ChatLog, TestEgress, TestInbox, TestLog, TestStreamId},
+        TestMessage,
+    },
 };
 use shine_game::replica::{ChatState, StreamId};
 use shine_test::test;
@@ -15,20 +19,22 @@ type Persistence = StreamPersistence<ChatState, RedisCommandInboxDb, PgCommandLo
 
 /// An actor and the persistence behind it, with nothing spawned and no channel between them: the
 /// actor only says what would have to be made durable, so the test hands that batch over itself.
-/// An actor and the persistence behind it, with nothing spawned and no channel between them: the
-/// actor only says what would have to be made durable, so the test hands that batch over itself.
 /// The actor starts empty and takes its history from the first reload, as the worker does.
 async fn setup(stream_id: &StreamId, inbox: &TestInbox, log: &TestLog) -> (Actor, Persistence) {
+    setup_with(stream_id, inbox, log, StreamConfig::default()).await
+}
+
+async fn setup_with(
+    stream_id: &StreamId,
+    inbox: &TestInbox,
+    log: &TestLog,
+    config: StreamConfig,
+) -> (Actor, Persistence) {
     let mut persistence = Persistence::new(
         stream_id.clone(),
         StreamLogService::new(inbox.db.clone(), log.db.clone(), StreamConfig::default()),
     );
-    let mut actor = Actor::new(
-        stream_id.clone(),
-        inbox.db.clone(),
-        TestEgress::default(),
-        StreamConfig::default(),
-    );
+    let mut actor = Actor::new(stream_id.clone(), inbox.db.clone(), TestEgress::default(), config);
     let PersistResult::Reloaded {
         snapshot, tail, stored_inbox, ..
     } = persistence.reload("the stream is starting").await
@@ -37,6 +43,17 @@ async fn setup(stream_id: &StreamId, inbox: &TestInbox, log: &TestLog) -> (Actor
     };
     actor.accept_reload(snapshot, tail.to_vec(), stored_inbox);
     (actor, persistence)
+}
+
+/// Queues a command in the inbox of the stream, as the registry does after it has checked it.
+async fn queue(inbox: &TestInbox, stream_id: &StreamId, data: &str) -> Uuid {
+    let command_id = Uuid::new_v4();
+    inbox
+        .db
+        .push(stream_id, command_id, Uuid::new_v4(), data)
+        .await
+        .unwrap();
+    command_id
 }
 
 #[test]
@@ -174,4 +191,125 @@ async fn actor_adopts_a_reload_and_invalidates_optimistic_history() {
         log.db.head(&stream_id).await.unwrap().unwrap().chain_hash,
         canonical.replica.chain_hash()
     );
+}
+
+/// The registry validates a command before it is queued, but the inbox is shared by the instances and
+/// outlives them, so the actor does not trust what it reads.
+#[test]
+async fn ingest_versions_the_inbox_in_order_and_drops_what_is_not_a_command() {
+    let inbox = TestInbox::from_env().await;
+    let log = TestLog::from_env().await;
+    let stream_id = TestStreamId::new_chat();
+    let (mut actor, _persistence) = setup(&stream_id, &inbox, &log).await;
+    let first = queue(&inbox, &stream_id, &TestMessage::new_chat_command("a")).await;
+    queue(&inbox, &stream_id, "{not a command").await;
+    queue(&inbox, &stream_id, &TestMessage::new_chat_command("   ")).await;
+    let last = queue(&inbox, &stream_id, &TestMessage::new_chat_command("b")).await;
+
+    let ingested = actor.ingest().await.unwrap();
+
+    assert_eq!(ingested.commands.iter().map(|c| c.version).collect::<Vec<_>>(), [1, 2]);
+    assert_eq!(
+        ingested.commands.iter().map(|c| c.command_id).collect::<Vec<_>>(),
+        [first, last],
+        "the dropped entries did not use a version"
+    );
+    assert!(!ingested.throttled);
+    assert_eq!(actor.optimistic().len(), 2);
+
+    assert!(
+        actor.ingest().await.unwrap().commands.is_empty(),
+        "the dropped entries are passed, not read again"
+    );
+    queue(&inbox, &stream_id, &TestMessage::new_chat_command("c")).await;
+    assert_eq!(actor.ingest().await.unwrap().commands[0].version, 3);
+}
+
+#[test]
+async fn ingest_leaves_the_inbox_to_wait_while_the_backlog_is_full() {
+    let inbox = TestInbox::from_env().await;
+    let log = TestLog::from_env().await;
+    let stream_id = TestStreamId::new_chat();
+    let config = StreamConfig {
+        max_pending: 3,
+        ..StreamConfig::default()
+    };
+    let (mut actor, mut persistence) = setup_with(&stream_id, &inbox, &log, config).await;
+    for text in ["a", "b", "c", "d", "e"] {
+        queue(&inbox, &stream_id, &TestMessage::new_chat_command(text)).await;
+    }
+
+    let first = actor.ingest().await.unwrap();
+    assert_eq!(first.commands.len(), 3, "no more than the backlog has room for");
+    assert!(first.throttled);
+    let stalled = actor.ingest().await.unwrap();
+    assert!(stalled.commands.is_empty());
+    assert!(
+        stalled.throttled,
+        "the full backlog is reported even when nothing was read"
+    );
+
+    let (version, chain_hash) = actor.confirmed_head();
+    let PersistResult::Advanced { canonical, snapshot, .. } = persistence
+        .persist(version, chain_hash, actor.optimistic().to_vec().into())
+        .await
+    else {
+        panic!("expected the backlog to be confirmed");
+    };
+    actor.accept_canonical(&canonical, snapshot);
+
+    let rest = actor.ingest().await.unwrap();
+    assert_eq!(rest.commands.iter().map(|c| c.version).collect::<Vec<_>>(), [4, 5]);
+    assert!(!rest.throttled, "nothing was held back any more");
+}
+
+#[test]
+async fn deliver_sends_each_subscriber_only_what_it_has_not_seen() {
+    let inbox = TestInbox::from_env().await;
+    let log = TestLog::from_env().await;
+    let stream_id = TestStreamId::new_chat();
+    let (mut actor, _persistence) = setup(&stream_id, &inbox, &log).await;
+    for text in ["a", "b", "c"] {
+        queue(&inbox, &stream_id, &TestMessage::new_chat_command(text)).await;
+    }
+    let ingested = actor.ingest().await.unwrap();
+    let (behind, partway, current) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+    actor.subscribe(behind, 0);
+    actor.subscribe(partway, 1);
+    actor.subscribe(current, 3);
+
+    actor.deliver(&ingested.commands).await;
+
+    let versions = |connection| TestEgress::versions(&actor.egress().messages(connection), &stream_id);
+    assert_eq!(versions(behind), [1, 2, 3]);
+    assert_eq!(versions(partway), [2, 3], "the command it has is not sent again");
+    assert!(actor.egress().messages(current).is_empty(), "it has them all");
+    assert_eq!(actor.sent_through(partway), Some(3));
+    assert_eq!(actor.sent_through(current), Some(3));
+}
+
+#[test]
+async fn giving_up_tells_the_subscribers_and_forgets_them() {
+    let inbox = TestInbox::from_env().await;
+    let log = TestLog::from_env().await;
+    let stream_id = TestStreamId::new_chat();
+    let (mut actor, _persistence) = setup(&stream_id, &inbox, &log).await;
+    let (first, second) = (Uuid::new_v4(), Uuid::new_v4());
+    actor.subscribe(first, 0);
+    actor.subscribe(second, 0);
+
+    actor.give_up().await;
+
+    for connection in [first, second] {
+        assert_eq!(
+            actor
+                .egress()
+                .messages(connection)
+                .iter()
+                .map(|m| (**m).clone())
+                .collect::<Vec<_>>(),
+            [StreamMessage::Unsynced { stream_id: stream_id.clone() }]
+        );
+    }
+    assert_eq!(actor.subscriber_count(), 0, "they have to subscribe again");
 }

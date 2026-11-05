@@ -17,7 +17,7 @@ use shine_game::replica::{encode_command, ChatCommand, ChatState, StreamId};
 use shine_test::test;
 use std::{
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicUsize, Ordering},
         Arc,
     },
     time::Duration,
@@ -377,11 +377,11 @@ async fn a_stream_that_cannot_be_loaded_tells_the_waiting_subscribers_and_ends()
     assert!(!worker.subscribe(Uuid::new_v4()));
 }
 
-/// An inbox that fails to be read when told to.
+/// An inbox that fails the next reads when told to: `fail` is how many.
 #[derive(Clone)]
 struct FlakyInbox {
     inner: RedisCommandInboxDb,
-    fail: Arc<AtomicBool>,
+    fail: Arc<AtomicUsize>,
 }
 
 impl CommandInboxDb for FlakyInbox {
@@ -401,7 +401,11 @@ impl CommandInboxDb for FlakyInbox {
         after: &InboxId,
         limit: usize,
     ) -> Result<InboxBatch, CommandStreamError> {
-        if self.fail.load(Ordering::Relaxed) {
+        let failing = self
+            .fail
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |left| left.checked_sub(1))
+            .is_ok();
+        if failing {
             return Err(CommandStreamError::Corrupt("injected failure".to_string()));
         }
         self.inner.poll(stream_id, after, limit).await
@@ -431,7 +435,7 @@ impl CommandInboxDb for FlakyInbox {
 async fn a_stream_that_keeps_failing_is_given_up_and_its_subscribers_are_told() {
     let h = harness().await;
     let id = TestStreamId::new_chat();
-    let fail = Arc::new(AtomicBool::new(false));
+    let fail = Arc::new(AtomicUsize::new(0));
     let flaky = FlakyInbox {
         inner: h.inbox.db.clone(),
         fail: fail.clone(),
@@ -445,11 +449,83 @@ async fn a_stream_that_keeps_failing_is_given_up_and_its_subscribers_are_told() 
     let worker = StreamWorker::start::<ChatState, _, _, _>(service, flaky, h.egress.clone(), id.clone(), config);
     let connection = h.subscribe(&worker).await;
 
-    fail.store(true, Ordering::Relaxed);
+    fail.store(usize::MAX, Ordering::Relaxed);
 
     h.egress
         .wait(connection, |m| TestEgress::kinds(m) == ["sync:0", "unsynced"])
         .await;
     wait_finished(&worker).await;
     assert!(!worker.subscribe(Uuid::new_v4()));
+}
+
+#[test]
+async fn failures_that_do_not_follow_each_other_do_not_give_up_the_stream() {
+    let h = harness().await;
+    let id = TestStreamId::new_chat();
+    let fail = Arc::new(AtomicUsize::new(0));
+    let flaky = FlakyInbox {
+        inner: h.inbox.db.clone(),
+        fail: fail.clone(),
+    };
+    let config = StreamConfig {
+        backstop: Duration::from_millis(30),
+        max_failures: 2,
+        ..StreamConfig::quiet()
+    };
+    let service = StreamLogService::new(flaky.clone(), h.log.db.clone(), config.clone());
+    let inbox = h.inbox.db.clone();
+    let worker = StreamWorker::start::<ChatState, _, _, _>(service, flaky, h.egress.clone(), id.clone(), config);
+    let connection = h.subscribe(&worker).await;
+
+    // Two failures, but a pass that works comes between them.
+    for (text, versions) in [("a", vec![1]), ("b", vec![1, 2])] {
+        fail.store(1, Ordering::Relaxed);
+        timeout(WAIT_TIMEOUT, async {
+            while fail.load(Ordering::Relaxed) > 0 {
+                sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("the failure was met");
+
+        let data = TestMessage::new_chat_command(text);
+        inbox.push(&id, Uuid::new_v4(), Uuid::new_v4(), &data).await.unwrap();
+        worker.wake();
+        h.egress
+            .wait(connection, |m| TestEgress::versions(m, &id) == versions)
+            .await;
+    }
+
+    assert!(!worker.is_finished());
+    assert!(!TestEgress::kinds(&h.egress.messages(connection)).contains(&"unsynced".to_string()));
+}
+
+/// The worker that ends while the log holds a history of its own leaves the commands it could not store
+/// in the inbox, for whoever serves the stream next.
+#[test]
+async fn a_worker_stopped_over_a_contradicting_log_leaves_its_commands_in_the_inbox() {
+    let h = harness().await;
+    let id = TestStreamId::new_chat();
+    h.log.db.ensure_stream(&id).await.unwrap();
+    ChatLog::new("seed", 3).persist(&h.log.db, &id, 1, 3).await.unwrap();
+    let worker = h.spawn(&id, 100, StreamConfig::quiet());
+    h.subscribe(&worker).await;
+    h.log
+        .exec(&format!(
+            "UPDATE cl_streams SET version = 0, chain_hash = 0 WHERE kind = '{}' AND id = '{}';
+             DELETE FROM cl_commands WHERE kind = '{}' AND id = '{}';",
+            id.kind(),
+            id.id(),
+            id.kind(),
+            id.id(),
+        ))
+        .await;
+    ChatLog::new("other", 4).persist(&h.log.db, &id, 1, 4).await.unwrap();
+    h.send(&id, "mine").await;
+
+    assert!(worker.stop());
+
+    wait_finished(&worker).await;
+    assert_eq!(h.log.all_commands(&id).await.len(), 4, "the log keeps its own history");
+    assert_eq!(h.inbox.len(&id).await, 1, "the command was not lost");
 }
