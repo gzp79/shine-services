@@ -4,15 +4,13 @@ use crate::{
         command_inbox::{CommandInboxDb, InboxId},
         command_log::CommandLogDb,
     },
-    testing::command_stream::{
-        create_test_inbox, create_test_log, seed_chat_log_and_snapshots, seeded_chat_log, stream_id, TestInbox, TestLog,
-    },
+    testing::command_stream::{TestInbox, TestLog, TestStreamId},
 };
-use shine_game::replica::{ChatState, ReplayState};
+
 use shine_test::test;
 
-async fn fixture() -> Option<(TestInbox, TestLog)> {
-    Some((create_test_inbox(60).await?, create_test_log().await?))
+async fn fixture() -> (TestInbox, TestLog) {
+    (TestInbox::from_env().await, TestLog::from_env().await)
 }
 
 fn service(inbox: &TestInbox, log: &TestLog) -> StreamLogService<impl CommandInboxDb, impl CommandLogDb> {
@@ -21,8 +19,8 @@ fn service(inbox: &TestInbox, log: &TestLog) -> StreamLogService<impl CommandInb
 
 #[test]
 async fn a_new_stream_loads_empty_and_is_created() {
-    let Some((inbox, log)) = fixture().await else { return };
-    let id = stream_id(ChatState::KIND);
+    let (inbox, log) = fixture().await;
+    let id = TestStreamId::new_chat();
 
     let stored = service(&inbox, &log).load(&id).await.unwrap();
 
@@ -37,8 +35,8 @@ async fn a_new_stream_loads_empty_and_is_created() {
 
 #[test]
 async fn a_stream_without_a_snapshot_loads_every_command() {
-    let Some((inbox, log)) = fixture().await else { return };
-    let (id, room) = seeded_chat_log(&log, 3).await;
+    let (inbox, log) = fixture().await;
+    let (id, room) = log.seeded_chat_log(3).await;
 
     let stored = service(&inbox, &log).load(&id).await.unwrap();
 
@@ -51,8 +49,8 @@ async fn a_stream_without_a_snapshot_loads_every_command() {
 
 #[test]
 async fn a_stream_loads_from_its_latest_snapshot_without_the_command_below_it() {
-    let Some((inbox, log)) = fixture().await else { return };
-    let (id, room) = seed_chat_log_and_snapshots(&log, 10, &[4, 7]).await;
+    let (inbox, log) = fixture().await;
+    let (id, room) = log.seed_chat_log_and_snapshots(10, &[4, 7]).await;
 
     let stored = service(&inbox, &log).load(&id).await.unwrap();
 
@@ -66,8 +64,8 @@ async fn a_stream_loads_from_its_latest_snapshot_without_the_command_below_it() 
 
 #[test]
 async fn the_stored_inbox_marker_comes_from_the_last_command_of_the_tail() {
-    let Some((inbox, log)) = fixture().await else { return };
-    let (id, room) = seed_chat_log_and_snapshots(&log, 10, &[7]).await;
+    let (inbox, log) = fixture().await;
+    let (id, room) = log.seed_chat_log_and_snapshots(10, &[7]).await;
 
     let stored = service(&inbox, &log).load(&id).await.unwrap();
 
@@ -80,8 +78,8 @@ async fn the_stored_inbox_marker_comes_from_the_last_command_of_the_tail() {
 /// command the snapshot was taken at: its inbox entry is stored and must not be taken again.
 #[test]
 async fn the_stored_inbox_marker_survives_an_empty_tail() {
-    let Some((inbox, log)) = fixture().await else { return };
-    let (id, room) = seed_chat_log_and_snapshots(&log, 5, &[5]).await;
+    let (inbox, log) = fixture().await;
+    let (id, room) = log.seed_chat_log_and_snapshots(5, &[5]).await;
 
     let stored = service(&inbox, &log).load(&id).await.unwrap();
 

@@ -407,6 +407,6 @@ fn close_connection(hub_service: &HubService, user_id: Uuid, connection_id: Uuid
     }
 }
 
-// todo: #[cfg(test)]
-// #[path = "connect_test.rs"]
-// mod connect_test;
+#[cfg(test)]
+#[path = "connect_test.rs"]
+mod connect_test;

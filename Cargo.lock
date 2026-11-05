@@ -4153,6 +4153,7 @@ dependencies = [
 name = "shine-infra-testing"
 version = "0.1.0"
 dependencies = [
+ "redis",
  "shine-infra",
  "shine-test",
  "tracing",

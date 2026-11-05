@@ -1,10 +1,10 @@
 use crate::{
     models::CommandStreamError,
     repositories::command_log::{pg::PgCommandLogDb, CommandLogDb, StoredCommand, StoredSnapshot, StreamHead},
-    testing::command_stream::{replay, stream_id, TestLog},
+    testing::command_stream::{TestLog, TestStreamId},
 };
 use shine_game::replica::{
-    encode_command, encode_snapshot, stable_hash_of, ChatCommand, ChatState, CommandEnvelope, ReplayState, Replica,
+    decode_snapshot, encode_command, encode_snapshot, stable_hash_of, ChatCommand, ChatState, CommandEnvelope, Replica,
     StreamId,
 };
 use uuid::Uuid;
@@ -98,42 +98,59 @@ impl ChatLog {
             v => self.commands[(v - 1) as usize].chain_hash,
         }
     }
+
+    pub async fn persist(
+        &self,
+        db: &PgCommandLogDb,
+        stream_id: &StreamId,
+        first: i64,
+        last: i64,
+    ) -> Result<StreamHead, CommandStreamError> {
+        let (batch, baseline) = self.command_range(first, last);
+        db.append(stream_id, batch, baseline).await
+    }
+
+    /// Replays stored commands the way a reader of the log does.
+    pub fn replay(snapshot: Option<&StoredSnapshot>, commands: &[StoredCommand]) -> Replica<ChatState> {
+        let mut replica = match snapshot {
+            Some(snapshot) => Replica::from_snapshot(
+                snapshot.version,
+                decode_snapshot::<ChatState>(&snapshot.data).unwrap(),
+                snapshot.chain_hash,
+            ),
+            None => Replica::new(),
+        };
+
+        for command in commands {
+            replica
+                .apply_next(&command.to_envelope::<ChatState>().unwrap())
+                .unwrap();
+        }
+        replica
+    }
 }
 
-pub async fn persist_chat_logs(
-    db: &PgCommandLogDb,
-    stream_id: &StreamId,
-    room: &ChatLog,
-    first: i64,
-    last: i64,
-) -> Result<StreamHead, CommandStreamError> {
-    let (batch, baseline) = room.command_range(first, last);
-    db.append(stream_id, batch, baseline).await
-}
-
-/// Seed new persisted stream holding the first `count` commands of the `seed` room.
-pub async fn seeded_chat_log(log: &TestLog, count: i64) -> (StreamId, ChatLog) {
-    let room = ChatLog::new("seed", count);
-    let id = stream_id(ChatState::KIND);
-    log.db.ensure_stream(&id).await.unwrap();
-    persist_chat_logs(&log.db, &id, &room, 1, room.commands.len() as i64)
-        .await
-        .unwrap();
-    (id, room)
-}
-
-/// Seed a command log stream of `count` commands with the snapshots of the given versions stored.
-pub async fn seed_chat_log_and_snapshots(log: &TestLog, count: i64, snapshots: &[i64]) -> (StreamId, ChatLog) {
-    let (id, room) = seeded_chat_log(log, count).await;
-    for &version in snapshots {
-        log.db
-            .try_store_snapshot(&id, &room.snapshot_at(version))
+impl TestLog {
+    /// Seed a new stream holding the first `count` commands of the `seed` room.
+    pub async fn seeded_chat_log(&self, count: i64) -> (StreamId, ChatLog) {
+        let room = ChatLog::new("seed", count);
+        let id = TestStreamId::new_chat();
+        self.db.ensure_stream(&id).await.unwrap();
+        room.persist(&self.db, &id, 1, room.commands.len() as i64)
             .await
             .unwrap();
+        (id, room)
     }
-    (id, room)
-}
 
-pub fn replay_chat(snapshot: Option<&StoredSnapshot>, commands: &[StoredCommand]) -> Replica<ChatState> {
-    replay::<ChatState>(snapshot, commands)
+    /// Seed a stream of `count` commands with the snapshots of the given versions stored.
+    pub async fn seed_chat_log_and_snapshots(&self, count: i64, snapshots: &[i64]) -> (StreamId, ChatLog) {
+        let (id, room) = self.seeded_chat_log(count).await;
+        for &version in snapshots {
+            self.db
+                .try_store_snapshot(&id, &room.snapshot_at(version))
+                .await
+                .unwrap();
+        }
+        (id, room)
+    }
 }

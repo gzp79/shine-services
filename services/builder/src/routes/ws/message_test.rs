@@ -1,14 +1,12 @@
 //! The JSON frames of the stream messages: what a client sends and what it is sent.
 
 use super::*;
-use crate::models::messages::{CommandFailure, StreamCommand, StreamMessage, StreamSnapshot, SubscribeFailure};
+use crate::{
+    models::messages::{CommandFailure, StreamCommand, StreamMessage, StreamSnapshot, SubscribeFailure},
+    testing::command_stream::TestStreamId,
+};
 use serde_json::json;
-use shine_game::replica::{StreamId, StreamKind};
 use shine_test::test;
-
-fn stream_id(name: &str) -> StreamId {
-    StreamId::new(StreamKind::Chat, name).unwrap()
-}
 
 fn frame(message: StreamMessage) -> serde_json::Value {
     serde_json::to_value(stream_message_to_wire(&message)).unwrap()
@@ -19,7 +17,7 @@ fn a_sync_carries_the_snapshot_and_the_commands() {
     let (command_id, user_id) = (Uuid::new_v4(), Uuid::new_v4());
 
     let json = frame(StreamMessage::Sync {
-        stream_id: stream_id("room-1"),
+        stream_id: TestStreamId::new_chat_with("room-1"),
         snapshot: Some(StreamSnapshot {
             version: 8,
             chain_hash: 0xAB,
@@ -48,7 +46,7 @@ fn a_sync_carries_the_snapshot_and_the_commands() {
 #[test]
 fn a_sync_without_a_snapshot_has_a_null_one() {
     let json = frame(StreamMessage::Sync {
-        stream_id: stream_id("room-1"),
+        stream_id: TestStreamId::new_chat_with("room-1"),
         snapshot: None,
         commands: vec![],
     });
@@ -65,7 +63,7 @@ fn the_other_stream_messages_have_their_own_frames() {
 
     assert_eq!(
         frame(StreamMessage::Commands {
-            stream_id: stream_id("s"),
+            stream_id: TestStreamId::new_chat_with("s"),
             commands: vec![StreamCommand {
                 version: 3,
                 command_id,
@@ -77,23 +75,27 @@ fn the_other_stream_messages_have_their_own_frames() {
     );
     assert_eq!(
         frame(StreamMessage::Checkpoint {
-            stream_id: stream_id("s"),
+            stream_id: TestStreamId::new_chat_with("s"),
             version: 8,
             state_hash: 255
         }),
         json!({"type": "streamCheckpoint", "streamId": "chat:s", "version": 8, "stateHash": "00000000000000ff"})
     );
     assert_eq!(
-        frame(StreamMessage::Reset { stream_id: stream_id("s") }),
+        frame(StreamMessage::Reset {
+            stream_id: TestStreamId::new_chat_with("s")
+        }),
         json!({"type": "streamReset", "streamId": "chat:s"})
     );
     assert_eq!(
-        frame(StreamMessage::Unsynced { stream_id: stream_id("s") }),
+        frame(StreamMessage::Unsynced {
+            stream_id: TestStreamId::new_chat_with("s")
+        }),
         json!({"type": "streamUnsynced", "streamId": "chat:s"})
     );
     assert_eq!(
         frame(StreamMessage::CommandFailed {
-            stream_id: stream_id("s"),
+            stream_id: TestStreamId::new_chat_with("s"),
             command_id,
             reason: CommandFailure::NotSubscribed
         }),
@@ -101,7 +103,7 @@ fn the_other_stream_messages_have_their_own_frames() {
     );
     assert_eq!(
         frame(StreamMessage::SubscribeFailed {
-            stream_id: stream_id("s"),
+            stream_id: TestStreamId::new_chat_with("s"),
             reason: SubscribeFailure::Failed
         }),
         json!({"type": "streamSubscribeFailed", "streamId": "chat:s", "reason": "failed"})

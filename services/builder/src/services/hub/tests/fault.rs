@@ -2,7 +2,7 @@
 
 use crate::{
     models::messages::{DisconnectReason, HubEvent, HubMessage, TopicKey},
-    testing::hub::{EgressState, Lifecycle, TestHub, TestHubOptions},
+    testing::hub::{Lifecycle, TestHub, TestHubOptions, TestSession},
 };
 use shine_test::{
     test,
@@ -21,10 +21,10 @@ const CUT_IN_SET: u64 = 60;
 
 #[test(serial = "hub-service")]
 async fn connect_proceeds_when_the_registry_write_landed_but_its_reply_was_lost() {
-    let toxiproxy = Toxiproxy::from_env().unwrap();
+    let toxiproxy = Toxiproxy::from_env();
     let _reset = toxiproxy.reset_guard().await;
 
-    let mut test = TestHub::default_from_env().await.unwrap();
+    let mut test = TestHub::default_from_env().await;
 
     let user = Uuid::new_v4();
 
@@ -37,7 +37,7 @@ async fn connect_proceeds_when_the_registry_write_landed_but_its_reply_was_lost(
         .add_toxic(&Toxic::limit_data("cut", Stream::Upstream, CUT_AFTER_SET))
         .await;
     let (second, mut second_rx) = test.connect_ping(user, 8);
-    let first_end = EgressState::poll(&mut first_rx).await;
+    let first_end = first_rx.next().await;
     proxy.remove_toxic("cut").await;
 
     assert!(
@@ -51,12 +51,11 @@ async fn connect_proceeds_when_the_registry_write_landed_but_its_reply_was_lost(
         "the registry already names the new connection, so it must replace the old one: {first_end:?}"
     );
     let seen = test.wait_all_commands().await;
-    Lifecycle::assert_by_user(
-        &seen,
-        user,
-        &[Lifecycle::Disconnected(first), Lifecycle::Connected(second)],
+    assert_eq!(
+        seen.lifecycle_of(user),
+        [Lifecycle::Disconnected(first), Lifecycle::Connected(second)]
     );
-    EgressState::from_egress(&mut second_rx).assert_open();
+    second_rx.drain().assert_open();
     test.assert_consistent([user], &HashMap::from([(user, second)])).await;
 
     test.cleanup_connection(user, second).await;
@@ -64,10 +63,10 @@ async fn connect_proceeds_when_the_registry_write_landed_but_its_reply_was_lost(
 
 #[test(serial = "hub-service")]
 async fn connect_is_rejected_when_the_registry_write_did_not_land() {
-    let toxiproxy = Toxiproxy::from_env().unwrap();
+    let toxiproxy = Toxiproxy::from_env();
     let _reset = toxiproxy.reset_guard().await;
 
-    let mut test = TestHub::default_from_env().await.unwrap();
+    let mut test = TestHub::default_from_env().await;
     let user = Uuid::new_v4();
 
     let (first, mut first_rx) = test.connect_ping(user, 8);
@@ -79,7 +78,7 @@ async fn connect_is_rejected_when_the_registry_write_did_not_land() {
         .add_toxic(&Toxic::limit_data("cut", Stream::Upstream, CUT_IN_SET))
         .await;
     let (_second, mut second_rx) = test.connect_ping(user, 8);
-    let second_end = EgressState::poll(&mut second_rx).await;
+    let second_end = second_rx.next().await;
     proxy.remove_toxic("cut").await;
 
     // The new socket is released without a notice; the old connection stays intact and tracked.
@@ -88,9 +87,9 @@ async fn connect_is_rejected_when_the_registry_write_did_not_land() {
         "the rejected connection must be released: {second_end:?}"
     );
     let seen = test.wait_all_commands().await;
-    Lifecycle::assert_by_user(&seen, user, &[]);
-    Lifecycle::assert_drops(&seen, &[]);
-    EgressState::from_egress(&mut first_rx).assert_open();
+    assert_eq!(seen.lifecycle_of(user), []);
+    assert!(seen.drops().is_empty());
+    first_rx.drain().assert_open();
     test.assert_consistent([user], &HashMap::from([(user, first)])).await;
 
     test.cleanup_connection(user, first).await;
@@ -98,10 +97,10 @@ async fn connect_is_rejected_when_the_registry_write_did_not_land() {
 
 #[test(serial = "hub-service")]
 async fn disconnect_during_an_outage_releases_the_socket_and_leaves_the_row_to_the_ttl() {
-    let toxiproxy = Toxiproxy::from_env().unwrap();
+    let toxiproxy = Toxiproxy::from_env();
     let _reset = toxiproxy.reset_guard().await;
 
-    let mut test = TestHub::default_from_env().await.unwrap();
+    let mut test = TestHub::default_from_env().await;
     let user = Uuid::new_v4();
 
     let (connection, mut rx) = test.connect_ping(user, 8);
@@ -119,8 +118,8 @@ async fn disconnect_during_an_outage_releases_the_socket_and_leaves_the_row_to_t
         .expect("the disconnect must not wedge on Redis");
     proxy.set_enabled(true).await;
 
-    Lifecycle::assert_by_user(&seen, user, &[Lifecycle::Disconnected(connection)]);
-    EgressState::from_egress(&mut rx)
+    assert_eq!(seen.lifecycle_of(user), [Lifecycle::Disconnected(connection)]);
+    rx.drain()
         .assert_closed()
         .assert_disconnects(&[DisconnectReason::SessionInvalid]);
 
@@ -138,7 +137,7 @@ async fn disconnect_during_an_outage_releases_the_socket_and_leaves_the_row_to_t
 async fn an_outage_keeps_live_connections_and_rejects_new_ones() {
     let tick = Duration::from_millis(100);
 
-    let toxiproxy = Toxiproxy::from_env().unwrap();
+    let toxiproxy = Toxiproxy::from_env();
     let _reset = toxiproxy.reset_guard().await;
 
     let mut test = TestHub::from_env(TestHubOptions {
@@ -146,10 +145,9 @@ async fn an_outage_keeps_live_connections_and_rejects_new_ones() {
         session_check: tick,
         ..Default::default()
     })
-    .await
-    .unwrap();
+    .await;
     let user = Uuid::new_v4();
-    let session_key = test.seed_session(user).await;
+    let session_key = TestSession::seed(&test.redis, user).await;
 
     let (connection, mut rx) = test.connect(user, 8, vec![TopicKey::Ping], Some(session_key));
     test.wait_all_commands().await;
@@ -162,7 +160,7 @@ async fn an_outage_keeps_live_connections_and_rejects_new_ones() {
     let during = test.wait_event(Some(tick * 10), |_| true).await;
     assert!(during.is_none(), "nothing may change during the outage: {during:?}");
     assert!(
-        EgressState::poll(&mut rejected_rx).await.is_none(),
+        rejected_rx.next().await.is_none(),
         "a connect during the outage is rejected"
     );
     proxy.set_enabled(true).await;
@@ -170,9 +168,9 @@ async fn an_outage_keeps_live_connections_and_rejects_new_ones() {
     // After the outage the ticks succeed again and the live connection is still there.
     tokio::time::sleep(tick * 5).await;
     let seen = test.wait_all_commands().await;
-    assert_eq!(Lifecycle::collect_by_user(&seen, user), []);
-    EgressState::from_egress(&mut rx).assert_open();
-    Lifecycle::assert_drops(&seen, &[]);
+    assert_eq!(seen.lifecycle_of(user), []);
+    rx.drain().assert_open();
+    assert!(seen.drops().is_empty());
     test.assert_consistent([user, new_user], &HashMap::from([(user, connection)]))
         .await;
 

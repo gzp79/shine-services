@@ -1,18 +1,18 @@
 use crate::db::postgres::{get_postgres_cns, get_postgres_cns_direct};
-use shine_infra::db::redis::{RedisConnectionPool, create_redis_pool};
+use shine_infra::db::postgres::{PgConnectionPool, create_postgres_pool};
 
 pub struct TestPg {
-    pub pool: RedisConnectionPool,
-    pub direct_pool: RedisConnectionPool,
+    pub pool: PgConnectionPool,
+    pub direct_pool: PgConnectionPool,
 }
 
 impl TestPg {
-    pub async fn from_env() -> Option<Self> {
-        let cns = get_postgres_cns()?;
-        let pool = create_redis_pool(&cns).await.unwrap();
+    pub async fn from_env() -> Self {
+        let cns = get_postgres_cns().expect("SHINE_TEST_PG_CNS must be set");
+        let pool = create_postgres_pool(&cns).await.unwrap();
 
-        let cns = get_postgres_cns_direct()?;
-        let direct_pool = create_redis_pool(&cns).await.unwrap();
-        Some(Self { pool, direct_pool })
+        let cns = get_postgres_cns_direct().expect("SHINE_TEST_PG_CNS must be set");
+        let direct_pool = create_postgres_pool(&cns).await.unwrap();
+        Self { pool, direct_pool }
     }
 }

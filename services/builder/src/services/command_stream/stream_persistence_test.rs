@@ -2,16 +2,13 @@ use super::*;
 use crate::{
     repositories::{command_inbox::CommandInboxDb, command_log::CommandLogDb},
     services::command_stream::StreamConfig,
-    testing::command_stream::{
-        create_test_inbox, create_test_log, fetch_all_commands, seed_chat_log_and_snapshots, stream_id, ChatLog,
-        TestInbox, TestLog,
-    },
+    testing::command_stream::{ChatLog, TestInbox, TestLog, TestStreamId},
 };
-use shine_game::replica::{ChatState, ReplayState, StreamId};
+use shine_game::replica::{ChatState, StreamId};
 use shine_test::test;
 
-async fn fixture() -> Option<(TestInbox, TestLog)> {
-    Some((create_test_inbox(60).await?, create_test_log().await?))
+async fn fixture() -> (TestInbox, TestLog) {
+    (TestInbox::from_env().await, TestLog::from_env().await)
 }
 
 /// Nothing is spawned: the persistence is driven straight from the test.
@@ -29,8 +26,8 @@ fn persistence(
 
 #[test]
 async fn loading_takes_the_latest_snapshot_and_tail() {
-    let Some((inbox, log)) = fixture().await else { return };
-    let (stream_id, room) = seed_chat_log_and_snapshots(&log, 10, &[4, 7]).await;
+    let (inbox, log) = fixture().await;
+    let (stream_id, room) = log.seed_chat_log_and_snapshots(10, &[4, 7]).await;
 
     let loaded = persistence(stream_id, &inbox, &log, StreamConfig::default())
         .reload("the stream is starting")
@@ -49,8 +46,8 @@ async fn loading_takes_the_latest_snapshot_and_tail() {
 
 #[test]
 async fn persistence_appends_replays_and_returns_a_snapshot() {
-    let Some((inbox, log)) = fixture().await else { return };
-    let stream_id = stream_id(ChatState::KIND);
+    let (inbox, log) = fixture().await;
+    let stream_id = TestStreamId::new_chat();
     let room = ChatLog::new("persist", 4);
     let config = StreamConfig {
         snapshot_every: 2,
@@ -72,7 +69,7 @@ async fn persistence_appends_replays_and_returns_a_snapshot() {
     assert_eq!(&*canonical, room.commands);
     assert_eq!(snapshot.as_ref().map(|value| value.version), Some(4));
     assert_eq!(checkpoint.map(|value| value.version), Some(4));
-    assert_eq!(fetch_all_commands(&log.db, &stream_id).await, room.commands);
+    assert_eq!(log.all_commands(&stream_id).await, room.commands);
     assert_eq!(
         log.db
             .latest_snapshot(&stream_id, 4)
@@ -85,8 +82,8 @@ async fn persistence_appends_replays_and_returns_a_snapshot() {
 
 #[test]
 async fn concurrent_instances_converge_on_the_same_canonical_batch() {
-    let Some((inbox, log)) = fixture().await else { return };
-    let stream_id = stream_id(ChatState::KIND);
+    let (inbox, log) = fixture().await;
+    let stream_id = TestStreamId::new_chat();
     let room = ChatLog::new("shared", 6);
     let mut first = persistence(stream_id.clone(), &inbox, &log, StreamConfig::default());
     let mut second = persistence(stream_id.clone(), &inbox, &log, StreamConfig::default());
@@ -102,13 +99,13 @@ async fn concurrent_instances_converge_on_the_same_canonical_batch() {
         };
         assert_eq!(&*canonical, room.commands);
     }
-    assert_eq!(fetch_all_commands(&log.db, &stream_id).await, room.commands);
+    assert_eq!(log.all_commands(&stream_id).await, room.commands);
 }
 
 #[test]
 async fn reconciliation_reloads_only_when_the_durable_head_changed() {
-    let Some((inbox, log)) = fixture().await else { return };
-    let stream_id = stream_id(ChatState::KIND);
+    let (inbox, log) = fixture().await;
+    let stream_id = TestStreamId::new_chat();
     let mut watcher = persistence(stream_id.clone(), &inbox, &log, StreamConfig::default());
     let mut peer = persistence(stream_id.clone(), &inbox, &log, StreamConfig::default());
     watcher.reload("the stream is starting").await;

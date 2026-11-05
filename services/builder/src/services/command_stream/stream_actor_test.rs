@@ -4,11 +4,9 @@ use crate::{
         command_log::{pg::PgCommandLogDb, CommandLogDb, StoredCommand},
     },
     services::command_stream::{PersistResult, StreamActor, StreamConfig, StreamLogService, StreamPersistence},
-    testing::command_stream::{
-        create_test_inbox, create_test_log, persist_chat_logs, stream_id, ChatLog, TestEgress, TestInbox, TestLog,
-    },
+    testing::command_stream::{ChatLog, TestEgress, TestInbox, TestLog, TestStreamId},
 };
-use shine_game::replica::{ChatState, ReplayState, StreamId};
+use shine_game::replica::{ChatState, StreamId};
 use shine_test::test;
 use uuid::Uuid;
 
@@ -43,11 +41,9 @@ async fn setup(stream_id: &StreamId, inbox: &TestInbox, log: &TestLog) -> (Actor
 
 #[test]
 async fn actor_submits_and_promotes_optimistic_commands() {
-    let Some(inbox) = create_test_inbox(60).await else {
-        return;
-    };
-    let Some(log) = create_test_log().await else { return };
-    let stream_id = stream_id(ChatState::KIND);
+    let inbox = TestInbox::from_env().await;
+    let log = TestLog::from_env().await;
+    let stream_id = TestStreamId::new_chat();
     let room = ChatLog::new("optimistic", 2);
     let (mut actor, mut persistence) = setup(&stream_id, &inbox, &log).await;
     let first = Uuid::new_v4();
@@ -83,11 +79,9 @@ async fn actor_submits_and_promotes_optimistic_commands() {
 /// they end up at versions other than the ones the subscribers were already told.
 #[test]
 async fn optimistic_commands_behind_a_confirmed_batch_are_reversioned() {
-    let Some(inbox) = create_test_inbox(60).await else {
-        return;
-    };
-    let Some(log) = create_test_log().await else { return };
-    let stream_id = stream_id(ChatState::KIND);
+    let inbox = TestInbox::from_env().await;
+    let log = TestLog::from_env().await;
+    let stream_id = TestStreamId::new_chat();
     let (mut actor, _persistence) = setup(&stream_id, &inbox, &log).await;
 
     // Two commands are submitted, two more pile up behind them while the job is in flight.
@@ -123,11 +117,9 @@ async fn optimistic_commands_behind_a_confirmed_batch_are_reversioned() {
 /// of them must not take the second with it.
 #[test]
 async fn a_command_queued_twice_is_confirmed_once_at_a_time() {
-    let Some(inbox) = create_test_inbox(60).await else {
-        return;
-    };
-    let Some(log) = create_test_log().await else { return };
-    let stream_id = stream_id(ChatState::KIND);
+    let inbox = TestInbox::from_env().await;
+    let log = TestLog::from_env().await;
+    let stream_id = TestStreamId::new_chat();
     let (mut actor, _persistence) = setup(&stream_id, &inbox, &log).await;
 
     // The same command arrived twice, so it is optimistic twice, at two versions.
@@ -155,17 +147,15 @@ async fn a_command_queued_twice_is_confirmed_once_at_a_time() {
 
 #[test]
 async fn actor_adopts_a_reload_and_invalidates_optimistic_history() {
-    let Some(inbox) = create_test_inbox(60).await else {
-        return;
-    };
-    let Some(log) = create_test_log().await else { return };
-    let stream_id = stream_id(ChatState::KIND);
+    let inbox = TestInbox::from_env().await;
+    let log = TestLog::from_env().await;
+    let stream_id = TestStreamId::new_chat();
     let (mut actor, mut persistence) = setup(&stream_id, &inbox, &log).await;
     let optimistic = ChatLog::new("mine", 2);
     actor.append_optimistic(optimistic.commands.clone());
 
     let canonical = ChatLog::new("other", 2);
-    persist_chat_logs(&log.db, &stream_id, &canonical, 1, 2).await.unwrap();
+    canonical.persist(&log.db, &stream_id, 1, 2).await.unwrap();
     let commands = actor.optimistic().to_vec().into();
 
     let (version, chain_hash) = actor.confirmed_head();

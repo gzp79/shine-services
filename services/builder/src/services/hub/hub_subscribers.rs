@@ -52,6 +52,6 @@ impl Subscribers {
     }
 }
 
-// todo: #[cfg(test)]
-// #[path = "hub_subscribers_test.rs"]
-// mod hub_subscribers_test;
+#[cfg(test)]
+#[path = "hub_subscribers_test.rs"]
+mod hub_subscribers_test;

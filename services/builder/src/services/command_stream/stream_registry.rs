@@ -43,7 +43,6 @@ struct Inner<I: CommandInboxDb, L: CommandLogDb> {
 /// inbox of its stream. Its workers are found or started when a connection subscribes, woken by the
 /// inbox, and released with the connection. It does not know the types of the streams' states: each
 /// kind is registered with what it takes to start its workers and to check its commands.
-// todo: swap generic args
 pub struct StreamRegistry<I: CommandInboxDb, L: CommandLogDb> {
     inner: Arc<Inner<I, L>>,
 }

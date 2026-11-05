@@ -22,15 +22,10 @@ impl Toxiproxy {
         }
     }
 
-    /// The toxiproxy of [`SHINE_TEST_TOXIPROXY_URL`], `None` when it is not set.
-    pub fn from_env() -> Option<Self> {
-        match env::var("SHINE_TEST_TOXIPROXY_URL") {
-            Ok(url) => Some(Self::new(url)),
-            Err(_) => {
-                tracing::warn!("Missing SHINE_TEST_TOXIPROXY_URL");
-                None
-            }
-        }
+    /// The toxiproxy configured by `SHINE_TEST_TOXIPROXY_URL`.
+    pub fn from_env() -> Self {
+        let url = env::var("SHINE_TEST_TOXIPROXY_URL").expect("SHINE_TEST_TOXIPROXY_URL must be set");
+        Self::new(url)
     }
 
     /// Enables every proxy and removes every toxic.

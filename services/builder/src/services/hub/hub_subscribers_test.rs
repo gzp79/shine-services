@@ -1,7 +1,7 @@
 //! Unit tests of [`Subscribers`]: topic filter, lossless delivery, release.
 
 use super::*;
-use crate::testing::hub::ping;
+use crate::testing::TestMessage;
 use shine_test::test;
 use tokio::sync::mpsc;
 
@@ -13,7 +13,7 @@ async fn publish_delivers_to_matching_topic_only() {
     subscribers.subscribe(vec![TopicKey::Ping], tx_chat).await;
     subscribers.subscribe(vec![TopicKey::Hub], tx_hub).await;
 
-    subscribers.publish(ping("hi")).await;
+    subscribers.publish(TestMessage::new_ping("hi")).await;
 
     assert!(matches!(rx_chat.recv().await, Some(HubMessage::Ping(m)) if m.id == "hi"));
     // Hub-topic subscriber must not receive a Chat message.
@@ -28,6 +28,6 @@ async fn publish_prunes_closed_subscriber() {
     assert_eq!(subscribers.len().await, 1);
 
     drop(rx);
-    subscribers.publish(ping("gone")).await;
+    subscribers.publish(TestMessage::new_ping("gone")).await;
     assert_eq!(subscribers.len().await, 0, "a closed subscriber is pruned on publish");
 }

@@ -4,17 +4,17 @@
 use crate::{
     models::messages::{CommandFailure, HubEvent, HubMessage, StreamEvent, StreamMessage, SubscribeFailure, TopicKey},
     services::command_stream::StreamEgress,
-    testing::hub::{Egress, TestHub, TestHubOptions},
+    testing::{
+        command_stream::TestStreamId,
+        hub::{Egress, TestHub, TestHubOptions},
+        TestMessage,
+    },
 };
-use shine_game::replica::{StreamId, StreamKind};
+use shine_game::replica::StreamId;
 use shine_test::test;
 use std::sync::Arc;
 use tokio::sync::mpsc::{self, error::TryRecvError};
 use uuid::Uuid;
-
-fn new_stream_id(name: &str) -> StreamId {
-    StreamId::new(StreamKind::Chat, name).unwrap()
-}
 
 /// Describes messages currently queued on a bus subscription.
 fn drain_messages(rx: &mut mpsc::UnboundedReceiver<HubMessage>) -> Vec<String> {
@@ -33,15 +33,15 @@ fn drain_messages(rx: &mut mpsc::UnboundedReceiver<HubMessage>) -> Vec<String> {
 
 #[test(serial = "hub-service")]
 async fn a_subscribe_reaches_the_internal_subscribers_and_never_the_sockets() {
-    let mut test = TestHub::default_from_env().await.unwrap();
+    let mut test = TestHub::default_from_env().await;
     let mut internal = test.hub.subscribe(vec![TopicKey::Stream]).await;
     let (connection, mut socket) = test.connect(Uuid::new_v4(), 8, vec![TopicKey::Hub, TopicKey::Ping], None);
 
     test.hub
-        .request_stream_subscribe(connection, new_stream_id("s1"))
+        .request_stream_subscribe(connection, TestStreamId::new_chat_with("s1"))
         .unwrap();
     test.hub
-        .request_stream_unsubscribe(connection, new_stream_id("s1"))
+        .request_stream_unsubscribe(connection, TestStreamId::new_chat_with("s1"))
         .unwrap();
     test.wait_all_commands().await;
 
@@ -57,14 +57,14 @@ async fn a_subscribe_reaches_the_internal_subscribers_and_never_the_sockets() {
 
 #[test(serial = "hub-service")]
 async fn a_subscribe_of_a_connection_that_is_not_registered_is_ignored() {
-    let mut test = TestHub::default_from_env().await.unwrap();
+    let mut test = TestHub::default_from_env().await;
     let mut internal = test.hub.subscribe(vec![TopicKey::Stream]).await;
 
     test.hub
-        .request_stream_subscribe(Uuid::new_v4(), new_stream_id("s1"))
+        .request_stream_subscribe(Uuid::new_v4(), TestStreamId::new_chat_with("s1"))
         .unwrap();
     test.hub
-        .request_stream_unsubscribe(Uuid::new_v4(), new_stream_id("s1"))
+        .request_stream_unsubscribe(Uuid::new_v4(), TestStreamId::new_chat_with("s1"))
         .unwrap();
     test.wait_all_commands().await;
 
@@ -73,18 +73,18 @@ async fn a_subscribe_of_a_connection_that_is_not_registered_is_ignored() {
 
 #[test(serial = "hub-service")]
 async fn a_subscribe_is_ordered_with_the_lifecycle_of_its_connection() {
-    let mut test = TestHub::default_from_env().await.unwrap();
+    let mut test = TestHub::default_from_env().await;
     let user = Uuid::new_v4();
     let mut internal = test.hub.subscribe(vec![TopicKey::Hub, TopicKey::Stream]).await;
     let (connection, _socket) = test.connect_ping(user, 8);
 
     test.hub
-        .request_stream_subscribe(connection, new_stream_id("s1"))
+        .request_stream_subscribe(connection, TestStreamId::new_chat_with("s1"))
         .unwrap();
     test.hub.request_disconnection(user, connection).unwrap();
     // Too late: the connection is gone.
     test.hub
-        .request_stream_subscribe(connection, new_stream_id("s2"))
+        .request_stream_subscribe(connection, TestStreamId::new_chat_with("s2"))
         .unwrap();
     test.wait_all_commands().await;
 
@@ -100,10 +100,12 @@ async fn a_subscribe_is_ordered_with_the_lifecycle_of_its_connection() {
 
 #[test(serial = "hub-service")]
 async fn the_hub_sends_stream_messages_to_a_connection_by_its_id() {
-    let mut test = TestHub::default_from_env().await.unwrap();
+    let mut test = TestHub::default_from_env().await;
     let (connection, mut socket) = test.connect_ping(Uuid::new_v4(), 8);
     test.wait_all_commands().await;
-    let message = Arc::new(StreamMessage::Reset { stream_id: new_stream_id("s1") });
+    let message = Arc::new(StreamMessage::Reset {
+        stream_id: TestStreamId::new_chat_with("s1"),
+    });
 
     let queued = test.hub.send(connection, message.clone()).await;
     let unknown = test.hub.send(Uuid::new_v4(), message.clone()).await;
@@ -124,7 +126,6 @@ async fn the_hub_sends_stream_messages_to_a_connection_by_its_id() {
 mod served {
     use super::*;
     use crate::services::command_stream::StreamConfig;
-    use shine_game::replica::{encode_command, ChatCommand, ChatState, PixelMapCommand, PixelMapState};
     use shine_test::test;
     use std::time::Duration;
     use tokio::time::timeout;
@@ -139,7 +140,6 @@ mod served {
             ..TestHubOptions::default()
         })
         .await
-        .unwrap()
     }
 
     /// The next stream message the connection gets.
@@ -157,18 +157,11 @@ mod served {
         .expect("a stream message")
     }
 
-    fn chat_command(text: &str) -> String {
-        encode_command::<ChatState>(&ChatCommand::Add { text: text.into() }).unwrap()
-    }
-
     #[test(serial = "hub-service")]
     async fn a_connection_subscribes_through_the_hub_and_gets_the_commands_of_two_kinds() {
         let mut test = create_test_hub().await;
         let user = Uuid::new_v4();
-        let (chat, map) = (
-            StreamId::new(StreamKind::Chat, format!("chat-{}", Uuid::new_v4().simple())).unwrap(),
-            StreamId::new(StreamKind::PixelMap, format!("map-{}", Uuid::new_v4().simple())).unwrap(),
-        );
+        let (chat, map) = (TestStreamId::new_chat(), TestStreamId::new_pixel_map());
         let (connection, mut socket) = test.connect_ping(user, 32);
         test.wait_all_commands().await;
 
@@ -178,14 +171,14 @@ mod served {
             next_stream_message(&mut socket).await,
             next_stream_message(&mut socket).await,
         ];
-        let paint_data = encode_command::<PixelMapState>(&PixelMapCommand::Paint { x: 3, y: 4, color: 5 }).unwrap();
+        let paint_data = TestMessage::new_paint_command(3, 4, 5);
         test.hub
             .send_stream_command(
                 connection,
                 Uuid::new_v4(),
                 &chat,
                 Uuid::new_v4(),
-                &chat_command("hello"),
+                &TestMessage::new_chat_command("hello"),
             )
             .await
             .unwrap();
@@ -216,7 +209,7 @@ mod served {
     async fn a_disconnect_releases_the_workers_of_the_connection() {
         let mut test = create_test_hub().await;
         let user = Uuid::new_v4();
-        let id = StreamId::new(StreamKind::Chat, format!("room-{}", Uuid::new_v4().simple())).unwrap();
+        let id = TestStreamId::new_chat();
         let (connection, mut socket) = test.connect_ping(user, 32);
         test.wait_all_commands().await;
         test.stream_subscribe(connection, user, &id).await.unwrap();
@@ -242,8 +235,8 @@ mod served {
         let (connection, _socket) = test.connect_ping(user, 32);
         test.wait_all_commands().await;
         let hub = &test.hub;
-        let id = StreamId::new(StreamKind::PixelMap, format!("canvas-{}", Uuid::new_v4().simple())).unwrap();
-        let off_the_map = encode_command::<PixelMapState>(&PixelMapCommand::Paint { x: 99, y: 0, color: 1 }).unwrap();
+        let id = TestStreamId::new_pixel_map();
+        let off_the_map = TestMessage::new_paint_command(99, 0, 1);
         let send = |stream: &StreamId, command: String| {
             let hub = hub.clone();
             let stream = stream.clone();
@@ -255,20 +248,20 @@ mod served {
 
         // Before the subscribe.
         assert_eq!(
-            send(&id, chat_command("early")).await,
+            send(&id, TestMessage::new_chat_command("early")).await,
             Err(CommandFailure::NotSubscribed)
         );
         test.stream_subscribe(connection, user, &id).await.unwrap();
         // The kind in the stream identity decides what is valid.
         assert_eq!(send(&id, off_the_map).await, Err(CommandFailure::Invalid));
         assert_eq!(
-            send(&id, chat_command("not a paint")).await,
+            send(&id, TestMessage::new_chat_command("not a paint")).await,
             Err(CommandFailure::Invalid)
         );
         // After the unsubscribe, with no waiting for the loop in between.
         hub.unsubscribe_stream(connection, id.clone()).unwrap();
         assert_eq!(
-            send(&id, chat_command("late")).await,
+            send(&id, TestMessage::new_chat_command("late")).await,
             Err(CommandFailure::NotSubscribed)
         );
     }
@@ -277,7 +270,7 @@ mod served {
     async fn a_connection_that_is_gone_is_not_subscribed_to_anything() {
         let mut test = create_test_hub().await;
         let user = Uuid::new_v4();
-        let id = StreamId::new(StreamKind::Chat, format!("room-{}", Uuid::new_v4().simple())).unwrap();
+        let id = TestStreamId::new_chat();
         let (connection, mut socket) = test.connect_ping(user, 32);
         test.wait_all_commands().await;
         test.stream_subscribe(connection, user, &id).await.unwrap();
@@ -288,7 +281,13 @@ mod served {
 
         let result = test
             .hub
-            .send_stream_command(connection, user, &id, Uuid::new_v4(), &chat_command("ghost"))
+            .send_stream_command(
+                connection,
+                user,
+                &id,
+                Uuid::new_v4(),
+                &TestMessage::new_chat_command("ghost"),
+            )
             .await;
         assert_eq!(result, Err(CommandFailure::NotSubscribed));
     }
@@ -296,9 +295,9 @@ mod served {
 
 #[test(serial = "hub-service")]
 async fn a_hub_without_streams_refuses_them() {
-    let test = TestHub::default_from_env().await.unwrap();
+    let test = TestHub::default_from_env().await;
     let (connection, _socket) = test.connect_ping(Uuid::new_v4(), 8);
-    let id = new_stream_id("s1");
+    let id = TestStreamId::new_chat_with("s1");
 
     assert_eq!(
         test.hub.subscribe_stream(connection, Uuid::new_v4(), id.clone()).await,

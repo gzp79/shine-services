@@ -2,12 +2,13 @@
 //! one Redis registry.
 
 use crate::{
-    models::messages::{DisconnectReason, HubEvent, HubMessage, PingEvent, TopicKey},
+    models::messages::{DisconnectReason, HubEvent, TopicKey},
     services::HubService,
-    testing::hub::{Egress, EgressState, Lifecycle, TestHub},
+    testing::{
+        hub::{Egress, EgressState, HubEvents, Lifecycle, TestHub},
+        TestMessage,
+    },
 };
-use ring::rand::SystemRandom;
-use shine_infra::session::SessionKey;
 use shine_test::test;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -15,8 +16,6 @@ use std::{
 };
 use tokio::{sync::mpsc, task::JoinHandle, time::timeout};
 use uuid::Uuid;
-
-const BARRIER_TIMEOUT: Duration = Duration::from_secs(30);
 
 struct Rng(u64);
 
@@ -26,63 +25,6 @@ impl Rng {
         self.0 = self.0.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
         self.0 % bound
     }
-}
-
-fn connect(hub: &HubService, user_id: Uuid, capacity: usize) -> (Uuid, Egress) {
-    connect_on(hub, user_id, capacity, vec![TopicKey::Ping])
-}
-
-fn connect_on(hub: &HubService, user_id: Uuid, capacity: usize, topics: Vec<TopicKey>) -> (Uuid, Egress) {
-    let (tx, rx) = mpsc::channel(capacity);
-    let session_key = SessionKey::new_random(&SystemRandom::new()).unwrap();
-    let connection_id = hub.request_connection(user_id, session_key, tx, topics).unwrap();
-    (connection_id, rx)
-}
-
-fn replay(events: &[HubEvent]) -> HashMap<Uuid, Uuid> {
-    let mut active = HashMap::new();
-    for event in events {
-        match event {
-            HubEvent::UserConnected { user_id, connection_id, .. } => {
-                active.insert(*user_id, *connection_id);
-            }
-            HubEvent::UserDisconnected { user_id, connection_id, .. } if active.get(user_id) == Some(connection_id) => {
-                active.remove(user_id);
-            }
-            HubEvent::UserDisconnected { .. } | HubEvent::Shutdown => {}
-        }
-    }
-    active
-}
-
-fn drops(events: &[HubEvent]) -> BTreeMap<DisconnectReason, u64> {
-    Lifecycle::collect_drops(events)
-}
-
-fn count_connects(events: &[HubEvent]) -> usize {
-    events
-        .iter()
-        .filter(|event| matches!(event, HubEvent::UserConnected { .. }))
-        .count()
-}
-
-fn egress_state(egress: &mut Egress) -> EgressState {
-    EgressState::from_egress(egress)
-}
-
-fn spawn_reader(connection_id: Uuid, mut egress: Egress) -> JoinHandle<EgressState> {
-    tokio::spawn(async move {
-        let mut state = EgressState::default();
-        while let Some(message) = egress.recv().await {
-            state.record(message, Some(connection_id));
-        }
-        state.closed = true;
-        state
-    })
-}
-
-fn ping(id: impl Into<String>) -> HubMessage {
-    HubMessage::Ping(PingEvent { id: id.into() })
 }
 
 /// The expected outcome of one user's command script: commands of one sender are processed in order,
@@ -139,7 +81,7 @@ async fn run_user_script(hub: HubService, user_id: Uuid, seed: u64, steps: usize
         let stale = (!owned.is_empty()).then(|| owned[rng.below(owned.len() as u64) as usize]);
         match (rng.below(10), model.active) {
             (0..=3, _) | (_, None) => {
-                let (connection_id, rx) = connect(&hub, user_id, 8);
+                let (connection_id, rx) = TestHub::connect_ping_to(&hub, user_id, 8);
                 model.connect(connection_id);
                 owned.push(connection_id);
                 receivers.insert(connection_id, rx);
@@ -181,7 +123,7 @@ async fn run_user_script(hub: HubService, user_id: Uuid, seed: u64, steps: usize
 
 #[test(serial = "hub-service")]
 async fn parallel_users_each_follow_their_own_command_order() {
-    let mut test = TestHub::default_from_env().await.unwrap();
+    let mut test = TestHub::default_from_env().await;
     let hub = test.hub.clone();
     const USERS: u64 = 48;
     const STEPS: usize = 40;
@@ -197,8 +139,8 @@ async fn parallel_users_each_follow_their_own_command_order() {
     }
     let seen = test.wait_all_commands().await;
 
-    let lifecycle = Lifecycle::collect(&seen);
-    let active = replay(&seen);
+    let lifecycle = seen.lifecycles();
+    let active = seen.active();
     let mut expected_active = HashMap::new();
     let mut expected_dropped = BTreeMap::<DisconnectReason, u64>::new();
     for (&(user_id, seed), (model, receivers)) in users.iter().zip(&mut outcomes) {
@@ -215,7 +157,7 @@ async fn parallel_users_each_follow_their_own_command_order() {
         }
         for (connection_id, rx) in receivers.iter_mut() {
             if model.active == Some(*connection_id) {
-                let state = egress_state(rx);
+                let state = rx.drain();
                 assert!(state.pings.is_empty(), "unexpected pings for {connection_id}");
                 assert!(
                     state.disconnects.is_empty(),
@@ -223,7 +165,7 @@ async fn parallel_users_each_follow_their_own_command_order() {
                 );
                 assert!(!state.closed, "active connection {connection_id} was closed");
             } else {
-                let state = egress_state(rx);
+                let state = rx.drain();
                 assert!(state.pings.is_empty(), "unexpected pings for {connection_id}");
                 assert_eq!(
                     state.disconnects,
@@ -240,7 +182,7 @@ async fn parallel_users_each_follow_their_own_command_order() {
         }
     }
     assert_eq!(active, expected_active);
-    assert_eq!(drops(&seen), expected_dropped);
+    assert_eq!(seen.drops(), expected_dropped);
     test.assert_consistent(users.iter().map(|(u, _)| *u), &active).await;
 
     for (user_id, connection_id) in &active {
@@ -252,7 +194,7 @@ async fn parallel_users_each_follow_their_own_command_order() {
 
 #[test(serial = "hub-service")]
 async fn same_user_contention_keeps_a_single_active_connection() {
-    let mut test = TestHub::default_from_env().await.unwrap();
+    let mut test = TestHub::default_from_env().await;
     let hub = test.hub.clone();
     const TASKS: u64 = 16;
     const ITERATIONS: usize = 25;
@@ -268,7 +210,7 @@ async fn same_user_contention_keeps_a_single_active_connection() {
                 let mut connections = vec![];
                 let (mut disconnected, mut forced) = (HashSet::new(), HashSet::new());
                 for _ in 0..ITERATIONS {
-                    let (connection_id, rx) = connect(&hub, user, 8);
+                    let (connection_id, rx) = TestHub::connect_ping_to(&hub, user, 8);
                     connections.push((connection_id, rx));
                     match rng.below(4) {
                         0 => {
@@ -305,7 +247,7 @@ async fn same_user_contention_keeps_a_single_active_connection() {
     }
     let seen = test.wait_all_commands().await;
 
-    let active = replay(&seen);
+    let active = seen.active();
     let connects = seen
         .iter()
         .filter(|event| matches!(event, HubEvent::UserConnected { .. }))
@@ -315,7 +257,7 @@ async fn same_user_contention_keeps_a_single_active_connection() {
     let mut notices = BTreeMap::<DisconnectReason, u64>::new();
     let mut closed = 0;
     for (connection_id, rx) in &mut connections {
-        let state = egress_state(rx);
+        let state = rx.drain();
         assert!(state.pings.is_empty());
         assert_eq!(
             state.closed,
@@ -346,7 +288,7 @@ async fn same_user_contention_keeps_a_single_active_connection() {
         .count();
     assert_eq!(closed, disconnects, "a channel is released for every disconnect");
     // No socket went away, so every forced drop delivered its notice.
-    assert_eq!(drops(&seen), notices);
+    assert_eq!(seen.drops(), notices);
     test.assert_consistent([user], &active).await;
 
     if let Some(connection_id) = active.get(&user) {
@@ -363,7 +305,7 @@ enum Client {
 
 #[test(serial = "hub-service")]
 async fn churn_under_traffic_stays_consistent() {
-    let mut test = TestHub::default_from_env().await.unwrap();
+    let mut test = TestHub::default_from_env().await;
     let hub = test.hub.clone();
     const USERS: usize = 12;
     const TASKS_PER_USER: u64 = 2;
@@ -372,7 +314,7 @@ async fn churn_under_traffic_stays_consistent() {
 
     // A slow client that never reads: the broadcast traffic must get it dropped as a slow consumer.
     let slow_user = Uuid::new_v4();
-    let (slow_connection, mut slow_rx) = connect(&hub, slow_user, 2);
+    let (slow_connection, mut slow_rx) = TestHub::connect_ping_to(&hub, slow_user, 2);
     let mut seen = test.wait_all_commands().await;
 
     let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
@@ -385,7 +327,9 @@ async fn churn_under_traffic_stays_consistent() {
         tokio::spawn(async move {
             let mut seq = 0u64;
             while !*stop.borrow() {
-                hub.broadcast(ping(format!("b-{seq:08}"))).await.unwrap();
+                hub.broadcast(TestMessage::new_ping(format!("b-{seq:08}")))
+                    .await
+                    .unwrap();
                 seq += 1;
                 tokio::task::yield_now().await;
             }
@@ -403,7 +347,9 @@ async fn churn_under_traffic_stays_consistent() {
                 }
                 if !known.is_empty() {
                     let target = known[rng.below(known.len() as u64) as usize];
-                    hub.send_to_connection(target, ping("d")).await.unwrap();
+                    hub.send_to_connection(target, TestMessage::new_ping("d"))
+                        .await
+                        .unwrap();
                 }
                 tokio::task::yield_now().await;
             }
@@ -424,16 +370,17 @@ async fn churn_under_traffic_stays_consistent() {
                 for _ in 0..ITERATIONS {
                     let (connection_id, client) = match rng.below(3) {
                         0 => {
-                            let (connection_id, rx) = connect(&hub, user, 2);
+                            let (connection_id, rx) = TestHub::connect_ping_to(&hub, user, 2);
                             (connection_id, Client::Slow(rx))
                         }
                         1 => {
-                            let (connection_id, rx) = connect_on(&hub, user, 64, vec![TopicKey::Ping, TopicKey::Hub]);
-                            (connection_id, Client::Reader(spawn_reader(connection_id, rx)))
+                            let (connection_id, rx) =
+                                TestHub::connect_to(&hub, user, 64, vec![TopicKey::Ping, TopicKey::Hub], None);
+                            (connection_id, Client::Reader(rx.spawn_reader(connection_id)))
                         }
                         _ => {
-                            let (connection_id, rx) = connect(&hub, user, 64);
-                            (connection_id, Client::Reader(spawn_reader(connection_id, rx)))
+                            let (connection_id, rx) = TestHub::connect_ping_to(&hub, user, 64);
+                            (connection_id, Client::Reader(rx.spawn_reader(connection_id)))
                         }
                     };
                     let _ = known_tx.send(connection_id);
@@ -460,13 +407,13 @@ async fn churn_under_traffic_stays_consistent() {
     direct_sender.await.unwrap();
 
     seen.extend(test.wait_all_commands().await);
-    let active = replay(&seen);
+    let active = seen.active();
     assert!(
         !active.contains_key(&slow_user),
         "the slow client must have been dropped"
     );
     test.assert_consistent(users.iter().copied(), &active).await;
-    let slow_state = egress_state(&mut slow_rx);
+    let slow_state = slow_rx.drain();
     assert_eq!(slow_state.pings, ["b-00000000".to_string(), "b-00000001".to_string()]);
     assert!(slow_state.disconnects.is_empty());
     assert!(slow_state.closed, "the slow client {slow_connection} was not released");
@@ -476,7 +423,7 @@ async fn churn_under_traffic_stays_consistent() {
         hub.request_disconnection(*user_id, *connection_id).unwrap();
     }
     seen.extend(test.wait_all_commands().await);
-    assert!(replay(&seen).is_empty());
+    assert!(seen.active().is_empty());
     test.assert_consistent(users.iter().copied(), &HashMap::new()).await;
 
     let connects = seen
@@ -488,11 +435,11 @@ async fn churn_under_traffic_stays_consistent() {
     let mut notices = BTreeMap::<DisconnectReason, u64>::new();
     for (connection_id, client) in clients {
         let state = match client {
-            Client::Reader(reader) => timeout(BARRIER_TIMEOUT, reader)
+            Client::Reader(reader) => timeout(TestHub::BARRIER_TIMEOUT, reader)
                 .await
                 .unwrap_or_else(|_| panic!("the channel of {connection_id} was never released"))
                 .unwrap(),
-            Client::Slow(mut rx) => egress_state(&mut rx),
+            Client::Slow(mut rx) => rx.drain(),
         };
         assert!(state.closed, "the channel of {connection_id} was never released");
         assert!(
@@ -510,7 +457,7 @@ async fn churn_under_traffic_stays_consistent() {
         }
     }
 
-    let dropped = drops(&seen);
+    let dropped = seen.drops();
     // A close notice is sent for every forced drop, but is lost when the channel is full.
     for (reason, count) in &notices {
         assert!(
@@ -526,8 +473,8 @@ async fn churn_under_traffic_stays_consistent() {
 
 #[test(serial = "hub-service")]
 async fn a_connect_on_another_instance_takes_the_user_over() {
-    let mut a = TestHub::default_from_env().await.unwrap();
-    let mut b = TestHub::default_from_env().await.unwrap();
+    let mut a = TestHub::default_from_env().await;
+    let mut b = TestHub::default_from_env().await;
 
     let user = Uuid::new_v4();
 
@@ -546,14 +493,17 @@ async fn a_connect_on_another_instance_takes_the_user_over() {
         .await
         .expect("the instance that lost the user must drop its connection");
     seen_a.extend(a.wait_all_commands().await);
-    Lifecycle::assert_by_user(&seen_a, user, &[Lifecycle::Disconnected(on_a)]);
+    assert_eq!(seen_a.lifecycle_of(user), [Lifecycle::Disconnected(on_a)]);
 
-    EgressState::from_egress(&mut a_rx)
+    a_rx.drain()
         .assert_closed()
         .assert_disconnects(&[DisconnectReason::RegistryInactive]);
-    EgressState::from_egress(&mut b_rx).assert_open();
-    Lifecycle::assert_drops(&seen_a, &[(DisconnectReason::RegistryInactive, 1)]);
-    Lifecycle::assert_drops(&seen_b, &[]);
+    b_rx.drain().assert_open();
+    assert_eq!(
+        seen_a.drops(),
+        BTreeMap::from([(DisconnectReason::RegistryInactive, 1)])
+    );
+    assert!(seen_b.drops().is_empty());
     a.assert_consistent([], &HashMap::new()).await;
     b.assert_consistent([user], &HashMap::from([(user, on_b)])).await;
 
@@ -562,14 +512,14 @@ async fn a_connect_on_another_instance_takes_the_user_over() {
     b.wait_all_commands().await;
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    assert_eq!(Lifecycle::collect_by_user(&a.wait_all_commands().await, user), []);
+    assert_eq!(a.wait_all_commands().await.lifecycle_of(user), []);
     assert_eq!(a.find_connection_by_user(user).await, None);
 }
 
 #[test(serial = "hub-service")]
 async fn users_bouncing_between_instances_converge_to_the_registry() {
-    let mut a = TestHub::default_from_env().await.unwrap();
-    let mut b = TestHub::default_from_env().await.unwrap();
+    let mut a = TestHub::default_from_env().await;
+    let mut b = TestHub::default_from_env().await;
 
     const USERS: u64 = 16;
     const ITERATIONS: usize = 20;
@@ -587,7 +537,7 @@ async fn users_bouncing_between_instances_converge_to_the_registry() {
                 let mut disconnected = HashSet::new();
                 for _ in 0..ITERATIONS {
                     let instance = rng.below(2) as usize;
-                    let (connection_id, rx) = connect(&hubs[instance], user, 16);
+                    let (connection_id, rx) = TestHub::connect_ping_to(&hubs[instance], user, 16);
                     if rng.below(3) == 0 {
                         hubs[instance].request_disconnection(user, connection_id).unwrap();
                         disconnected.insert(connection_id);
@@ -609,12 +559,12 @@ async fn users_bouncing_between_instances_converge_to_the_registry() {
 
     // The instances converge through the registry change notices: in the end each user has at most one
     // connection over both instances, the one the registry holds.
-    let (mut seen_a, mut seen_b) = (vec![], vec![]);
-    let deadline = tokio::time::Instant::now() + BARRIER_TIMEOUT;
+    let (mut seen_a, mut seen_b) = (HubEvents::default(), HubEvents::default());
+    let deadline = tokio::time::Instant::now() + TestHub::BARRIER_TIMEOUT;
     let (active_a, active_b) = loop {
         seen_a.extend(a.wait_all_commands().await);
         seen_b.extend(b.wait_all_commands().await);
-        let (active_a, active_b) = (replay(&seen_a), replay(&seen_b));
+        let (active_a, active_b) = (seen_a.active(), seen_b.active());
         let mut converged = true;
         for user in &users {
             let local: Vec<Uuid> = [active_a.get(user), active_b.get(user)]
@@ -632,7 +582,7 @@ async fn users_bouncing_between_instances_converge_to_the_registry() {
         tokio::time::sleep(Duration::from_millis(50)).await;
     };
     assert_eq!(
-        count_connects(&seen_a) + count_connects(&seen_b),
+        seen_a.connects() + seen_b.connects(),
         connections.len(),
         "every connect is processed exactly once, on its own instance"
     );
@@ -642,7 +592,7 @@ async fn users_bouncing_between_instances_converge_to_the_registry() {
     let mut notices = BTreeMap::<DisconnectReason, u64>::new();
     for (instance, connection_id, rx) in &mut connections {
         let active = [&active_a, &active_b][*instance].values().any(|id| id == connection_id);
-        let state = egress_state(rx);
+        let state = rx.drain();
         assert_eq!(
             state.closed, !active,
             "only the converged connections stay open: {connection_id}"
@@ -660,8 +610,8 @@ async fn users_bouncing_between_instances_converge_to_the_registry() {
         }
     }
     // No socket went away, so every drop delivered its notice.
-    let mut dropped = drops(&seen_a);
-    for (reason, count) in drops(&seen_b) {
+    let mut dropped = seen_a.drops();
+    for (reason, count) in seen_b.drops() {
         *dropped.entry(reason).or_default() += count;
     }
     assert_eq!(dropped, notices);

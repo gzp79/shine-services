@@ -34,7 +34,7 @@ pub async fn create_postgres_pool(config: &DBConfig) -> Result<PgConnectionPool,
     Ok(postgres)
 }
 
-async fn migrate_postgres(postgres: &PgConnectionPool) -> Result<(), PgError> {
+pub async fn migrate_postgres(postgres: &PgConnectionPool) -> Result<(), PgError> {
     let mut backend = postgres.get().await.map_err(PgError::PoolError)?;
     tracing::trace!("migrations: {:#?}", embedded::migrations::runner().get_migrations());
     let client = &mut **backend;

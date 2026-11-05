@@ -272,6 +272,8 @@ pub enum PgConnectionError {
     PgError(#[from] PgRawError),
     #[error("Certificate load error")]
     CertError(#[source] CertError),
+    #[error("TLS configuration error")]
+    TlsConfigError(#[from] rustls::Error),
     #[error(transparent)]
     ConfigError(#[from] crate::db::CnsParamError),
     #[error("Connection string parameter {0:?} must be greater than zero")]
@@ -356,7 +358,8 @@ pub async fn create_postgres_pool(cns: &str) -> Result<PgConnectionPool, PgConne
     let max_size = max_size as u32;
 
     let certs = get_root_cert_store().map_err(PgConnectionError::CertError)?;
-    let tls_config = rustls::ClientConfig::builder()
+    let tls_config = rustls::ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+        .with_safe_default_protocol_versions()?
         .with_root_certificates(certs)
         .with_no_client_auth();
 

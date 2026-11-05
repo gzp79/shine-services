@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 tracing = { workspace = true }
+redis = { workspace = true }
 
 shine-infra = { workspace = true }
 shine-test = { workspace = true, features = [ "toxiproxy" ] }

@@ -8,12 +8,12 @@ use crate::{
         command_log::{pg::PgCommandLogDb, CommandLogDb},
     },
     services::command_stream::{StreamConfig, StreamLogService, StreamWorker},
-    testing::command_stream::{
-        create_test_inbox, create_test_log, fetch_all_commands, message_kinds, message_versions, persist_chat_logs,
-        replay_chat, stream_id, ChatLog, TestEgress, TestInbox, TestLog, WAIT_NOTIFICATION,
+    testing::{
+        command_stream::{ChatLog, TestEgress, TestInbox, TestLog, TestStreamId},
+        TestMessage,
     },
 };
-use shine_game::replica::{encode_command, ChatCommand, ChatState, ReplayState, StreamId};
+use shine_game::replica::{encode_command, ChatCommand, ChatState, StreamId};
 use shine_test::test;
 use std::{
     sync::{
@@ -25,8 +25,10 @@ use std::{
 use tokio::time::{sleep, timeout};
 use uuid::Uuid;
 
+const WAIT_TIMEOUT: Duration = Duration::from_secs(5);
+
 pub async fn wait_finished(worker: &StreamWorker) {
-    let result = timeout(WAIT_NOTIFICATION, worker.wait_finished()).await;
+    let result = timeout(WAIT_TIMEOUT, worker.wait_finished()).await;
     assert!(result.is_ok(), "the worker did not end");
 }
 
@@ -36,12 +38,12 @@ struct Harness {
     egress: TestEgress,
 }
 
-async fn harness() -> Option<Harness> {
-    Some(Harness {
-        log: create_test_log().await?,
-        inbox: create_test_inbox(60).await?,
+async fn harness() -> Harness {
+    Harness {
+        log: TestLog::from_env().await,
+        inbox: TestInbox::from_env().await,
         egress: TestEgress::default(),
-    })
+    }
 }
 
 impl Harness {
@@ -63,7 +65,7 @@ impl Harness {
     }
 
     async fn send(&self, stream: &StreamId, text: &str) {
-        let data = encode_command::<ChatState>(&ChatCommand::Add { text: text.to_string() }).unwrap();
+        let data = TestMessage::new_chat_command(text);
         self.inbox
             .db
             .push(stream, Uuid::new_v4(), Uuid::new_v4(), &data)
@@ -86,8 +88,8 @@ impl Harness {
 
 #[test]
 async fn a_subscriber_is_synced_and_then_gets_the_new_commands_in_order_exactly_once() {
-    let Some(h) = harness().await else { return };
-    let id = stream_id(ChatState::KIND);
+    let h = harness().await;
+    let id = TestStreamId::new_chat();
     let worker = h.spawn(&id, 100, StreamConfig::quiet());
 
     let connection = h.subscribe(&worker).await;
@@ -104,28 +106,28 @@ async fn a_subscriber_is_synced_and_then_gets_the_new_commands_in_order_exactly_
     }
     worker.wake();
     h.egress
-        .wait(connection, |m| message_versions(m, &id) == [1, 2, 3])
+        .wait(connection, |m| TestEgress::versions(m, &id) == [1, 2, 3])
         .await;
     for text in ["d", "e"] {
         h.send(&id, text).await;
     }
     worker.wake();
     h.egress
-        .wait(connection, |m| message_versions(m, &id) == [1, 2, 3, 4, 5])
+        .wait(connection, |m| TestEgress::versions(m, &id) == [1, 2, 3, 4, 5])
         .await;
 
     worker.wake();
     sleep(Duration::from_millis(150)).await;
     assert_eq!(
-        message_versions(&h.egress.messages(connection), &id),
+        TestEgress::versions(&h.egress.messages(connection), &id),
         vec![1, 2, 3, 4, 5]
     );
 }
 
 #[test]
 async fn a_backlog_larger_than_one_poll_is_worked_off_without_waiting_for_another_wake() {
-    let Some(h) = harness().await else { return };
-    let id = stream_id(ChatState::KIND);
+    let h = harness().await;
+    let id = TestStreamId::new_chat();
     let worker = h.spawn_with(
         &id,
         StreamConfig {
@@ -141,21 +143,23 @@ async fn a_backlog_larger_than_one_poll_is_worked_off_without_waiting_for_anothe
     worker.wake();
 
     h.egress
-        .wait(connection, |m| message_versions(m, &id) == (1..=12).collect::<Vec<_>>())
+        .wait(connection, |m| {
+            TestEgress::versions(m, &id) == (1..=12).collect::<Vec<_>>()
+        })
         .await;
 }
 
 #[test]
 async fn a_late_subscriber_gets_the_snapshot_and_the_tail_and_then_only_newer_commands() {
-    let Some(h) = harness().await else { return };
-    let id = stream_id(ChatState::KIND);
+    let h = harness().await;
+    let id = TestStreamId::new_chat();
     let worker = h.spawn(&id, 4, StreamConfig::quiet());
     let early = h.subscribe(&worker).await;
     for i in 0..10 {
         h.send(&id, &format!("m{i}")).await;
     }
     worker.wake();
-    h.egress.wait(early, |m| message_versions(m, &id).len() == 10).await;
+    h.egress.wait(early, |m| TestEgress::versions(m, &id).len() == 10).await;
     h.egress
         .wait(early, |m| {
             m.iter()
@@ -165,8 +169,8 @@ async fn a_late_subscriber_gets_the_snapshot_and_the_tail_and_then_only_newer_co
 
     let late = h.subscribe(&worker).await;
 
-    let commands = fetch_all_commands(&h.log.db, &id).await;
-    let at_8 = replay_chat(None, &commands[..8]);
+    let commands = h.log.all_commands(&id).await;
+    let at_8 = ChatLog::replay(None, &commands[..8]);
     match h.egress.messages(late)[0].as_ref() {
         StreamMessage::Sync {
             snapshot: Some(snapshot),
@@ -180,13 +184,15 @@ async fn a_late_subscriber_gets_the_snapshot_and_the_tail_and_then_only_newer_co
     }
     h.send(&id, "m10").await;
     worker.wake();
-    h.egress.wait(late, |m| message_versions(m, &id) == [9, 10, 11]).await;
+    h.egress
+        .wait(late, |m| TestEgress::versions(m, &id) == [9, 10, 11])
+        .await;
 }
 
 #[test]
 async fn a_checkpoint_is_sent_to_the_subscribers_with_its_state_hash() {
-    let Some(h) = harness().await else { return };
-    let id = stream_id(ChatState::KIND);
+    let h = harness().await;
+    let id = TestStreamId::new_chat();
     let worker = h.spawn(&id, 4, StreamConfig::quiet());
     let connection = h.subscribe(&worker).await;
     for i in 0..9 {
@@ -194,9 +200,11 @@ async fn a_checkpoint_is_sent_to_the_subscribers_with_its_state_hash() {
     }
 
     worker.wake();
-    h.egress.wait(connection, |m| message_versions(m, &id).len() == 9).await;
+    h.egress
+        .wait(connection, |m| TestEgress::versions(m, &id).len() == 9)
+        .await;
 
-    let expected = replay_chat(None, &fetch_all_commands(&h.log.db, &id).await[..8]).hash();
+    let expected = ChatLog::replay(None, &h.log.all_commands(&id).await[..8]).hash();
     h.egress
         .wait(connection, |m| {
             m.iter().any(|message| {
@@ -208,8 +216,8 @@ async fn a_checkpoint_is_sent_to_the_subscribers_with_its_state_hash() {
 
 #[test]
 async fn the_backstop_tick_delivers_when_no_wake_comes() {
-    let Some(h) = harness().await else { return };
-    let id = stream_id(ChatState::KIND);
+    let h = harness().await;
+    let id = TestStreamId::new_chat();
     let worker = h.spawn(
         &id,
         100,
@@ -222,31 +230,33 @@ async fn the_backstop_tick_delivers_when_no_wake_comes() {
 
     h.send(&id, "a").await;
 
-    h.egress.wait(connection, |m| message_versions(m, &id) == [1]).await;
+    h.egress.wait(connection, |m| TestEgress::versions(m, &id) == [1]).await;
 }
 
 #[test]
 async fn a_subscriber_that_cannot_be_sent_to_is_forgotten() {
-    let Some(h) = harness().await else { return };
-    let id = stream_id(ChatState::KIND);
+    let h = harness().await;
+    let id = TestStreamId::new_chat();
     let worker = h.spawn(&id, 100, StreamConfig::quiet());
     let steady = h.subscribe(&worker).await;
     let flaky = h.subscribe(&worker).await;
     h.send(&id, "a").await;
     worker.wake();
-    h.egress.wait(flaky, |m| message_versions(m, &id) == [1]).await;
+    h.egress.wait(flaky, |m| TestEgress::versions(m, &id) == [1]).await;
 
     h.egress.kill(flaky);
     h.send(&id, "b").await;
     worker.wake();
-    h.egress.wait(steady, |m| message_versions(m, &id) == [1, 2]).await;
+    h.egress.wait(steady, |m| TestEgress::versions(m, &id) == [1, 2]).await;
     h.egress.revive(flaky);
     h.send(&id, "c").await;
     worker.wake();
 
-    h.egress.wait(steady, |m| message_versions(m, &id) == [1, 2, 3]).await;
+    h.egress
+        .wait(steady, |m| TestEgress::versions(m, &id) == [1, 2, 3])
+        .await;
     assert_eq!(
-        message_versions(&h.egress.messages(flaky), &id),
+        TestEgress::versions(&h.egress.messages(flaky), &id),
         vec![1],
         "it was dropped"
     );
@@ -265,28 +275,28 @@ fn short_grace_config() -> StreamConfig {
 
 #[test]
 async fn a_subscriber_coming_back_within_the_grace_period_finds_the_stream_loaded() {
-    let Some(h) = harness().await else { return };
-    let id = stream_id(ChatState::KIND);
+    let h = harness().await;
+    let id = TestStreamId::new_chat();
     let worker = h.spawn(&id, 100, short_grace_config());
     let connection = h.subscribe(&worker).await;
 
     worker.unsubscribe(connection);
     assert!(worker.subscribe(connection));
     h.egress
-        .wait(connection, |m| message_kinds(m) == ["sync:0", "sync:0"])
+        .wait(connection, |m| TestEgress::kinds(m) == ["sync:0", "sync:0"])
         .await;
     sleep(Duration::from_millis(400)).await;
 
     assert!(!worker.is_finished(), "the new subscriber keeps the worker");
     h.send(&id, "a").await;
     worker.wake();
-    h.egress.wait(connection, |m| message_versions(m, &id) == [1]).await;
+    h.egress.wait(connection, |m| TestEgress::versions(m, &id) == [1]).await;
 }
 
 #[test]
 async fn the_worker_ends_when_the_grace_period_after_the_last_subscriber_is_over() {
-    let Some(h) = harness().await else { return };
-    let id = stream_id(ChatState::KIND);
+    let h = harness().await;
+    let id = TestStreamId::new_chat();
     let worker = h.spawn(&id, 100, short_grace_config());
     let connection = h.subscribe(&worker).await;
 
@@ -301,8 +311,8 @@ async fn the_worker_ends_when_the_grace_period_after_the_last_subscriber_is_over
 
 #[test]
 async fn commands_waiting_in_the_inbox_are_persisted_before_the_worker_ends() {
-    let Some(h) = harness().await else { return };
-    let id = stream_id(ChatState::KIND);
+    let h = harness().await;
+    let id = TestStreamId::new_chat();
     let worker = h.spawn(&id, 100, short_grace_config());
     let connection = h.subscribe(&worker).await;
     h.send(&id, "last words").await;
@@ -310,7 +320,7 @@ async fn commands_waiting_in_the_inbox_are_persisted_before_the_worker_ends() {
     worker.unsubscribe(connection);
 
     wait_finished(&worker).await;
-    assert_eq!(fetch_all_commands(&h.log.db, &id).await.len(), 1);
+    assert_eq!(h.log.all_commands(&id).await.len(), 1);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -319,12 +329,10 @@ async fn commands_waiting_in_the_inbox_are_persisted_before_the_worker_ends() {
 
 #[test]
 async fn a_log_contradicting_the_worker_resets_the_subscribers_and_syncs_them_again() {
-    let Some(h) = harness().await else { return };
-    let id = stream_id(ChatState::KIND);
+    let h = harness().await;
+    let id = TestStreamId::new_chat();
     h.log.db.ensure_stream(&id).await.unwrap();
-    persist_chat_logs(&h.log.db, &id, &ChatLog::new("seed", 3), 1, 3)
-        .await
-        .unwrap();
+    ChatLog::new("seed", 3).persist(&h.log.db, &id, 1, 3).await.unwrap();
     let worker = h.spawn(&id, 100, StreamConfig::quiet());
     let connection = h.subscribe(&worker).await;
     // The log is replaced behind the worker's back by another, longer history.
@@ -338,32 +346,32 @@ async fn a_log_contradicting_the_worker_resets_the_subscribers_and_syncs_them_ag
             id.id(),
         ))
         .await;
-    persist_chat_logs(&h.log.db, &id, &ChatLog::new("other", 4), 1, 4)
-        .await
-        .unwrap();
+    ChatLog::new("other", 4).persist(&h.log.db, &id, 1, 4).await.unwrap();
     h.send(&id, "mine").await;
 
     worker.wake();
     h.egress
         .wait(connection, |m| {
-            message_kinds(m) == ["sync:3", "commands:1", "reset", "sync:4", "commands:1"]
+            TestEgress::kinds(m) == ["sync:3", "commands:1", "reset", "sync:4", "commands:1"]
         })
         .await;
 }
 
 #[test]
 async fn a_stream_that_cannot_be_loaded_tells_the_waiting_subscribers_and_ends() {
-    let Some(h) = harness().await else { return };
-    let id = stream_id(ChatState::KIND);
+    let h = harness().await;
+    let id = TestStreamId::new_chat();
     let mut room = ChatLog::new("seed", 3);
     room.commands[1].data = "{not a command".to_string();
     h.log.db.ensure_stream(&id).await.unwrap();
-    persist_chat_logs(&h.log.db, &id, &room, 1, 3).await.unwrap();
+    room.persist(&h.log.db, &id, 1, 3).await.unwrap();
     let worker = h.spawn(&id, 100, StreamConfig::quiet());
     let connection = Uuid::new_v4();
     assert!(worker.subscribe(connection));
 
-    h.egress.wait(connection, |m| message_kinds(m) == ["unsynced"]).await;
+    h.egress
+        .wait(connection, |m| TestEgress::kinds(m) == ["unsynced"])
+        .await;
 
     wait_finished(&worker).await;
     assert!(!worker.subscribe(Uuid::new_v4()));
@@ -421,8 +429,8 @@ impl CommandInboxDb for FlakyInbox {
 
 #[test]
 async fn a_stream_that_keeps_failing_is_given_up_and_its_subscribers_are_told() {
-    let Some(h) = harness().await else { return };
-    let id = stream_id(ChatState::KIND);
+    let h = harness().await;
+    let id = TestStreamId::new_chat();
     let fail = Arc::new(AtomicBool::new(false));
     let flaky = FlakyInbox {
         inner: h.inbox.db.clone(),
@@ -440,7 +448,7 @@ async fn a_stream_that_keeps_failing_is_given_up_and_its_subscribers_are_told() 
     fail.store(true, Ordering::Relaxed);
 
     h.egress
-        .wait(connection, |m| message_kinds(m) == ["sync:0", "unsynced"])
+        .wait(connection, |m| TestEgress::kinds(m) == ["sync:0", "unsynced"])
         .await;
     wait_finished(&worker).await;
     assert!(!worker.subscribe(Uuid::new_v4()));

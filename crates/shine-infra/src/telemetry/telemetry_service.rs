@@ -375,7 +375,6 @@ impl TelemetryService {
     }
 
     pub fn create_layer(&self) -> OtelLayer {
-        //todo: read route filtering from config
         let mut layer = OtelLayer::default();
         if let Some(metrics) = &self.metrics {
             layer = layer.meter(metrics.meter.clone())
