@@ -15,6 +15,13 @@ use shine_game::replica::{
 use std::{collections::HashMap, marker::PhantomData, sync::Arc};
 use uuid::Uuid;
 
+/// Commands waiting to be persisted, together with the confirmed head they extend.
+pub(crate) struct UnpersistedBatch {
+    pub baseline_version: i64,
+    pub baseline_chain_hash: u64,
+    pub commands: Arc<[StoredCommand]>,
+}
+
 /// What one pass over the inbox produced.
 #[derive(Debug, Default)]
 pub struct Ingested {
@@ -31,7 +38,7 @@ pub struct Ingested {
 /// It starts empty and knows nothing until a reload gives it the history of the log, so a fresh stream
 /// and one that lost a race take the same path. The owner holds it back from the inbox and from the
 /// subscribers until then.
-pub struct StreamActor<S, I, E>
+pub struct StreamRelay<S, I, E>
 where
     S: ReplayState,
     I: CommandInboxDb,
@@ -54,13 +61,13 @@ where
     _state: PhantomData<fn() -> S>,
 }
 
-impl<S, I, E> StreamActor<S, I, E>
+impl<S, I, E> StreamRelay<S, I, E>
 where
     S: ReplayState,
     I: CommandInboxDb,
     E: StreamEgress,
 {
-    /// An actor that holds nothing of the stream yet: everything it shows comes of the first reload.
+    /// A relay that holds no stream history yet: everything it shows comes from the first reload.
     pub fn new(stream_id: StreamId, inbox: I, egress: E, config: StreamConfig) -> Self {
         Self {
             stream_id,
@@ -83,48 +90,29 @@ where
         &self.stream_id
     }
 
-    pub fn snapshot(&self) -> Option<&StoredSnapshot> {
-        self.snapshot.as_ref()
-    }
-
-    pub fn confirmed_version(&self) -> i64 {
-        self.confirmed_version
-    }
-
     pub fn confirmed_head(&self) -> (i64, u64) {
         (self.confirmed_version, self.confirmed_chain_hash)
     }
 
-    pub fn confirmed(&self) -> &[StoredCommand] {
-        &self.confirmed
+    /// Gets the optimistic commands and confirmed head that form the next persistence batch.
+    pub(crate) fn get_unpersisted(&self) -> Option<UnpersistedBatch> {
+        if self.optimistic.is_empty() {
+            return None;
+        }
+        Some(UnpersistedBatch {
+            baseline_version: self.confirmed_version,
+            baseline_chain_hash: self.confirmed_chain_hash,
+            commands: self.optimistic.clone().into(),
+        })
     }
 
-    pub fn optimistic(&self) -> &[StoredCommand] {
-        &self.optimistic
-    }
-
-    pub fn head_version(&self) -> i64 {
+    /// The version and chain hash of the last command the relay shows, optimistic ones included.
+    fn head(&self) -> (i64, u64) {
         self.optimistic
             .last()
-            .map_or(self.confirmed_version, |command| command.version)
-    }
-
-    fn head_chain_hash(&self) -> u64 {
-        self.optimistic
-            .last()
-            .map_or(self.confirmed_chain_hash, |command| command.chain_hash)
-    }
-
-    pub fn inbox(&self) -> &I {
-        &self.inbox
-    }
-
-    pub fn cursor(&self) -> &InboxId {
-        &self.cursor
-    }
-
-    pub fn stored_inbox(&self) -> Option<&InboxId> {
-        self.stored_inbox.as_ref()
+            .map_or((self.confirmed_version, self.confirmed_chain_hash), |command| {
+                (command.version, command.chain_hash)
+            })
     }
 
     pub fn egress(&self) -> &E {
@@ -139,28 +127,12 @@ where
         self.subscribers.remove(&connection_id);
     }
 
-    pub fn subscriber_ids(&self) -> Vec<Uuid> {
+    fn subscriber_ids(&self) -> Vec<Uuid> {
         self.subscribers.keys().copied().collect()
     }
 
     pub fn subscriber_count(&self) -> usize {
         self.subscribers.len()
-    }
-
-    pub fn sent_through(&self, connection_id: Uuid) -> Option<i64> {
-        self.subscribers.get(&connection_id).copied()
-    }
-
-    //todo: test only, remove
-    pub fn record_sent(&mut self, connection_id: Uuid, version: i64) {
-        if let Some(sent_through) = self.subscribers.get_mut(&connection_id) {
-            *sent_through = (*sent_through).max(version);
-        }
-    }
-
-    //todo: test only, remove
-    pub fn append_optimistic(&mut self, commands: impl IntoIterator<Item = StoredCommand>) {
-        self.optimistic.extend(commands);
     }
 
     /// Takes whatever waits in the inbox and gives each command a version right away
@@ -175,8 +147,7 @@ where
         }
         let limit = self.config.poll_limit.min(room);
         let batch = self.inbox.poll(&self.stream_id, &self.cursor, limit).await?;
-        let mut version = self.head_version();
-        let mut chain_hash = self.head_chain_hash();
+        let (mut version, mut chain_hash) = self.head();
         let mut commands = Vec::new();
         for entry in batch.entries {
             if self
@@ -280,7 +251,7 @@ where
     }
 
     /// Takes the history of the log, dropping whatever optimistic history this instance held. The first
-    /// one is what the actor starts from, so it is also how an empty stream is adopted.
+    /// one is what the relay starts from, so it is also how an empty stream is adopted.
     pub fn accept_reload(
         &mut self,
         snapshot: Option<StoredSnapshot>,
@@ -304,7 +275,7 @@ where
         self.stored_inbox = stored_inbox;
     }
 
-    /// The state a subscriber starts from: the latest snapshot and the commands the actor shows after it.
+    /// The state a subscriber starts from: the latest snapshot and the commands the relay shows after it.
     fn sync_message(&self) -> StreamMessage {
         let mut commands: Vec<StreamCommand> = self.confirmed.iter().map(StreamCommand::from).collect();
         commands.extend(self.optimistic.iter().map(StreamCommand::from));
@@ -316,21 +287,20 @@ where
         }
     }
 
-    /// Brings one subscriber up to the version the actor shows.
+    /// Brings one subscriber up to the version the relay shows.
     pub async fn resync(&mut self, connection_id: Uuid) {
         let message = Arc::new(self.sync_message());
-        self.send_to_subscriber(connection_id, message, self.head_version())
-            .await;
+        self.send_to_subscriber(connection_id, message, self.head().0).await;
     }
 
-    /// Brings all the subscribers up to the version the actor shows, usually after a reload.
+    /// Brings all the subscribers up to the version the relay shows, usually after a reload.
     pub async fn resync_all(&mut self) {
         let reset = Arc::new(StreamMessage::Reset {
             stream_id: self.stream_id.clone(),
         });
         self.broadcast(reset).await;
         let sync = Arc::new(self.sync_message());
-        let version = self.head_version();
+        let (version, _) = self.head();
         for connection_id in self.subscriber_ids() {
             self.send_to_subscriber(connection_id, sync.clone(), version).await;
         }
@@ -407,5 +377,5 @@ where
 }
 
 #[cfg(test)]
-#[path = "stream_actor_test.rs"]
-mod stream_actor_test;
+#[path = "stream_relay_test.rs"]
+mod stream_relay_test;
