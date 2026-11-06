@@ -9,9 +9,9 @@ use redis::{
 };
 use std::{collections::HashMap, sync::Arc};
 use tokio::{
-    sync::{RwLock, Semaphore},
+    sync::{Notify, RwLock, Semaphore},
     task::JoinHandle,
-    time::{Duration, Instant},
+    time::{interval_at, Duration, Instant, Interval, MissedTickBehavior},
 };
 
 type BoxedHandler = Box<dyn Fn(Option<&str>) + Send + Sync + 'static>;
@@ -62,12 +62,6 @@ impl ListenState {
         }
     }
 
-    fn handle_reconnect(&self) {
-        for (channel, handler) in &self.handlers {
-            Self::invoke(channel, handler, None);
-        }
-    }
-
     fn invoke(channel: &str, handler: &BoxedHandler, payload: Option<&str>) {
         let started = Instant::now();
         handler(payload);
@@ -81,6 +75,8 @@ impl ListenState {
 struct Inner {
     client: Client,
     connect_timeout: Duration,
+    /// Period of the streaming task's handler nudge; `None` disables the periodic wake.
+    wake_interval: Option<Duration>,
     keep_alive: Arc<KeepAlive>,
     /// Serializes every subscription/lifecycle change; see the design doc, "Concurrency model".
     op_lock: Arc<Semaphore>,
@@ -112,6 +108,7 @@ impl RedisListener {
     fn start_keep_alive_task(
         client: Client,
         connect_timeout: Duration,
+        wake_interval: Option<Duration>,
         op_lock: Arc<Semaphore>,
         state: Arc<RwLock<ListenState>>,
         keep_alive: Arc<KeepAlive>,
@@ -133,7 +130,7 @@ impl RedisListener {
                     if !keep_alive.is_running() {
                         break;
                     }
-                    Self::connect_and_subscribe(&state, &client, connect_timeout, &keep_alive).await
+                    Self::connect_and_subscribe(&state, &client, connect_timeout, wake_interval, &keep_alive).await
                 };
                 match established {
                     Ok(true) => {
@@ -164,13 +161,14 @@ impl RedisListener {
     }
 
     /// Opens the shared connection if absent, spawns its streaming task, re-subscribes every
-    /// registered channel, and nudges their handlers. Returns whether a new connection was opened.
+    /// registered channel, and triggers the streaming task to nudge their handlers. Returns whether a new connection was opened.
     /// Caller must hold the op permit. The network I/O (connect + subscribe) runs without the
     /// `state` lock and under a timeout, so a Redis outage cannot stall concurrent ops or `close()`.
     async fn connect_and_subscribe(
         state: &Arc<RwLock<ListenState>>,
         client: &Client,
         connect_timeout: Duration,
+        wake_interval: Option<Duration>,
         keep_alive: &Arc<KeepAlive>,
     ) -> Result<bool, RedisError> {
         if state.read().await.sink.is_some() {
@@ -193,12 +191,11 @@ impl RedisListener {
 
         // Publish the sink and its streaming task only after every re-subscribe succeeded, so a
         // partially-subscribed connection is never left behind for callers to use.
-        let task = Self::start_streaming_task(state.clone(), stream, keep_alive.clone());
-        {
-            let mut state = state.write().await;
-            state.set_sink(sink, task);
-            state.handle_reconnect();
-        }
+        let wake = Arc::new(Notify::new());
+        let task = Self::start_streaming_task(state.clone(), stream, keep_alive.clone(), wake.clone(), wake_interval);
+        state.write().await.set_sink(sink, task);
+        // Stored as a permit, so the task picks it up even if it has not started polling yet.
+        wake.notify_one();
 
         Ok(true)
     }
@@ -207,13 +204,35 @@ impl RedisListener {
         state: Arc<RwLock<ListenState>>,
         mut stream: PubSubStream,
         keep_alive: Arc<KeepAlive>,
+        wake: Arc<Notify>,
+        wake_interval: Option<Duration>,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
-            while let Some(msg) = stream.next().await {
-                let channel = msg.get_channel_name();
-                match msg.get_payload::<String>() {
-                    Ok(payload) => state.read().await.handle(channel, Some(&payload)),
-                    Err(e) => tracing::warn!("RedisListener dropping non-UTF-8 payload on channel {channel:?}: {e:#?}"),
+            // The only place handlers are invoked: on messages, on an explicit wake and on the periodic tick.
+            let mut ticker = wake_interval.filter(|d| !d.is_zero()).map(|period| {
+                let mut ticker = interval_at(Instant::now() + period, period);
+                ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
+                ticker
+            });
+
+            loop {
+                tokio::select! {
+                    msg = stream.next() => {
+                        let Some(msg) = msg else { break };
+                        let channel = msg.get_channel_name();
+                        match msg.get_payload::<String>() {
+                            Ok(payload) => state.read().await.handle(channel, Some(&payload)),
+                            Err(e) => tracing::warn!("RedisListener dropping non-UTF-8 payload on channel {channel:?}: {e:#?}"),
+                        }
+                    }
+
+                    // Woken by a (re)connect or the periodic tick: nudge every handler without a payload.
+                    _ = wake_or_tick(&wake, &mut ticker) => {
+                        let state = state.read().await;
+                        for channel in state.handlers.keys() {
+                            state.handle(channel, None);
+                        }
+                    }
                 }
             }
 
@@ -226,13 +245,21 @@ impl RedisListener {
         })
     }
 
-    pub fn new(client: Client, connect_timeout: Duration, max_reconnect_backoff: Duration) -> Self {
+    /// `wake_interval`: if set, the streaming task nudges every handler (payload `None`) with this
+    /// period, in addition to the nudge after each (re)connect.
+    pub fn new(
+        client: Client,
+        connect_timeout: Duration,
+        wake_interval: Option<Duration>,
+        max_reconnect_backoff: Duration,
+    ) -> Self {
         let keep_alive = Arc::new(KeepAlive::new());
         let op_lock = Arc::new(Semaphore::new(1));
         let state = Arc::new(RwLock::new(ListenState::new()));
         Self::start_keep_alive_task(
             client.clone(),
             connect_timeout,
+            wake_interval,
             op_lock.clone(),
             state.clone(),
             keep_alive.clone(),
@@ -243,6 +270,7 @@ impl RedisListener {
             inner: Arc::new(Inner {
                 client,
                 connect_timeout,
+                wake_interval,
                 keep_alive,
                 op_lock,
                 state,
@@ -279,24 +307,25 @@ impl RedisListener {
             &self.inner.state,
             &self.inner.client,
             self.inner.connect_timeout,
+            self.inner.wake_interval,
             &self.inner.keep_alive,
         )
         .await?;
 
-        // Subscribe on a clone of the sink so the network round-trip runs without the state lock. If
-        // the connection was just lost, skip it: the handler is registered below and the keep-alive
-        // reconnect re-subscribes it.
-        let sink = self.inner.state.read().await.sink.clone();
-        if let Some(mut sink) = sink {
-            tracing::debug!("RedisListener subscribing to channel {channel:?}...");
-            with_timeout(self.inner.connect_timeout, sink.subscribe(channel)).await?;
-        }
         self.inner
             .state
             .write()
             .await
             .handlers
             .insert(channel.to_string(), Box::new(handler));
+        let sink = self.inner.state.read().await.sink.clone();
+        if let Some(mut sink) = sink {
+            tracing::debug!("RedisListener subscribing to channel {channel:?}...");
+            if let Err(e) = with_timeout(self.inner.connect_timeout, sink.subscribe(channel)).await {
+                self.inner.state.write().await.handlers.remove(channel);
+                return Err(e.into());
+            }
+        }
         Ok(())
     }
 
@@ -340,6 +369,17 @@ impl RedisListener {
             }
         }
         Ok(())
+    }
+}
+
+/// Resolves on an explicit wake or the next periodic tick (if enabled).
+async fn wake_or_tick(wake: &Notify, ticker: &mut Option<Interval>) {
+    match ticker {
+        Some(ticker) => tokio::select! {
+            _ = wake.notified() => {}
+            _ = ticker.tick() => {}
+        },
+        None => wake.notified().await,
     }
 }
 

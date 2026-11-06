@@ -11,10 +11,10 @@ pub struct TestRedis {
 
 impl TestRedis {
     pub async fn from_env() -> Self {
-        let cns = get_redis_cns().expect("SHINE_TEST_REDIS_CNS must be set");
+        let cns = get_redis_cns();
         let pool = create_redis_pool(&cns).await.unwrap();
 
-        let cns = get_redis_cns_direct().expect("SHINE_TEST_REDIS_CNS must be set");
+        let cns = get_redis_cns_direct();
         let direct_pool = create_redis_pool(&cns).await.unwrap();
         Self { pool, direct_pool }
     }

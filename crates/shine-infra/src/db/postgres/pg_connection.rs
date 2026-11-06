@@ -209,10 +209,11 @@ impl PgConnectionManager {
         config: PgConfig,
         tls: MakeRustlsConnect,
         connect_timeout: Duration,
+        wake_interval: Option<Duration>,
         max_reconnect_backoff: Duration,
     ) -> Self {
         let connection_manager = PostgresConnectionManager::new(config.clone(), tls.clone());
-        let listener = PgListener::new(config, tls, connect_timeout, max_reconnect_backoff);
+        let listener = PgListener::new(config, tls, connect_timeout, wake_interval, max_reconnect_backoff);
 
         Self {
             connection_manager,
@@ -374,7 +375,7 @@ pub async fn create_postgres_pool(cns: &str) -> Result<PgConnectionPool, PgConne
         .get_connect_timeout()
         .copied()
         .unwrap_or(PgListener::DEFAULT_CONNECT_TIMEOUT);
-    let postgres_manager = PgConnectionManager::new(pg_config, tls, connect_timeout, pool_timeout);
+    let postgres_manager = PgConnectionManager::new(pg_config, tls, connect_timeout, None, pool_timeout);
     let postgres = bb8::Pool::builder()
         .max_size(max_size)
         .connection_timeout(pool_timeout)

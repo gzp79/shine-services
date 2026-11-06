@@ -8,10 +8,10 @@ pub struct TestPg {
 
 impl TestPg {
     pub async fn from_env() -> Self {
-        let cns = get_postgres_cns().expect("SHINE_TEST_PG_CNS must be set");
+        let cns = get_postgres_cns();
         let pool = create_postgres_pool(&cns).await.unwrap();
 
-        let cns = get_postgres_cns_direct().expect("SHINE_TEST_PG_CNS must be set");
+        let cns = get_postgres_cns_direct();
         let direct_pool = create_postgres_pool(&cns).await.unwrap();
         Self { pool, direct_pool }
     }

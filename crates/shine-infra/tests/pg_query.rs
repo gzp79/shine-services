@@ -46,7 +46,7 @@ pg_query!( TestQuery3 =>
 async fn test_pg_query_struct() {
     let _ = rustls::crypto::ring::default_provider().install_default();
 
-    let Some(cns) = get_postgres_cns() else { return };
+    let cns = get_postgres_cns();
     let pool = create_postgres_pool(&cns).await.unwrap();
 
     let c1 = pool.get().await.unwrap();

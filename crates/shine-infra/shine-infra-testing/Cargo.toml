@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 tracing = { workspace = true }
+tokio = { workspace = true, features = ["sync", "time"] }
 redis = { workspace = true }
 
 shine-infra = { workspace = true }

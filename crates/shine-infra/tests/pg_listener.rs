@@ -1,6 +1,6 @@
 use rustls::crypto::ring;
 use shine_infra::db::postgres::{create_postgres_pool, PgConfig, PgError, PgListener};
-use shine_infra_testing::db::postgres::get_postgres_cns;
+use shine_infra_testing::{db::postgres::get_postgres_cns, listener::ListenerEvents};
 use shine_test::test;
 use std::{collections::HashSet, str::FromStr, sync::Arc, time::Duration};
 use tokio::{
@@ -13,26 +13,12 @@ use tokio_postgres_rustls::MakeRustlsConnect;
 async fn test_pg_listener_pub_sub() {
     let _ = ring::default_provider().install_default();
 
-    let Some(cns) = get_postgres_cns() else { return };
+    let cns = get_postgres_cns();
     let pool = create_postgres_pool(&cns).await.unwrap();
     let conn = pool.get().await.unwrap();
 
-    let received = Arc::new(Notify::new());
-    let received_signal = received.clone();
-    let received_payload = Arc::new(Mutex::new(None));
-    let received_payload_write = received_payload.clone();
-
-    conn.listen("shine-test-channel", move |payload| {
-        let received_payload_write = received_payload_write.clone();
-        let received_signal = received_signal.clone();
-        let payload = payload.map(|s| s.to_string());
-        tokio::spawn(async move {
-            *received_payload_write.lock().await = payload;
-            received_signal.notify_one();
-        });
-    })
-    .await
-    .unwrap();
+    let events = ListenerEvents::new();
+    conn.listen("shine-test-channel", events.handler()).await.unwrap();
 
     let publisher = pool.get().await.unwrap();
     publisher
@@ -40,19 +26,15 @@ async fn test_pg_listener_pub_sub() {
         .await
         .unwrap();
 
-    timeout(Duration::from_secs(5), received.notified())
-        .await
-        .expect("timed out waiting for the pg LISTEN/NOTIFY message");
-
-    let payload = received_payload.lock().await.clone();
-    assert_eq!(payload, Some("hello".to_string()));
+    events.wait_for("hello").await;
+    events.assert_only("hello");
 }
 
 #[test(serial = "pg-listener")]
 async fn test_pg_listener_shared_connection_multi_channel() {
     let _ = ring::default_provider().install_default();
 
-    let Some(cns) = get_postgres_cns() else { return };
+    let cns = get_postgres_cns();
     let pool = create_postgres_pool(&cns).await.unwrap();
     let conn = pool.get().await.unwrap();
 
@@ -143,23 +125,19 @@ async fn test_pg_listener_shared_connection_multi_channel() {
 async fn test_pg_listener_reconnect_signal() {
     let _ = ring::default_provider().install_default();
 
-    let Some(cns) = get_postgres_cns() else { return };
+    let cns = get_postgres_cns();
     let pool = create_postgres_pool(&cns).await.unwrap();
     let conn = pool.get().await.unwrap();
     let helper = pool.get().await.unwrap();
 
     let events: Arc<Mutex<Vec<Option<String>>>> = Arc::new(Mutex::new(Vec::new()));
     let events_write = events.clone();
-    let notify = Arc::new(Notify::new());
-    let notify_signal = notify.clone();
 
     conn.listen("shine-test-reconnect", move |payload| {
         let events_write = events_write.clone();
-        let notify_signal = notify_signal.clone();
         let payload = payload.map(|s| s.to_string());
         tokio::spawn(async move {
             events_write.lock().await.push(payload);
-            notify_signal.notify_one();
         });
     })
     .await
@@ -170,20 +148,25 @@ async fn test_pg_listener_reconnect_signal() {
         .await
         .expect("listener connection not found");
 
+    // `None` is also sent right after listen; let that one land so only the reconnect nudge is counted.
+    sleep(Duration::from_millis(500)).await;
+    let nones_before = events.lock().await.iter().filter(|e| e.is_none()).count();
+
     // kill the listener backend to force a reconnect
     helper
         .execute("SELECT pg_terminate_backend($1)", &[&listener_pid])
         .await
         .unwrap();
 
-    timeout(Duration::from_secs(10), notify.notified())
-        .await
-        .expect("timed out waiting for reconnect signal");
-
-    assert!(
-        events.lock().await.contains(&None),
-        "expected a None reconnect signal after backend termination"
-    );
+    let mut signalled = false;
+    for _ in 0..100 {
+        if events.lock().await.iter().filter(|e| e.is_none()).count() > nones_before {
+            signalled = true;
+            break;
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
+    assert!(signalled, "expected a None reconnect signal after backend termination");
 
     // verify the listener recovered and still delivers notifications
     let publisher = pool.get().await.unwrap();
@@ -192,14 +175,15 @@ async fn test_pg_listener_reconnect_signal() {
         .await
         .unwrap();
 
-    timeout(Duration::from_secs(5), notify.notified())
-        .await
-        .expect("timed out waiting for post-reconnect notification");
-
-    assert!(
-        events.lock().await.contains(&Some("after-reconnect".to_string())),
-        "expected notification after reconnect"
-    );
+    let mut delivered = false;
+    for _ in 0..50 {
+        if events.lock().await.contains(&Some("after-reconnect".to_string())) {
+            delivered = true;
+            break;
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
+    assert!(delivered, "expected notification after reconnect");
 }
 
 // Regression test for the listener connection/task leak: once the last handle to the pool is
@@ -209,7 +193,7 @@ async fn test_pg_listener_reconnect_signal() {
 async fn test_pg_listener_closes_connection_on_drop() {
     let _ = ring::default_provider().install_default();
 
-    let Some(cns) = get_postgres_cns() else { return };
+    let cns = get_postgres_cns();
     // A separate, independent pool used only to observe pg_stat_activity. It must outlive
     // the pool under test.
     let observer_pool = create_postgres_pool(&cns).await.unwrap();
@@ -269,7 +253,7 @@ async fn test_pg_listener_closes_connection_on_drop() {
 async fn test_pg_listener_no_duplicate_dispatch_after_reconnect() {
     let _ = ring::default_provider().install_default();
 
-    let Some(cns) = get_postgres_cns() else { return };
+    let cns = get_postgres_cns();
     let pool = create_postgres_pool(&cns).await.unwrap();
     let conn = pool.get().await.unwrap();
     let helper = pool.get().await.unwrap();
@@ -356,7 +340,7 @@ async fn test_pg_listener_no_duplicate_dispatch_after_reconnect() {
 async fn test_pg_listener_relisten_all_channels_on_listen_reconnect() {
     let _ = ring::default_provider().install_default();
 
-    let Some(cns) = get_postgres_cns() else { return };
+    let cns = get_postgres_cns();
     let pool = create_postgres_pool(&cns).await.unwrap();
     let conn = pool.get().await.unwrap();
     let helper = pool.get().await.unwrap();
@@ -476,29 +460,15 @@ async fn test_pg_listener_relisten_all_channels_on_listen_reconnect() {
 async fn test_pg_listener_channel_name_with_quote() {
     let _ = ring::default_provider().install_default();
 
-    let Some(cns) = get_postgres_cns() else { return };
+    let cns = get_postgres_cns();
     let pool = create_postgres_pool(&cns).await.unwrap();
     let conn = pool.get().await.unwrap();
 
     // Name contains a double quote; PG registers it verbatim (single quote in the name).
     let channel = r#"shine-test-"quoted"#;
 
-    let received = Arc::new(Notify::new());
-    let received_signal = received.clone();
-    let received_payload = Arc::new(Mutex::new(None));
-    let received_payload_write = received_payload.clone();
-
-    conn.listen(channel, move |payload| {
-        let received_payload_write = received_payload_write.clone();
-        let received_signal = received_signal.clone();
-        let payload = payload.map(|s| s.to_string());
-        tokio::spawn(async move {
-            *received_payload_write.lock().await = payload;
-            received_signal.notify_one();
-        });
-    })
-    .await
-    .unwrap();
+    let events = ListenerEvents::new();
+    conn.listen(channel, events.handler()).await.unwrap();
 
     // pg_notify takes the raw (unescaped) channel name as a text argument.
     let publisher = pool.get().await.unwrap();
@@ -507,11 +477,8 @@ async fn test_pg_listener_channel_name_with_quote() {
         .await
         .unwrap();
 
-    timeout(Duration::from_secs(5), received.notified())
-        .await
-        .expect("timed out waiting for notification on a quoted channel name");
-
-    assert_eq!(*received_payload.lock().await, Some("quoted-hello".to_string()));
+    events.wait_for("quoted-hello").await;
+    events.assert_only("quoted-hello");
 }
 
 // Many listen() calls fired concurrently on a fresh pool all race to open the initial connection.
@@ -522,7 +489,7 @@ async fn test_pg_listener_channel_name_with_quote() {
 async fn test_pg_listener_parallel_connect() {
     let _ = ring::default_provider().install_default();
 
-    let Some(cns) = get_postgres_cns() else { return };
+    let cns = get_postgres_cns();
     let pool = create_postgres_pool(&cns).await.unwrap();
 
     const N: usize = 16;
@@ -594,6 +561,7 @@ async fn test_pg_listener_listen_after_close_is_rejected() {
         config,
         MakeRustlsConnect::new(tls_config),
         Duration::from_secs(5),
+        None,
         Duration::from_millis(500),
     );
     listener.close().await;
@@ -621,6 +589,7 @@ async fn test_pg_listener_listen_times_out_when_unreachable() {
         config,
         MakeRustlsConnect::new(tls_config),
         connect_timeout,
+        None,
         Duration::from_millis(500),
     );
 
@@ -654,7 +623,7 @@ async fn test_pg_listener_listen_times_out_when_unreachable() {
 async fn test_pg_listener_duplicate_listen_is_rejected() {
     let _ = ring::default_provider().install_default();
 
-    let Some(cns) = get_postgres_cns() else { return };
+    let cns = get_postgres_cns();
     let pool = create_postgres_pool(&cns).await.unwrap();
     let conn = pool.get().await.unwrap();
 

@@ -163,10 +163,11 @@ impl RedisConnectionManager {
         raw_cns: &str,
         conn_config: AsyncConnectionConfig,
         connect_timeout: Duration,
+        wake_interval: Option<Duration>,
         max_reconnect_backoff: Duration,
     ) -> Result<Self, RedisRawError> {
         let client = Client::open(raw_cns)?;
-        let listener = RedisListener::new(client.clone(), connect_timeout, max_reconnect_backoff);
+        let listener = RedisListener::new(client.clone(), connect_timeout, wake_interval, max_reconnect_backoff);
         Ok(Self { client, conn_config, listener })
     }
 }
@@ -287,7 +288,8 @@ pub async fn create_redis_pool(cns: &str) -> Result<RedisConnectionPool, RedisCo
         listener_connect_timeout = timeout;
     }
 
-    let redis_manager = RedisConnectionManager::new(&cns_clean, conn_config, listener_connect_timeout, pool_timeout)?;
+    let redis_manager =
+        RedisConnectionManager::new(&cns_clean, conn_config, listener_connect_timeout, None, pool_timeout)?;
     let redis = bb8::Pool::builder()
         .max_size(max_size)
         .connection_timeout(pool_timeout)

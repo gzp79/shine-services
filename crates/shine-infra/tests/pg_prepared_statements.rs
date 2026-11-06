@@ -8,7 +8,7 @@ pg_prepared_statement!(TestQuery => "select 1", []);
 async fn test_stored_statements() {
     let _ = rustls::crypto::ring::default_provider().install_default();
 
-    let Some(cns) = get_postgres_cns() else { return };
+    let cns = get_postgres_cns();
     let pool = create_postgres_pool(&cns).await.unwrap();
     let c1 = pool.get().await.unwrap();
     let c2 = pool.get().await.unwrap();

@@ -41,7 +41,7 @@ pg_query!( SelectPairs =>
 async fn an_array_of_a_composite_type_binds_and_unnests() {
     let _ = rustls::crypto::ring::default_provider().install_default();
 
-    let Some(cns) = get_postgres_cns() else { return };
+    let cns = get_postgres_cns();
     let pool = create_postgres_pool(&cns).await.unwrap();
     let client = pool.get().await.unwrap();
 

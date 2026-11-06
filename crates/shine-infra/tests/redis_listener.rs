@@ -1,6 +1,6 @@
 use redis::{aio::ConnectionLike, AsyncCommands, Client};
 use shine_infra::db::redis::{create_redis_pool, RedisError, RedisListener};
-use shine_infra_testing::db::redis::get_redis_cns;
+use shine_infra_testing::{db::redis::get_redis_cns, listener::ListenerEvents};
 use shine_test::test;
 use std::{collections::HashSet, sync::Arc, time::Duration};
 use tokio::{
@@ -10,43 +10,23 @@ use tokio::{
 
 #[test(serial = "redis-listener")]
 async fn test_redis_listener_pub_sub() {
-    let Some(cns) = get_redis_cns() else { return };
+    let cns = get_redis_cns();
     let pool = create_redis_pool(&cns).await.unwrap();
     let conn = pool.get().await.unwrap();
 
-    let received = Arc::new(Notify::new());
-    let received_signal = received.clone();
-    let received_payload = Arc::new(Mutex::new(None));
-    let received_payload_write = received_payload.clone();
-
-    conn.listen("shine-test-channel", move |payload| {
-        let received_payload_write = received_payload_write.clone();
-        let received_signal = received_signal.clone();
-        let Some(payload) = payload.map(|s| s.to_string()) else {
-            return;
-        };
-        tokio::spawn(async move {
-            *received_payload_write.lock().await = Some(payload);
-            received_signal.notify_one();
-        });
-    })
-    .await
-    .unwrap();
+    let events = ListenerEvents::new();
+    conn.listen("shine-test-channel", events.handler()).await.unwrap();
 
     let mut publisher = pool.get().await.unwrap();
     let _: () = publisher.publish("shine-test-channel", "hello").await.unwrap();
 
-    timeout(Duration::from_secs(5), received.notified())
-        .await
-        .expect("timed out waiting for the pub/sub message");
-
-    let payload = received_payload.lock().await.clone();
-    assert_eq!(payload, Some("hello".to_string()));
+    events.wait_for("hello").await;
+    events.assert_only("hello");
 }
 
 #[test(serial = "redis-listener")]
 async fn test_redis_listener_shared_connection_multi_channel() {
-    let Some(cns) = get_redis_cns() else { return };
+    let cns = get_redis_cns();
     let pool = create_redis_pool(&cns).await.unwrap();
     let conn = pool.get().await.unwrap();
 
@@ -140,22 +120,18 @@ async fn count_pubsub_clients<C: ConnectionLike + Send>(conn: &mut C) -> usize {
 // that a message dropped during the outage would have updated. Serial: it kills ALL pub/sub clients.
 #[test(serial = "redis-listener")]
 async fn test_redis_listener_reconnect_signal() {
-    let Some(cns) = get_redis_cns() else { return };
+    let cns = get_redis_cns();
     let pool = create_redis_pool(&cns).await.unwrap();
     let conn = pool.get().await.unwrap();
 
     let events: Arc<Mutex<Vec<Option<String>>>> = Arc::new(Mutex::new(Vec::new()));
     let events_write = events.clone();
-    let notify = Arc::new(Notify::new());
-    let notify_signal = notify.clone();
 
     conn.listen("shine-test-reconnect", move |payload| {
         let events_write = events_write.clone();
-        let notify_signal = notify_signal.clone();
         let payload = payload.map(|s| s.to_string());
         tokio::spawn(async move {
             events_write.lock().await.push(payload);
-            notify_signal.notify_one();
         });
     })
     .await
@@ -170,6 +146,11 @@ async fn test_redis_listener_reconnect_signal() {
         }
         sleep(Duration::from_millis(100)).await;
     }
+
+    // `None` is also sent right after listen; let that one land so only the reconnect nudge is counted.
+    sleep(Duration::from_millis(500)).await;
+    let nones_before = events.lock().await.iter().filter(|e| e.is_none()).count();
+
     let _: () = redis::cmd("CLIENT")
         .arg("KILL")
         .arg("TYPE")
@@ -178,12 +159,16 @@ async fn test_redis_listener_reconnect_signal() {
         .await
         .unwrap();
 
-    timeout(Duration::from_secs(10), notify.notified())
-        .await
-        .expect("timed out waiting for reconnect signal");
-
+    let mut signalled = false;
+    for _ in 0..100 {
+        if events.lock().await.iter().filter(|e| e.is_none()).count() > nones_before {
+            signalled = true;
+            break;
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
     assert!(
-        events.lock().await.contains(&None),
+        signalled,
         "expected a None reconnect signal after the pub/sub connection was killed"
     );
 
@@ -196,17 +181,13 @@ async fn test_redis_listener_reconnect_signal() {
             .publish("shine-test-reconnect", "after-reconnect")
             .await
             .unwrap();
-        if timeout(Duration::from_millis(200), notify.notified()).await.is_ok() {
+        sleep(Duration::from_millis(200)).await;
+        if events.lock().await.contains(&Some("after-reconnect".to_string())) {
             delivered = true;
             break;
         }
     }
-    assert!(delivered, "timed out waiting for post-reconnect notification");
-
-    assert!(
-        events.lock().await.contains(&Some("after-reconnect".to_string())),
-        "expected notification after reconnect"
-    );
+    assert!(delivered, "expected notification after reconnect");
 }
 
 // Regression test for the listener connection/task leak: once the last handle to the pool is
@@ -214,7 +195,7 @@ async fn test_redis_listener_reconnect_signal() {
 // lifetime). Serial: it counts pub/sub clients globally.
 #[test(serial = "redis-listener")]
 async fn test_redis_listener_closes_connection_on_drop() {
-    let Some(cns) = get_redis_cns() else { return };
+    let cns = get_redis_cns();
     // A separate, independent pool used only to observe CLIENT LIST. It must outlive the
     // pool under test.
     let observer_pool = create_redis_pool(&cns).await.unwrap();
@@ -280,7 +261,7 @@ async fn test_redis_listener_closes_connection_on_drop() {
 // safe (no split-brain second connection, no lost subscriptions).
 #[test(serial = "redis-listener")]
 async fn test_redis_listener_parallel_connect() {
-    let Some(cns) = get_redis_cns() else { return };
+    let cns = get_redis_cns();
     let pool = create_redis_pool(&cns).await.unwrap();
 
     const N: usize = 16;
@@ -343,7 +324,7 @@ async fn test_redis_listener_parallel_connect() {
 #[test(serial = "redis-listener")]
 async fn test_redis_listener_listen_after_close_is_rejected() {
     let client = Client::open("redis://127.0.0.1:6379").unwrap();
-    let listener = RedisListener::new(client, Duration::from_secs(5), Duration::from_millis(500));
+    let listener = RedisListener::new(client, Duration::from_secs(5), None, Duration::from_millis(500));
     listener.close().await;
 
     let err = listener.listen("shine-test-after-close", |_| {}).await.unwrap_err();
@@ -361,7 +342,7 @@ async fn test_redis_listener_listen_after_close_is_rejected() {
 async fn test_redis_listener_listen_times_out_when_unreachable() {
     let client = Client::open("redis://192.0.2.1:6379").unwrap();
     let connect_timeout = Duration::from_millis(300);
-    let listener = RedisListener::new(client, connect_timeout, Duration::from_millis(500));
+    let listener = RedisListener::new(client, connect_timeout, None, Duration::from_millis(500));
 
     // listen() must return an error promptly, not hang for the OS TCP timeout.
     let started = std::time::Instant::now();
@@ -392,7 +373,7 @@ async fn test_redis_listener_listen_times_out_when_unreachable() {
 // handler. Needs a server: the first listen() opens the shared connection.
 #[test(serial = "redis-listener")]
 async fn test_redis_listener_duplicate_listen_is_rejected() {
-    let Some(cns) = get_redis_cns() else { return };
+    let cns = get_redis_cns();
     let pool = create_redis_pool(&cns).await.unwrap();
     let conn = pool.get().await.unwrap();
 

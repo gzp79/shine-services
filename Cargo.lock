@@ -4156,6 +4156,7 @@ dependencies = [
  "redis",
  "shine-infra",
  "shine-test",
+ "tokio",
  "tracing",
 ]
 
