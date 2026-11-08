@@ -5,7 +5,7 @@ use crate::{
         StreamLogService, StreamPersistence,
     },
 };
-use shine_core::tokio::{Backpressure, GraceTimer};
+use shine_core::tokio::GraceTimer;
 use shine_game::replica::{ReplayState, StreamId};
 use std::sync::{Arc, Mutex};
 use tokio::{
@@ -29,7 +29,6 @@ pub struct StreamWorker {
     stream_id: StreamId,
     messages: mpsc::UnboundedSender<Message>,
     wake: Arc<Notify>,
-    backpressure: Backpressure,
     tasks: Mutex<Option<[JoinHandle<()>; 2]>>,
 }
 
@@ -52,7 +51,6 @@ impl StreamWorker {
         let (request_tx, request_rx) = mpsc::channel(CHANNEL_CAPACITY);
         let wake = Arc::new(Notify::new());
         let stream_config = service.config().clone();
-        let backpressure = inbox_backpressure(&inbox, &stream_id, &config);
 
         let persistence = StreamPersistence::<S, I, L>::new(stream_id.clone(), service);
         let durable = tokio::spawn(run_persistence(persistence, request_rx));
@@ -64,18 +62,12 @@ impl StreamWorker {
             stream_id,
             messages: message_tx,
             wake,
-            backpressure,
             tasks: Mutex::new(Some([fast, durable])),
         })
     }
 
     pub fn stream_id(&self) -> &StreamId {
         &self.stream_id
-    }
-
-    /// Throttles the pushes to the inbox of the stream by its length.
-    pub fn backpressure(&self) -> &Backpressure {
-        &self.backpressure
     }
 
     /// Adds or synchronizes a subscriber.
@@ -118,26 +110,6 @@ impl StreamWorker {
 struct PersistenceRequest {
     work: PersistenceWork,
     response: oneshot::Sender<PersistResult>,
-}
-
-/// Polls the length of the stream's inbox; it lives as long as the worker that holds it.
-fn inbox_backpressure<I: CommandInboxDb + 'static>(inbox: &I, stream_id: &StreamId, config: &StreamConfig) -> Backpressure {
-    let (inbox, stream_id) = (inbox.clone(), stream_id.clone());
-    Backpressure::new(
-        config.inbox_backpressure_low,
-        config.inbox_backpressure_high,
-        config.inbox_backpressure_poll_period,
-        move || {
-            let (inbox, stream_id) = (inbox.clone(), stream_id.clone());
-            async move {
-                // An unreadable length does not block the pushes: they fail on their own if the inbox is down.
-                inbox.len(&stream_id).await.unwrap_or_else(|err| {
-                    tracing::warn!("[{stream_id}] Failed to read the inbox length: {err:#?}");
-                    0
-                })
-            }
-        },
-    )
 }
 
 async fn run_persistence<S, I, L>(

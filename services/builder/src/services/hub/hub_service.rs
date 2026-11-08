@@ -17,7 +17,6 @@ use crate::{
             hub_command::ControlCommand,
             hub_connections::{Connections, DeadConnection, RemovedConnection},
             hub_metrics::hub_metrics,
-            hub_streams::StreamSubscriptions,
             hub_subscribers::Subscribers,
             tasks::{Heartbeat, SessionChecker, StreamDispatcher},
         },
@@ -175,7 +174,6 @@ impl HubServiceBuilder {
                 hub_registry,
                 stream_registry,
                 stream_authorize_service,
-                subscriptions: StreamSubscriptions::default(),
                 ping_enabled: config.ping_enabled,
             }),
         };
@@ -238,7 +236,6 @@ struct Inner {
     hub_registry: RedisHubConnectionDb,
     stream_registry: Option<StreamRegistry<RedisCommandInboxDb, PgCommandLogDb>>,
     stream_authorize_service: StreamAuthorizeService,
-    subscriptions: StreamSubscriptions,
     ping_enabled: bool,
 }
 
@@ -284,19 +281,23 @@ impl HubService {
             tracing::info!("[{connection_id}] User {user_id} is not authorized for stream {stream_id}");
             return Err(SubscribeFailure::Unauthorized);
         }
-        registry.open(&stream_id).await.map_err(|err| err.subscribe_failure())?;
-        self.inner.subscriptions.subscribe(connection_id, stream_id.clone());
+        registry
+            .open(connection_id, &stream_id)
+            .map_err(|err| err.subscribe_failure())?;
         self.request_stream_subscribe(connection_id, stream_id)
             .map_err(|_| SubscribeFailure::Failed)
     }
 
     pub fn unsubscribe_stream(&self, connection_id: Uuid, stream_id: StreamId) -> Result<(), HubError> {
-        self.inner.subscriptions.unsubscribe(connection_id, &stream_id);
+        if let Some(registry) = &self.inner.stream_registry {
+            registry.close(connection_id, &stream_id);
+        }
         self.request_stream_unsubscribe(connection_id, stream_id)
     }
 
     /// Queues a command of the connection, which has to be subscribed to the stream. It does not go through
-    /// the hub's loop. The sender sees its command come back with its version, in the stream.
+    /// the hub's loop. The sender sees its command come back with its version, in the stream. A connection
+    /// that pushes into an inbox that stays full is dropped as busy.
     pub async fn send_stream_command(
         &self,
         connection_id: Uuid,
@@ -305,13 +306,20 @@ impl HubService {
         command_id: Uuid,
         command: &str,
     ) -> Result<(), CommandFailure> {
-        match (
-            self.inner.subscriptions.contains(connection_id, stream_id),
-            self.inner.stream_registry.as_ref(),
-        ) {
-            (true, Some(registry)) => registry.push(stream_id, user_id, command_id, command).await,
-            _ => Err(CommandFailure::NotSubscribed),
+        let result = match &self.inner.stream_registry {
+            Some(registry) => {
+                registry
+                    .push(connection_id, stream_id, user_id, command_id, command)
+                    .await
+            }
+            None => Err(CommandFailure::NotSubscribed),
+        };
+        if result == Err(CommandFailure::Busy) {
+            if let Err(err) = self.request_drop(user_id, connection_id, DisconnectReason::Busy) {
+                tracing::warn!("[{user_id}] Failed to drop the busy connection (hub stopped): {err:#?}");
+            }
         }
+        result
     }
 
     fn send_control(&self, command: ControlCommand) -> Result<(), HubError> {
@@ -631,8 +639,9 @@ impl HubService {
                 if self.inner.connections.contains(connection_id).await {
                     self.publish_internal(StreamEvent::Subscribed { connection_id, stream_id })
                         .await;
-                } else {
-                    self.inner.subscriptions.remove_connection(connection_id);
+                } else if let Some(registry) = &self.inner.stream_registry {
+                    // It was opened after the connection was released: close it again.
+                    registry.disconnect(connection_id);
                 }
                 true
             }
@@ -741,7 +750,6 @@ impl HubService {
             .publish(HubMessage::Hub(HubEvent::Shutdown))
             .await;
         self.inner.subscribers.clear().await;
-        self.inner.subscriptions.clear();
 
         if let Err(err) = self.inner.hub_registry.unlisten_registry_changes().await {
             tracing::warn!("Failed to stop listening to hub registry changes: {err:#?}");
@@ -767,7 +775,9 @@ impl HubService {
         let mut pending = VecDeque::from([event]);
         while let Some(event) = pending.pop_front() {
             if let HubEvent::UserDisconnected { connection_id, .. } = &event {
-                self.inner.subscriptions.remove_connection(*connection_id);
+                if let Some(registry) = &self.inner.stream_registry {
+                    registry.disconnect(*connection_id);
+                }
             }
             let message = HubMessage::Hub(event);
             // Internal subscribers first: only the loop delivers to them.

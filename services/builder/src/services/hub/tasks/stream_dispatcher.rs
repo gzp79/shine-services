@@ -9,9 +9,10 @@ use tokio::{task::JoinHandle, time};
 /// How often the workers that have ended are forgotten.
 const PURGE_INTERVAL: Duration = Duration::from_secs(60);
 
-/// Connects the stream registry to the hub: the subscriptions the hub accepted start and release the
-/// workers, and a connection that is gone releases all its streams. It reads one ordered channel of
-/// lifecycle and subscription events, so a connection's subscribe is always seen before its disconnect.
+/// Connects the stream registry to the hub: the subscriptions the hub accepted start or join the
+/// workers. It reads one ordered channel of lifecycle and subscription events, so a subscribe comes after
+/// the connection opened the stream, and a late one, of a stream closed or a connection gone since, is
+/// ignored by the registry. Closing and disconnecting reach the registry at once, from the hub.
 pub struct StreamDispatcher;
 
 impl StreamDispatcher {
@@ -51,12 +52,6 @@ impl StreamDispatcher {
                                 )
                                 .await;
                         }
-                    }
-                    HubMessage::StreamEvent(StreamEvent::Unsubscribed { connection_id, stream_id }) => {
-                        registry.unsubscribe(connection_id, &stream_id);
-                    }
-                    HubMessage::Hub(HubEvent::UserDisconnected { connection_id, .. }) => {
-                        registry.disconnect(connection_id);
                     }
                     HubMessage::Hub(HubEvent::Shutdown) => {
                         registry.shutdown(shutdown_timeout).await;

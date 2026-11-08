@@ -111,6 +111,8 @@ pub enum CommandFailure {
     Invalid,
     /// The command could not be queued; it may or may not have been.
     Failed,
+    /// The inbox of the stream stayed full; the connection is dropped as busy.
+    Busy,
 }
 
 /// Why a connection could not be subscribed to a stream.

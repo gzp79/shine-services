@@ -28,6 +28,10 @@ pub struct StreamConfig {
     #[serde(default = "duration::milliseconds::<250>", with = "duration::milliseconds")]
     #[validate(custom(function = "non_zero_duration"))]
     pub inbox_backpressure_poll_period: Duration,
+    /// Milliseconds a push waits for the backpressure before the connection is dropped as busy.
+    #[serde(default = "duration::milliseconds::<2000>", with = "duration::milliseconds")]
+    #[validate(custom(function = "non_zero_duration"))]
+    pub inbox_backpressure_timeout: Duration,
 
     /// Most commands read from the log in one page when catching up or loading.
     #[serde(default = "consts::i64::<256>")]

@@ -10,7 +10,7 @@ A **stream** is identified by a `StreamId` whose prefix selects a registered rep
 
 ## Architecture
 
-The hub is the transport-facing API. It authorizes subscriptions, checks that commands come from subscribed connections, and delegates stream work to the registry. Each loaded stream has one `StreamWorker` containing two Tokio tasks: a fast relay task for inbox polling and subscriber delivery, and a durable persistence task that owns the canonical replica.
+The hub is the transport-facing API. It authorizes subscriptions and delegates stream work to the registry, which tracks the streams each connection has open, so only a connection with the stream open can push. The write path passes an inbox back-pressure gate before it enqueues (see [Back-pressure](#back-pressure)). Each loaded stream has one `StreamWorker` containing two Tokio tasks: a fast relay task for inbox polling and subscriber delivery, and a durable persistence task that owns the canonical replica.
 
 After the WebSocket upgrade and successful hub registration, the server's first frame is
 `{"type":"connected","userId":"<uuid>"}`. The client must wait for this frame before subscribing;
@@ -27,7 +27,8 @@ flowchart LR
 
     Client["WebSocket client"]:::indigo
     Hub["Hub service<br/>auth, subscriptions, egress"]:::blue
-    Registry["Stream registry<br/>kinds and workers"]:::blue
+    Registry["Stream registry<br/>kinds, open streams, workers"]:::blue
+    Gate["Inbox back-pressure<br/>wait or Busy"]:::teal
     Inbox[("Redis inbox<br/>proposals and wakes")]:::violet
 
     subgraph Worker["Loaded StreamWorker"]
@@ -41,7 +42,7 @@ flowchart LR
 
     Client <--> Hub
     Hub --> Registry
-    Registry --> Inbox
+    Registry --> Gate --> Inbox
     Inbox -. "coalesced wake" .-> Relay
     Relay --> Queue --> Durable
     Durable <--> Log
@@ -89,7 +90,7 @@ sequenceDiagram
 
 ## Subscribe and synchronize
 
-`streamSubscribe` carries only `streamId`; its prefix identifies the kind. The hub authorizes the user for that stream, verifies the kind is registered, records the subscription on the connection, and emits an ordered stream event. The dispatcher applies that event to the registry, which creates the worker when necessary.
+`streamSubscribe` carries only `streamId`; its prefix identifies the kind. The hub authorizes the user for that stream, then has the registry **open** the stream for the connection (this verifies the kind is registered and lets the connection push at once) and emits an ordered stream event. The dispatcher applies that event to the registry, which creates or joins the worker when necessary. A subscribe event for a stream that was closed, or a connection that is gone, in the meantime is ignored. Unsubscribe and disconnect reach the registry directly from the hub.
 
 ```mermaid
 sequenceDiagram
@@ -102,8 +103,9 @@ sequenceDiagram
     participant L as Postgres
 
     C->>H: streamSubscribe(streamId)
-    H->>H: authorize and record subscription
-    alt unauthorized or unavailable
+    H->>H: authorize
+    H->>R: open(connection, streamId)
+    alt unauthorized, unknown kind, or unavailable
         H-->>C: streamSubscribeFailed
     else accepted
         H->>D: Subscribed event
@@ -140,10 +142,15 @@ sequenceDiagram
     participant L as Postgres
 
     C->>H: streamCommand(streamId, commandId, command)
-    alt not subscribed, invalid, too large, or push failed
+    H->>R: push(connection, user, stream, command)
+    alt not open, invalid, too large, inbox stayed full, or push failed
+        R-->>H: refusal
         H-->>C: streamNack
+        opt inbox stayed full (busy)
+            H->>H: drop the connection
+        end
     else accepted
-        H->>R: push(user, stream, command)
+        R->>R: wait for the inbox back-pressure
         R->>X: append proposal and publish wake
         X-->>A: wake
         A->>A: pass: poll a page and assign optimistic versions
@@ -202,7 +209,29 @@ A worker reconciles its confirmed head with Postgres at startup. After that a pe
 
 ## Back-pressure
 
-The optimistic tail holds at most `max_pending` commands. While it is full, a pass does not read the inbox: the proposals stay in Redis, and the persistence result that frees room is what brings the next read. Each read asks for at most the room that is left.
+Two limits stack, one on each side of the Redis inbox.
+
+**Write side.** Each open stream has an inbox `Backpressure` (`shine-core`) with hysteresis: it polls the inbox length every `inbox_backpressure_poll_period`, blocks at `inbox_backpressure_high` entries and releases at `inbox_backpressure_low`. A push waits for it up to `inbox_backpressure_timeout`; if the inbox is still full, the push fails as `Busy`, the sender gets `streamNack` with reason `busy`, and the hub drops the connection. An unreadable inbox length does not block pushes; they fail on their own if Redis is down.
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant H as Hub
+    participant R as Registry
+    participant X as Redis inbox
+
+    C->>H: streamCommand
+    H->>R: push
+    alt inbox below the high watermark, or drained to the low one in time
+        R->>X: append proposal
+    else the inbox stayed full
+        R-->>H: Busy
+        H-->>C: streamNack(busy)
+        H->>H: drop the connection
+    end
+```
+
+**Read side.** The optimistic tail holds at most `max_pending` commands. While it is full, a pass does not read the inbox: the proposals stay in Redis, and the persistence result that frees room is what brings the next read. Each read asks for at most the room that is left. A slow persistence therefore fills the inbox, which in turn reaches the write side.
 
 ```mermaid
 sequenceDiagram
@@ -230,7 +259,7 @@ Checkpoints are not sent to clients for now, so clients have no hash comparison 
 
 ## Unload and shutdown
 
-A worker stays loaded until it is stopped; idle unload after the last subscriber leaves is not implemented for now. When shutdown requests a stop, the relay drains what it can: it ingests remaining proposals, waits for in-flight persistence, submits pending optimistic commands until nothing is waiting, and then closes the persistence channel. Proposals arriving after that remain in Redis for a future worker.
+A worker stays loaded for `worker_unload_grace` after its last subscriber leaves; a returning subscriber cancels the countdown. When the grace expires or shutdown requests a stop, the relay drains what it can: it ingests remaining proposals, waits for in-flight persistence, submits pending optimistic commands until nothing is waiting, and then closes the persistence channel. Proposals arriving after that remain in Redis for a future worker.
 
 ```mermaid
 sequenceDiagram
@@ -241,8 +270,8 @@ sequenceDiagram
 
     H->>R: disconnect(connection)
     R->>A: unsubscribe(connection)
-    Note over A: the worker stays loaded
-    R->>A: stop (service shutdown)
+    Note over A: the worker stays loaded for the grace period
+    R->>A: stop (service shutdown) or the grace expires
     A->>A: final inbox pass
     A->>P: persist remaining optimistic commands
     P-->>A: final result
@@ -259,7 +288,9 @@ sequenceDiagram
 | Correction | Any optimistic version invalidated by canonical history causes a canonical `streamSync` on the next pass. |
 | Concurrency | One relay task and one persistence task run per loaded stream; only one persistence request is in flight. |
 | Batching | A pass reads pages of at most `poll_limit`; a full page wakes the relay for the next one; wakes are coalesced. |
-| Back-pressure | `max_pending` stops inbox reads while the optimistic tail is full; entries remain in Redis. |
+| Back-pressure (read) | `max_pending` stops inbox reads while the optimistic tail is full; entries remain in Redis. |
+| Back-pressure (write) | Pushes wait while the inbox is at `inbox_backpressure_high` until it drains to `inbox_backpressure_low`; after `inbox_backpressure_timeout` the push is nacked `busy` and the connection is dropped. |
+| Open streams | Only a connection that opened the stream (accepted subscribe) can push; closing, unsubscribing, or disconnecting removes it. |
 | Duplicates | Stored inbox positions suppress already durable proposals; client command ids are correlation values, not uniqueness constraints. |
 | Drift | Persistence reloads on baseline, replay, or canonical disagreement. |
 | Recovery | Occasional checks at `recovery_poll_interval` recover missed Redis wakes. |
@@ -283,7 +314,7 @@ Frames are JSON text with a camel-case `type`. `StreamId` contains the kind pref
 | to client | `streamCheckpoint` | `streamId`, version, state hash (not sent for now). |
 | to client | `streamReset` | `streamId`; invalidates prior optimistic versions and is followed by sync (not sent for now: a sync alone replaces the state). |
 | to client | `streamUnsynced` | `streamId`; the worker cannot currently serve the stream. |
-| to client | `streamNack` | `streamId`, `commandId`, reason: `notSubscribed`, `invalid`, or `failed`. |
+| to client | `streamNack` | `streamId`, `commandId`, reason: `notSubscribed`, `invalid`, `failed`, or `busy` (the connection is then dropped). |
 | to client | `streamSubscribeFailed` | `streamId`, reason: `unauthorized` or `failed`. |
 
 Malformed frames and invalid stream ids do not enter the hub. Valid requests that fail a protocol rule receive the corresponding refusal frame.
@@ -299,13 +330,13 @@ Malformed frames and invalid stream ids do not enter the hub. Valid requests tha
 | `services/builder/src/services/command_stream/stream_persistence.rs` | Durable side: canonical replica, append, reconcile, reload, snapshot, and cleanup. |
 | `services/builder/src/services/command_stream/stream_worker.rs` | Two-task lifecycle, channels, scheduling, settlement, failure handling, drain, and unload. |
 | `services/builder/src/services/command_stream/stream_log_service.rs` | Durable repository operations used by persistence. |
-| `services/builder/src/services/command_stream/stream_config.rs` | Poll, backlog, snapshot, and poll-interval limits. |
-| `services/builder/src/services/command_stream/stream_registry.rs` | Kind validation, workers by stream, connection mappings, write path, wake routing, and shutdown. |
+| `services/builder/src/services/command_stream/stream_config.rs` | Poll, back-pressure, backlog, snapshot, poll-interval, and unload-grace limits. |
+| `services/builder/src/services/command_stream/stream_registry.rs` | Kind validation, open streams per connection, workers by stream, write path with inbox back-pressure, wake routing, and shutdown. |
+| `crates/shine-core/src/tokio/backpressure.rs` | Watermark-based soft queue limit polled from an async count. |
 | `services/builder/src/services/command_stream/stream_kinds.rs` | Registration of the supported replay kinds. |
 | `services/builder/src/services/command_stream/stream_egress.rs` | Transport-independent worker-to-connection delivery interface. |
-| `services/builder/src/services/hub/hub_service.rs` | Authorized stream subscription, command submission, and egress implementation. |
-| `services/builder/src/services/hub/hub_streams.rs` | Per-connection set of subscribed stream ids. |
-| `services/builder/src/services/hub/tasks/stream_dispatcher.rs` | Applies ordered hub lifecycle and stream events to the registry. |
+| `services/builder/src/services/hub/hub_service.rs` | Authorized stream subscription, command submission, busy-connection drop, and egress implementation. |
+| `services/builder/src/services/hub/tasks/stream_dispatcher.rs` | Applies ordered subscribe events to the registry, purges ended workers, and shuts the registry down. |
 | `services/builder/src/models/messages/stream.rs` | Internal stream commands, events, failures, and client messages. |
 | `services/builder/src/routes/ws/connect.rs`, `services/builder/src/routes/ws/message.rs` | WebSocket parsing and wire conversion. |
 | `services/builder/src/app_config.rs`, `services/builder/src/app_state.rs` | Runtime stream configuration and application wiring. |
@@ -335,6 +366,6 @@ A failed command append, like any failed pass, ends the worker: subscribers rece
 <details data-agent="test">
 <summary>Coverage map</summary>
 
-Worker tests cover initial sync, optimistic ordered delivery, backlog draining, back-pressure, sync refusal on inbox read failure, missed-wake recovery polling, competing canonical history, reload resync, persistence failure, and shutdown drain. Relay and persistence tests isolate re-versioning, subscriber cursors, canonical prefix acceptance, snapshots, pruning, and corrupt-history reload. Registry tests cover kind validation, subscription bookkeeping, write refusal, wake routing, worker reuse, and shutdown. `tests/api-tests/builder/streams.ts` covers the wire protocol against real services.
+Worker tests cover initial sync, optimistic ordered delivery, backlog draining, read-side back-pressure, sync refusal on inbox read failure, missed-wake recovery polling, competing canonical history, reload resync, persistence failure, and shutdown drain. Relay and persistence tests isolate re-versioning, subscriber cursors, canonical prefix acceptance, snapshots, pruning, and corrupt-history reload. Registry tests cover kind validation, open-stream bookkeeping, write refusal, write-side back-pressure (a push into an inbox that stays full fails as busy and is not queued), wake routing, worker reuse, and shutdown. `tests/api-tests/builder/streams.ts` covers the wire protocol against real services.
 
 </details>

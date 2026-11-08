@@ -112,6 +112,7 @@ fn nack_reason(reason: CommandFailure) -> &'static str {
         CommandFailure::NotSubscribed => "notSubscribed",
         CommandFailure::Invalid => "invalid",
         CommandFailure::Failed => "failed",
+        CommandFailure::Busy => "busy",
     }
 }
 

@@ -73,7 +73,7 @@ impl Harness {
     }
 
     async fn join_as(&self, connection: Uuid, stream: &StreamId) {
-        self.registry.open(stream).await.unwrap();
+        self.registry.open(connection, stream).unwrap();
         self.registry.subscribe(connection, stream).unwrap();
         self.egress
             .wait(connection, |m| m.iter().any(|message| message.stream_id() == stream))
@@ -117,13 +117,41 @@ async fn a_kind_registered_twice_fails_the_build() {
 // ---------------------------------------------------------------------------------------------
 
 #[test]
-async fn a_new_stream_opens_with_its_registered_kind() {
+async fn a_new_stream_opens_if_its_kind_is_registered() {
     let h = harness(StreamConfig::quiet()).await;
 
+    assert!(h.registry.open(Uuid::new_v4(), &TestStreamId::new_chat()).is_ok());
+}
+
+#[test]
+async fn a_push_needs_the_stream_open_for_the_connection() {
+    let h = harness(StreamConfig::quiet()).await;
+    let (id, other) = (TestStreamId::new_chat(), TestStreamId::new_chat());
+    let connection = Uuid::new_v4();
+    let data = TestMessage::new_chat_command("hi");
+    let push = |stream: &StreamId| {
+        let (registry, stream, data) = (h.registry.clone(), stream.clone(), data.clone());
+        async move {
+            registry
+                .push(connection, &stream, Uuid::nil(), Uuid::new_v4(), &data)
+                .await
+        }
+    };
+
+    assert_eq!(push(&id).await, Err(CommandFailure::NotSubscribed), "not opened");
+    h.registry.open(connection, &id).unwrap();
+    h.registry.open(Uuid::new_v4(), &other).unwrap();
+    assert_eq!(push(&id).await, Ok(()));
     assert_eq!(
-        h.registry.open(&TestStreamId::new_chat()).await.unwrap(),
-        ChatState::KIND
+        push(&other).await,
+        Err(CommandFailure::NotSubscribed),
+        "opened by another"
     );
+    h.registry.close(connection, &id);
+    assert_eq!(push(&id).await, Err(CommandFailure::NotSubscribed), "closed");
+    h.registry.open(connection, &id).unwrap();
+    h.registry.disconnect(connection);
+    assert_eq!(push(&id).await, Err(CommandFailure::NotSubscribed), "disconnected");
 }
 
 #[test]
@@ -146,10 +174,14 @@ async fn commands_are_checked_by_the_kind_of_their_stream() {
 async fn a_valid_command_is_queued_in_the_inbox_of_its_stream() {
     let h = harness(StreamConfig::quiet()).await;
     let id = TestStreamId::new_chat();
-    let (command_id, user_id) = (Uuid::new_v4(), Uuid::new_v4());
+    let (connection, command_id, user_id) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
     let data = TestMessage::new_chat_command("hi");
+    h.registry.open(connection, &id).unwrap();
 
-    h.registry.push(&id, user_id, command_id, &data).await.unwrap();
+    h.registry
+        .push(connection, &id, user_id, command_id, &data)
+        .await
+        .unwrap();
 
     let queued = h.inbox.db.poll(&id, &InboxId::START, 10).await.unwrap().entries;
     assert_eq!(queued.len(), 1);
@@ -160,12 +192,18 @@ async fn a_valid_command_is_queued_in_the_inbox_of_its_stream() {
 async fn a_command_that_is_not_valid_for_the_kind_is_refused_and_not_queued() {
     let h = harness(StreamConfig::quiet()).await;
     let id = TestStreamId::new_chat();
+    let connection = Uuid::new_v4();
     let paint = TestMessage::new_paint_command(1, 1, 1);
     let off_the_map = TestMessage::new_paint_command(90, 1, 1);
     let too_long = TestMessage::new_chat_command(&"a".repeat(MAX_COMMAND_BYTES + 1));
+    h.registry.open(connection, &id).unwrap();
     let push = |command: String| {
         let (registry, id) = (h.registry.clone(), id.clone());
-        async move { registry.push(&id, Uuid::nil(), Uuid::new_v4(), &command).await }
+        async move {
+            registry
+                .push(connection, &id, Uuid::nil(), Uuid::new_v4(), &command)
+                .await
+        }
     };
 
     let results = [
@@ -187,6 +225,37 @@ async fn a_command_that_is_not_valid_for_the_kind_is_refused_and_not_queued() {
         .unwrap()
         .entries
         .is_empty());
+}
+
+#[test]
+async fn a_push_into_an_inbox_that_stays_full_fails_as_busy_and_is_not_queued() {
+    let h = harness(StreamConfig {
+        inbox_backpressure_low: 0,
+        inbox_backpressure_high: 1,
+        inbox_backpressure_poll_period: Duration::from_millis(5),
+        inbox_backpressure_timeout: Duration::from_millis(100),
+        ..StreamConfig::quiet()
+    })
+    .await;
+    // No worker is subscribed, so nothing drains the inbox.
+    let id = TestStreamId::new_chat();
+    let connection = Uuid::new_v4();
+    let data = TestMessage::new_chat_command("hi");
+    h.registry.open(connection, &id).unwrap();
+
+    h.registry
+        .push(connection, &id, Uuid::nil(), Uuid::new_v4(), &data)
+        .await
+        .unwrap();
+    // The limit is polled, not reserved: the next push is only throttled once the length is seen.
+    sleep(Duration::from_millis(100)).await;
+    let result = h
+        .registry
+        .push(connection, &id, Uuid::nil(), Uuid::new_v4(), &data)
+        .await;
+
+    assert_eq!(result, Err(CommandFailure::Busy));
+    assert_eq!(h.inbox.db.len(&id).await.unwrap(), 1);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -346,8 +415,8 @@ async fn an_unsubscribe_releases_only_that_stream_and_a_stream_can_be_joined_aga
     let connection = h.join(&a).await;
     h.join_as(connection, &b).await;
 
-    h.registry.unsubscribe(connection, &a);
-    h.registry.unsubscribe(connection, &a);
+    h.registry.close(connection, &a);
+    h.registry.close(connection, &a);
 
     wait_for_workers(&h.registry, 1).await;
     // A is gone; joining it again starts a new worker.
@@ -363,12 +432,44 @@ async fn ended_workers_are_not_running_and_a_purge_forgets_them() {
     let id = TestStreamId::new_chat();
     let connection = h.join(&id).await;
 
-    h.registry.unsubscribe(connection, &id);
+    h.registry.close(connection, &id);
 
     wait_for_workers(&h.registry, 0).await;
     assert_eq!(h.registry.workers_count(), 1, "an ended worker is held until a purge");
     h.registry.purge();
     assert_eq!(h.registry.workers_count(), 0);
+}
+
+#[test]
+async fn a_subscribe_of_a_stream_closed_since_it_was_opened_starts_no_worker() {
+    let h = harness(StreamConfig::quiet()).await;
+    let (closed, gone) = (TestStreamId::new_chat(), TestStreamId::new_chat());
+    let connection = Uuid::new_v4();
+
+    h.registry.open(connection, &closed).unwrap();
+    h.registry.close(connection, &closed);
+    h.registry.subscribe(connection, &closed).unwrap();
+    h.registry.open(connection, &gone).unwrap();
+    h.registry.disconnect(connection);
+    h.registry.subscribe(connection, &gone).unwrap();
+
+    assert_eq!(h.registry.workers_count(), 0);
+}
+
+#[test]
+async fn a_purge_keeps_the_open_streams_and_forgets_the_rest() {
+    let h = harness(StreamConfig::quiet()).await;
+    let (kept, forgotten) = (TestStreamId::new_chat(), TestStreamId::new_chat());
+    let (connection, other) = (Uuid::new_v4(), Uuid::new_v4());
+    h.registry.open(connection, &kept).unwrap();
+    h.registry.open(other, &forgotten).unwrap();
+    h.registry.disconnect(other);
+
+    h.registry.purge();
+
+    let state = h.registry.inner.state.lock().unwrap();
+    assert!(state.streams.contains_key(&kept), "open, even without a worker yet");
+    assert!(!state.streams.contains_key(&forgotten));
 }
 
 #[test]

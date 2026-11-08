@@ -3,7 +3,6 @@ mod hub_connections;
 mod hub_metrics;
 mod hub_service;
 mod hub_status;
-mod hub_streams;
 mod hub_subscribers;
 mod tasks;
 

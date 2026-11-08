@@ -50,7 +50,8 @@ fn close_code(reason: DisconnectReason) -> u16 {
         | DisconnectReason::HeartbeatInactive
         | DisconnectReason::SessionInvalid
         | DisconnectReason::SlowConsumer
-        | DisconnectReason::DeadChannel => CLOSE_CODE_DROPPED,
+        | DisconnectReason::DeadChannel
+        | DisconnectReason::Busy => CLOSE_CODE_DROPPED,
     }
 }
 
