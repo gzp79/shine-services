@@ -107,6 +107,17 @@ pub async fn trim(
     Ok(removed)
 }
 
+#[instrument(level = "debug", skip_all, fields(stream_id = %stream_id))]
+pub async fn len(db: &RedisCommandInboxDb, stream_id: &StreamId) -> Result<usize, RedisCommandInboxError> {
+    let mut client = db.client().await?;
+    let len: usize = redis::cmd("XLEN")
+        .arg(RedisCommandInboxDb::stream_key(stream_id))
+        .query_async(&mut *client)
+        .await
+        .map_err(RedisError::RawError)?;
+    Ok(len)
+}
+
 fn parse_entry(raw: &StreamEntry, inbox_id: InboxId) -> Option<InboxEntry> {
     let command_id = raw
         .get::<String>("command_id")

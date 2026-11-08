@@ -132,7 +132,7 @@ mod served {
 
     async fn create_test_hub() -> TestHub {
         let stream_config = StreamConfig {
-            unload_grace: Duration::from_millis(20),
+            worker_unload_grace: Duration::from_millis(20),
             ..StreamConfig::quiet()
         };
         TestHub::from_env(TestHubOptions {

@@ -4,7 +4,10 @@ use crate::{
         command_inbox::{redis::RedisCommandInboxDb, CommandInboxDb},
         command_log::{pg::PgCommandLogDb, CommandLogDb, StoredCommand},
     },
-    services::command_stream::{PersistResult, StreamConfig, StreamLogService, StreamPersistence, StreamRelay},
+    services::command_stream::{
+        stream_persistence::PersistenceWork, PersistResult, StreamConfig, StreamLogService, StreamPersistence,
+        StreamRelay,
+    },
     testing::{
         command_stream::{ChatLog, TestEgress, TestInbox, TestLog, TestStreamId},
         TestMessage,
@@ -35,13 +38,8 @@ async fn setup_with(
         StreamLogService::new(inbox.db.clone(), log.db.clone(), StreamConfig::default()),
     );
     let mut relay = Relay::new(stream_id.clone(), inbox.db.clone(), TestEgress::default(), config);
-    let PersistResult::Reloaded {
-        snapshot, tail, stored_inbox, ..
-    } = persistence.reload("the stream is starting").await
-    else {
-        panic!("expected the log to be read");
-    };
-    relay.accept_reload(snapshot, tail.to_vec(), stored_inbox);
+    let loaded = persistence.persist(relay.reconcile_work()).await;
+    relay.accept(loaded).unwrap();
     (relay, persistence)
 }
 
@@ -65,31 +63,31 @@ async fn relay_submits_and_promotes_optimistic_commands() {
     let (mut relay, mut persistence) = setup(&stream_id, &inbox, &log).await;
     let first = Uuid::new_v4();
     let second = Uuid::new_v4();
-    relay.subscribe(first, 0);
-    relay.subscribe(second, 1);
-    relay.subscribers.insert(first, 2);
+    relay.subscribe(first);
+    relay.subscribe(second);
+    relay.subscribers.insert(first, Some(2));
+    relay.subscribers.insert(second, Some(1));
     relay.optimistic.extend(room.commands.clone());
 
-    let batch = relay.get_unpersisted().expect("optimistic commands are pending");
+    let work = relay.work_to_persist().expect("optimistic commands are pending");
     assert!(
         !relay.optimistic.is_empty(),
         "building the batch leaves the commands optimistic: only a result confirms them"
     );
-    let result = persistence
-        .persist(batch.baseline_version, batch.baseline_chain_hash, batch.commands)
-        .await;
+    let result = persistence.persist(work).await;
     let PersistResult::Advanced { canonical, snapshot, .. } = result else {
         panic!("expected the optimistic batch to be confirmed");
     };
-    assert!(
-        !relay.accept_canonical(&canonical, snapshot),
-        "the batch was confirmed exactly as the subscribers were told"
-    );
+    relay.accept_canonical(&canonical, snapshot);
 
     assert!(relay.optimistic.is_empty());
     assert_eq!(relay.confirmed, room.commands);
-    assert_eq!(relay.subscribers.get(&first), Some(&2));
-    assert_eq!(relay.subscribers.get(&second), Some(&1));
+    assert_eq!(
+        relay.subscribers.get(&first),
+        Some(&Some(2)),
+        "the batch was confirmed exactly as the subscribers were told"
+    );
+    assert_eq!(relay.subscribers.get(&second), Some(&Some(1)));
 }
 
 /// The commands of another instance may land between the submitted batch and the optimistic commands
@@ -106,6 +104,9 @@ async fn optimistic_commands_behind_a_confirmed_batch_are_reversioned() {
     let mine = ChatLog::new("mine", 4);
     relay.optimistic.extend(mine.commands.clone());
     let behind: Vec<_> = mine.commands[2..].iter().map(|c| c.command_id).collect();
+    let subscriber = Uuid::new_v4();
+    relay.subscribe(subscriber);
+    relay.subscribers.insert(subscriber, Some(4));
 
     // The log confirms the first two, with a command of another instance after them.
     let other = ChatLog::new("other", 3);
@@ -115,9 +116,13 @@ async fn optimistic_commands_behind_a_confirmed_batch_are_reversioned() {
         ..other.commands[2].clone()
     });
 
-    let resync = relay.accept_canonical(&canonical, None);
+    relay.accept_canonical(&canonical, None);
 
-    assert!(resync, "the versions the subscribers were told do not hold");
+    assert_eq!(
+        relay.subscribers.get(&subscriber),
+        Some(&None),
+        "the versions the subscribers were told do not hold, they are to be synced again"
+    );
     assert_eq!(
         relay.optimistic.iter().map(|c| c.command_id).collect::<Vec<_>>(),
         behind,
@@ -149,11 +154,14 @@ async fn a_command_queued_twice_is_confirmed_once_at_a_time() {
         ..once.clone()
     };
     relay.optimistic.extend([once.clone(), twice]);
+    let subscriber = Uuid::new_v4();
+    relay.subscribe(subscriber);
+    relay.subscribers.insert(subscriber, Some(2));
 
     // Only the first of them is stored.
-    let resync = relay.accept_canonical(std::slice::from_ref(&once), None);
+    relay.accept_canonical(std::slice::from_ref(&once), None);
 
-    assert!(!resync);
+    assert_eq!(relay.subscribers.get(&subscriber), Some(&Some(2)), "the versions hold");
     assert_eq!(relay.confirmed.len(), 1, "one of the two is confirmed");
     assert_eq!(
         relay.optimistic.iter().map(|c| c.version).collect::<Vec<_>>(),
@@ -174,17 +182,13 @@ async fn relay_adopts_a_reload_and_invalidates_optimistic_history() {
 
     let canonical = ChatLog::new("other", 2);
     canonical.persist(&log.db, &stream_id, 1, 2).await.unwrap();
-    let commands = relay.optimistic.to_vec().into();
 
-    let (version, chain_hash) = relay.confirmed_head();
-    let result = persistence.persist(version, chain_hash, commands).await;
-    let PersistResult::Reloaded {
-        snapshot, tail, stored_inbox, ..
-    } = result
-    else {
-        panic!("expected the losing optimistic history to reload");
-    };
-    relay.accept_reload(snapshot, tail.to_vec(), stored_inbox);
+    let result = persistence.persist(relay.work_to_persist().unwrap()).await;
+    assert!(
+        matches!(result, PersistResult::Reloaded { .. }),
+        "expected the losing optimistic history to reload"
+    );
+    relay.accept(result).unwrap();
 
     assert!(relay.optimistic.is_empty());
     assert_eq!(relay.confirmed, canonical.commands);
@@ -207,32 +211,56 @@ async fn ingest_versions_the_inbox_in_order_and_drops_what_is_not_a_command() {
     queue(&inbox, &stream_id, &TestMessage::new_chat_command("   ")).await;
     let last = queue(&inbox, &stream_id, &TestMessage::new_chat_command("b")).await;
 
-    let ingested = relay.ingest().await.unwrap();
+    relay.ingest().await.unwrap();
 
-    assert_eq!(ingested.commands.iter().map(|c| c.version).collect::<Vec<_>>(), [1, 2]);
+    assert_eq!(relay.optimistic.iter().map(|c| c.version).collect::<Vec<_>>(), [1, 2]);
     assert_eq!(
-        ingested.commands.iter().map(|c| c.command_id).collect::<Vec<_>>(),
+        relay.optimistic.iter().map(|c| c.command_id).collect::<Vec<_>>(),
         [first, last],
         "the dropped entries did not use a version"
     );
-    assert!(!ingested.throttled);
-    assert_eq!(relay.optimistic.len(), 2);
 
-    assert!(
-        relay.ingest().await.unwrap().commands.is_empty(),
+    relay.ingest().await.unwrap();
+    assert_eq!(
+        relay.optimistic.len(),
+        2,
         "the dropped entries are passed, not read again"
     );
     queue(&inbox, &stream_id, &TestMessage::new_chat_command("c")).await;
-    assert_eq!(relay.ingest().await.unwrap().commands[0].version, 3);
+    relay.ingest().await.unwrap();
+    assert_eq!(relay.optimistic[2].version, 3);
 }
 
 #[test]
-async fn ingest_leaves_the_inbox_to_wait_while_the_backlog_is_full() {
+async fn ingest_reads_a_page_and_tells_whether_there_is_more() {
     let inbox = TestInbox::from_env().await;
     let log = TestLog::from_env().await;
     let stream_id = TestStreamId::new_chat();
     let config = StreamConfig {
-        max_pending: 3,
+        inbox_poll_limit: 2,
+        ..StreamConfig::default()
+    };
+    let (mut relay, _persistence) = setup_with(&stream_id, &inbox, &log, config).await;
+    for text in ["a", "b", "c"] {
+        queue(&inbox, &stream_id, &TestMessage::new_chat_command(text)).await;
+    }
+
+    assert!(relay.ingest().await.unwrap(), "the page is full, there may be more");
+    assert_eq!(relay.optimistic.len(), 2);
+    assert!(!relay.ingest().await.unwrap(), "the rest fits in the page");
+    assert_eq!(
+        relay.optimistic.iter().map(|c| c.version).collect::<Vec<_>>(),
+        [1, 2, 3]
+    );
+}
+
+#[test]
+async fn ingest_leaves_the_inbox_to_wait_while_the_tail_is_full() {
+    let inbox = TestInbox::from_env().await;
+    let log = TestLog::from_env().await;
+    let stream_id = TestStreamId::new_chat();
+    let config = StreamConfig {
+        relay_max_pending: 3,
         ..StreamConfig::default()
     };
     let (mut relay, mut persistence) = setup_with(&stream_id, &inbox, &log, config).await;
@@ -240,28 +268,23 @@ async fn ingest_leaves_the_inbox_to_wait_while_the_backlog_is_full() {
         queue(&inbox, &stream_id, &TestMessage::new_chat_command(text)).await;
     }
 
-    let first = relay.ingest().await.unwrap();
-    assert_eq!(first.commands.len(), 3, "no more than the backlog has room for");
-    assert!(first.throttled);
-    let stalled = relay.ingest().await.unwrap();
-    assert!(stalled.commands.is_empty());
     assert!(
-        stalled.throttled,
-        "the full backlog is reported even when nothing was read"
+        !relay.ingest().await.unwrap(),
+        "nothing to wait for: the tail is full, the persistence has to make room"
     );
+    assert_eq!(relay.optimistic.len(), 3, "no more than the tail has room for");
+    assert!(!relay.ingest().await.unwrap());
+    assert_eq!(relay.optimistic.len(), 3, "nothing is read while the tail is full");
 
-    let (version, chain_hash) = relay.confirmed_head();
-    let PersistResult::Advanced { canonical, snapshot, .. } = persistence
-        .persist(version, chain_hash, relay.optimistic.to_vec().into())
-        .await
-    else {
-        panic!("expected the backlog to be confirmed");
-    };
-    relay.accept_canonical(&canonical, snapshot);
+    let result = persistence.persist(relay.work_to_persist().unwrap()).await;
+    relay.accept(result).unwrap();
 
-    let rest = relay.ingest().await.unwrap();
-    assert_eq!(rest.commands.iter().map(|c| c.version).collect::<Vec<_>>(), [4, 5]);
-    assert!(!rest.throttled, "nothing was held back any more");
+    assert!(!relay.ingest().await.unwrap());
+    assert_eq!(
+        relay.optimistic.iter().map(|c| c.version).collect::<Vec<_>>(),
+        [4, 5],
+        "the rest is read once there is room"
+    );
 }
 
 #[test]
@@ -273,20 +296,74 @@ async fn deliver_sends_each_subscriber_only_what_it_has_not_seen() {
     for text in ["a", "b", "c"] {
         queue(&inbox, &stream_id, &TestMessage::new_chat_command(text)).await;
     }
-    let ingested = relay.ingest().await.unwrap();
+    relay.ingest().await.unwrap();
     let (behind, partway, current) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
-    relay.subscribe(behind, 0);
-    relay.subscribe(partway, 1);
-    relay.subscribe(current, 3);
+    for (connection, sent_through) in [(behind, 0), (partway, 1), (current, 3)] {
+        relay.subscribe(connection);
+        relay.subscribers.insert(connection, Some(sent_through));
+    }
 
-    relay.deliver(&ingested.commands).await;
+    relay.deliver().await;
 
     let versions = |connection| TestEgress::versions(&relay.egress().messages(connection), &stream_id);
     assert_eq!(versions(behind), [1, 2, 3]);
     assert_eq!(versions(partway), [2, 3], "the command it has is not sent again");
     assert!(relay.egress().messages(current).is_empty(), "it has them all");
-    assert_eq!(relay.subscribers.get(&partway), Some(&3));
-    assert_eq!(relay.subscribers.get(&current), Some(&3));
+    for connection in [behind, partway, current] {
+        assert_eq!(relay.subscribers.get(&connection), Some(&Some(3)));
+    }
+}
+
+#[test]
+async fn a_subscriber_without_a_cursor_is_synced_and_then_followed() {
+    let inbox = TestInbox::from_env().await;
+    let log = TestLog::from_env().await;
+    let stream_id = TestStreamId::new_chat();
+    let (mut relay, _persistence) = setup(&stream_id, &inbox, &log).await;
+    queue(&inbox, &stream_id, &TestMessage::new_chat_command("a")).await;
+    relay.ingest().await.unwrap();
+    let connection = Uuid::new_v4();
+    relay.subscribe(connection);
+
+    relay.deliver().await;
+    relay.deliver().await;
+
+    assert_eq!(
+        TestEgress::kinds(&relay.egress().messages(connection)),
+        ["sync:1"],
+        "it is synced once, and has everything afterwards"
+    );
+    assert_eq!(relay.subscribers.get(&connection), Some(&Some(1)));
+
+    queue(&inbox, &stream_id, &TestMessage::new_chat_command("b")).await;
+    relay.ingest().await.unwrap();
+    relay.deliver().await;
+
+    assert_eq!(
+        TestEgress::kinds(&relay.egress().messages(connection)),
+        ["sync:1", "commands:1"]
+    );
+}
+
+#[test]
+async fn a_reload_sends_the_subscribers_a_new_sync() {
+    let inbox = TestInbox::from_env().await;
+    let log = TestLog::from_env().await;
+    let stream_id = TestStreamId::new_chat();
+    let (mut relay, _persistence) = setup(&stream_id, &inbox, &log).await;
+    let connection = Uuid::new_v4();
+    relay.subscribe(connection);
+    relay.deliver().await;
+    assert_eq!(relay.subscribers.get(&connection), Some(&Some(0)));
+
+    relay.accept_reload(None, Vec::new(), None);
+    assert_eq!(relay.subscribers.get(&connection), Some(&None));
+    relay.deliver().await;
+
+    assert_eq!(
+        TestEgress::kinds(&relay.egress().messages(connection)),
+        ["sync:0", "sync:0"]
+    );
 }
 
 #[test]
@@ -296,8 +373,8 @@ async fn giving_up_tells_the_subscribers_and_forgets_them() {
     let stream_id = TestStreamId::new_chat();
     let (mut relay, _persistence) = setup(&stream_id, &inbox, &log).await;
     let (first, second) = (Uuid::new_v4(), Uuid::new_v4());
-    relay.subscribe(first, 0);
-    relay.subscribe(second, 0);
+    relay.subscribe(first);
+    relay.subscribe(second);
 
     relay.give_up().await;
 
@@ -312,5 +389,30 @@ async fn giving_up_tells_the_subscribers_and_forgets_them() {
             [StreamMessage::Unsynced { stream_id: stream_id.clone() }]
         );
     }
-    assert_eq!(relay.subscriber_count(), 0, "they have to subscribe again");
+    assert!(relay.subscribers.is_empty(), "they have to subscribe again");
+}
+
+#[test]
+async fn a_failed_persistence_is_an_error_of_the_relay_and_changes_nothing() {
+    let inbox = TestInbox::from_env().await;
+    let log = TestLog::from_env().await;
+    let stream_id = TestStreamId::new_chat();
+    let (mut relay, _persistence) = setup(&stream_id, &inbox, &log).await;
+    let room = ChatLog::new("pending", 2);
+    relay.optimistic.extend(room.commands.clone());
+    let connection = Uuid::new_v4();
+    relay.subscribe(connection);
+    relay.subscribers.insert(connection, Some(2));
+
+    let result = relay.accept(PersistResult::Failed {
+        error: crate::models::CommandStreamError::Corrupt("injected failure".to_string()),
+    });
+
+    assert!(result.is_err());
+    assert_eq!(relay.optimistic.len(), 2);
+    assert_eq!(relay.subscribers.get(&connection), Some(&Some(2)));
+    assert!(
+        relay.work_to_persist().is_some(),
+        "what is not durable is still to be persisted"
+    );
 }

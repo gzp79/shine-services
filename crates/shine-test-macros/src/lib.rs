@@ -11,10 +11,11 @@ use syn::{
 struct TestAttributes {
     pub serial: Option<LitStr>,
     pub skip: Option<LitStr>,
+    pub flavor: Option<LitStr>,
 }
 
 impl TestAttributes {
-    fn parse(input: TokenStream) -> Result<Self, ParseError> {
+    fn parse(input: Tokens) -> Result<Self, ParseError> {
         let mut attrs = Self::default();
 
         let parser = meta::parser(|meta| {
@@ -24,12 +25,22 @@ impl TestAttributes {
             } else if meta.path.is_ident("skip") {
                 attrs.skip = Some(meta.value()?.parse()?);
                 Ok(())
+            } else if meta.path.is_ident("flavor") {
+                let flavor: LitStr = meta.value()?.parse()?;
+                if !matches!(flavor.value().as_str(), "current_thread" | "multi_thread") {
+                    return Err(ParseError::new(
+                        flavor.span(),
+                        "flavor must be \"current_thread\" or \"multi_thread\"",
+                    ));
+                }
+                attrs.flavor = Some(flavor);
+                Ok(())
             } else {
-                Err(meta.error("unsupported tea property"))
+                Err(meta.error("unsupported test property"))
             }
         });
 
-        parser.parse(input)?;
+        parser.parse2(input)?;
         Ok(attrs)
     }
 }
@@ -37,14 +48,29 @@ impl TestAttributes {
 /// An improved test macro. Supported properties
 /// - serial - ensure the test is not running in parallel with other tests.
 /// - skip - skip the test
+/// - flavor - Tokio runtime flavor for async native tests: "current_thread" or "multi_thread"
+///   (default). Does not affect WebAssembly tests.
 #[proc_macro_attribute]
 pub fn test(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let attrs = TestAttributes::parse(attr).unwrap();
+    let attrs = match TestAttributes::parse(attr.into()) {
+        Ok(attrs) => attrs,
+        Err(error) => return error.into_compile_error().into(),
+    };
     let input = parse_macro_input!(item as ItemFn);
+    if let Some(flavor) = &attrs.flavor {
+        if input.sig.asyncness.is_none() {
+            return ParseError::new(flavor.span(), "flavor requires an async test")
+                .into_compile_error()
+                .into();
+        }
+    }
 
     let mut test_decors = Vec::new();
     if input.sig.asyncness.is_some() {
-        test_decors.push(quote! { #[cfg_attr(not(target_arch = "wasm32"), ::tokio::test(flavor = "multi_thread"))] });
+        let flavor = attrs
+            .flavor
+            .unwrap_or_else(|| LitStr::new("multi_thread", input.sig.ident.span()));
+        test_decors.push(quote! { #[cfg_attr(not(target_arch = "wasm32"), ::tokio::test(flavor = #flavor))] });
         test_decors.push(quote! { #[cfg_attr(target_arch = "wasm32", ::wasm_bindgen_test::wasm_bindgen_test)] });
     } else {
         test_decors.push(quote! { #[cfg_attr(not(target_arch = "wasm32"), ::core::prelude::v1::test)] });
@@ -86,6 +112,7 @@ fn expand_wrapper(test_decors: &[Tokens], input: &ItemFn) -> TokenStream {
 
     let body = &input.block;
     let test_name = &input.sig.ident;
+    let attrs = &input.attrs;
 
     // Note: Rust does not allow us to have a test function with #[should_panic] that has a non-unit return value.
     let ret = match &input.sig.output {
@@ -99,6 +126,7 @@ fn expand_wrapper(test_decors: &[Tokens], input: &ItemFn) -> TokenStream {
       #wasm_bindgen_test_configure
 
       #(#test_decors)*
+      #(#attrs)*
       #async_token fn #test_name() #ret {
         #async_token fn test_impl() #ret {
           #body

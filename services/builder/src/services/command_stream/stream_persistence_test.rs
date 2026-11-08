@@ -50,13 +50,13 @@ async fn persistence_appends_replays_and_returns_a_snapshot() {
     let stream_id = TestStreamId::new_chat();
     let room = ChatLog::new("persist", 4);
     let config = StreamConfig {
-        snapshot_every: 2,
+        log_snapshot_every: 2,
         ..StreamConfig::default()
     };
     let mut persistence = persistence(stream_id.clone(), &inbox, &log, config);
     persistence.reload("the stream is starting").await;
 
-    let result = persistence.persist(0, 0, room.commands.clone().into()).await;
+    let result = persistence.persist_commands(0, 0, room.commands.clone().into()).await;
 
     let PersistResult::Advanced {
         canonical,
@@ -91,7 +91,10 @@ async fn concurrent_instances_converge_on_the_same_canonical_batch() {
     second.reload("the stream is starting").await;
 
     let commands = || room.commands.clone().into();
-    let (first_result, second_result) = tokio::join!(first.persist(0, 0, commands()), second.persist(0, 0, commands()));
+    let (first_result, second_result) = tokio::join!(
+        first.persist_commands(0, 0, commands()),
+        second.persist_commands(0, 0, commands())
+    );
 
     for result in [first_result, second_result] {
         let PersistResult::Advanced { canonical, .. } = result else {
@@ -114,7 +117,7 @@ async fn reconciliation_reloads_only_when_the_durable_head_changed() {
     assert!(matches!(watcher.reconcile(0, 0).await, PersistResult::Current));
 
     let room = ChatLog::new("peer", 2);
-    let result = peer.persist(0, 0, room.commands.clone().into()).await;
+    let result = peer.persist_commands(0, 0, room.commands.clone().into()).await;
     assert!(matches!(result, PersistResult::Advanced { .. }));
 
     let PersistResult::Reloaded { tail, .. } = watcher.reconcile(0, 0).await else {

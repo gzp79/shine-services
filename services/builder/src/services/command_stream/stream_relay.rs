@@ -7,30 +7,11 @@ use crate::{
         command_inbox::{CommandInboxDb, InboxId},
         command_log::{StoredCommand, StoredSnapshot},
     },
-    services::command_stream::{StreamConfig, StreamEgress},
+    services::command_stream::{stream_persistence::PersistenceWork, PersistResult, StreamConfig, StreamEgress},
 };
-use shine_game::replica::{
-    decode_command, encode_command, fold_chain_hash, Checkpoint, Command, ReplayState, StreamId,
-};
+use shine_game::replica::{decode_command, encode_command, fold_chain_hash, Command, ReplayState, StreamId};
 use std::{collections::HashMap, marker::PhantomData, sync::Arc};
 use uuid::Uuid;
-
-/// Commands waiting to be persisted, together with the confirmed head they extend.
-pub(crate) struct UnpersistedBatch {
-    pub baseline_version: i64,
-    pub baseline_chain_hash: u64,
-    pub commands: Arc<[StoredCommand]>,
-}
-
-/// What one pass over the inbox produced.
-#[derive(Debug, Default)]
-pub struct Ingested {
-    /// The commands that were given a version, in inbox order.
-    pub commands: Vec<StoredCommand>,
-    /// The inbox was not read, or not read to its end, because the optimistic backlog is full. Nothing
-    /// is lost: the entries stay in the inbox, but the stream only moves on once persistence catches up.
-    pub throttled: bool,
-}
 
 /// The inbox and client side of the stream. It takes the commands waiting in the inbox,
 /// gives each a version right away and tells the subscribers.
@@ -54,10 +35,11 @@ where
     confirmed_version: i64,
     confirmed_chain_hash: u64,
     optimistic: Vec<StoredCommand>,
-    cursor: InboxId,
+    /// Where the next poll of the inbox resumes: the last position that has been read.
+    read_index: InboxId,
     stored_inbox: Option<InboxId>,
 
-    subscribers: HashMap<Uuid, i64>,
+    subscribers: HashMap<Uuid, Option<i64>>,
     _state: PhantomData<fn() -> S>,
 }
 
@@ -79,7 +61,7 @@ where
             confirmed_version: 0,
             confirmed_chain_hash: 0,
             optimistic: Vec::new(),
-            cursor: InboxId::START,
+            read_index: InboxId::START,
             stored_inbox: None,
             subscribers: HashMap::new(),
             _state: PhantomData,
@@ -90,65 +72,77 @@ where
         &self.stream_id
     }
 
-    pub fn confirmed_head(&self) -> (i64, u64) {
-        (self.confirmed_version, self.confirmed_chain_hash)
-    }
-
-    /// Gets the optimistic commands and confirmed head that form the next persistence batch.
-    pub(crate) fn get_unpersisted(&self) -> Option<UnpersistedBatch> {
-        if self.optimistic.is_empty() {
-            return None;
-        }
-        Some(UnpersistedBatch {
-            baseline_version: self.confirmed_version,
-            baseline_chain_hash: self.confirmed_chain_hash,
-            commands: self.optimistic.clone().into(),
-        })
-    }
-
-    /// The version and chain hash of the last command the relay shows, optimistic ones included.
-    fn head(&self) -> (i64, u64) {
-        self.optimistic
-            .last()
-            .map_or((self.confirmed_version, self.confirmed_chain_hash), |command| {
-                (command.version, command.chain_hash)
-            })
-    }
-
     pub fn egress(&self) -> &E {
         &self.egress
     }
 
-    pub fn subscribe(&mut self, connection_id: Uuid, sent_through: i64) {
-        self.subscribers.insert(connection_id, sent_through);
+    pub fn subscribe(&mut self, connection_id: Uuid) {
+        self.subscribers.insert(connection_id, None);
     }
 
     pub fn unsubscribe(&mut self, connection_id: Uuid) {
         self.subscribers.remove(&connection_id);
     }
 
-    fn subscriber_ids(&self) -> Vec<Uuid> {
-        self.subscribers.keys().copied().collect()
+    pub fn has_subscribers(&self) -> bool {
+        !self.subscribers.is_empty()
     }
 
-    pub fn subscriber_count(&self) -> usize {
-        self.subscribers.len()
-    }
-
-    /// Takes whatever waits in the inbox and gives each command a version right away
-    /// storing them optimistically in the local state.
-    pub async fn ingest(&mut self) -> Result<Ingested, CommandStreamError> {
-        let room = self.config.max_pending.saturating_sub(self.optimistic.len());
-        if room == 0 {
-            return Ok(Ingested {
-                commands: Vec::new(),
-                throttled: true,
-            });
+    /// The work that adopts the history of the log: the persistence checks the confirmed head and reloads
+    /// the history if it differs.
+    pub fn reconcile_work(&self) -> PersistenceWork {
+        PersistenceWork::Reconcile {
+            version: self.confirmed_version,
+            chain_hash: self.confirmed_chain_hash,
         }
-        let limit = self.config.poll_limit.min(room);
-        let batch = self.inbox.poll(&self.stream_id, &self.cursor, limit).await?;
+    }
+
+    /// The work that makes the optimistic commands durable, if there are any.
+    pub fn work_to_persist(&self) -> Option<PersistenceWork> {
+        if self.optimistic.is_empty() {
+            return None;
+        }
+        Some(PersistenceWork::Persist {
+            baseline_version: self.confirmed_version,
+            baseline_chain_hash: self.confirmed_chain_hash,
+            commands: self.optimistic.clone().into(),
+        })
+    }
+
+    /// Takes the answer of the persistence. Only bookkeeping: nothing is sent to the subscribers, they are
+    /// told by the next delivery. An error means the stream cannot go on.
+    pub fn accept(&mut self, result: PersistResult) -> Result<(), CommandStreamError> {
+        match result {
+            PersistResult::Current => {}
+            PersistResult::Advanced { canonical, snapshot, .. } => self.accept_canonical(&canonical, snapshot),
+            PersistResult::Reloaded {
+                snapshot,
+                tail,
+                stored_inbox,
+                reason,
+            } => {
+                tracing::info!("[{}] The stream is reloaded: {reason}", self.stream_id);
+                self.accept_reload(snapshot, tail.to_vec(), stored_inbox);
+            }
+            PersistResult::Failed { error } => return Err(error),
+        }
+        Ok(())
+    }
+
+    /// Reads a page of the inbox, gives each command in it a version right away and stores them
+    /// optimistically in the local state. Returns whether the inbox may hold more than the page, and
+    /// there is room to read it.
+    ///
+    /// While the optimistic tail is full the inbox is not read: the entries stay there until persistence
+    /// frees room, and the answer of the persistence is what brings the next read.
+    pub async fn ingest(&mut self) -> Result<bool, CommandStreamError> {
+        let room = self.config.relay_max_pending.saturating_sub(self.optimistic.len());
+        if room == 0 {
+            return Ok(false);
+        }
+        let limit = self.config.inbox_poll_limit.min(room);
+        let batch = self.inbox.poll(&self.stream_id, &self.read_index, limit).await?;
         let (mut version, mut chain_hash) = self.head();
-        let mut commands = Vec::new();
         for entry in batch.entries {
             if self
                 .stored_inbox
@@ -170,7 +164,7 @@ where
             let command_hash = command.content_hash();
             version += 1;
             chain_hash = fold_chain_hash(chain_hash, version, command_hash);
-            commands.push(StoredCommand {
+            self.optimistic.push(StoredCommand {
                 version,
                 command_id: entry.command_id,
                 user_id: entry.user_id,
@@ -180,16 +174,58 @@ where
                 inbox_id: Some(entry.inbox_id.to_string()),
             });
         }
-        self.cursor = batch.cursor;
-        self.optimistic.extend(commands.iter().cloned());
-        let throttled = self.optimistic.len() >= self.config.max_pending;
-        Ok(Ingested { commands, throttled })
+        // A page that did not move the position would be read again and again.
+        let advanced = batch.cursor != self.read_index;
+        self.read_index = batch.cursor;
+        Ok(batch.more && advanced && self.optimistic.len() < self.config.relay_max_pending)
+    }
+
+    /// Brings every subscriber up to the version the relay shows: the ones that need a sync get one, the
+    /// others get the commands they have not seen yet. It is the only place that talks to the subscribers.
+    pub async fn deliver(&mut self) {
+        let (head, _) = self.head();
+        let mut sync: Option<Arc<StreamMessage>> = None;
+        let mut follow_ups: HashMap<i64, Option<Arc<StreamMessage>>> = HashMap::new();
+        for connection_id in self.subscribers.keys().copied().collect::<Vec<_>>() {
+            let Some(&cursor) = self.subscribers.get(&connection_id) else {
+                continue;
+            };
+            let follow_up = match cursor {
+                Some(sent_through) if sent_through >= head => continue,
+                Some(sent_through) => follow_ups
+                    .entry(sent_through)
+                    .or_insert_with(|| self.follow_up(sent_through))
+                    .clone(),
+                None => None,
+            };
+            let message =
+                follow_up.unwrap_or_else(|| sync.get_or_insert_with(|| Arc::new(self.sync_message())).clone());
+            self.send_to_subscriber(connection_id, message, head).await;
+        }
+    }
+
+    /// The stream cannot be served: the subscribers are dropped and have to subscribe again.
+    pub async fn give_up(&mut self) {
+        let message = Arc::new(StreamMessage::Unsynced {
+            stream_id: self.stream_id.clone(),
+        });
+        self.broadcast(message).await;
+        self.subscribers.clear();
+    }
+
+    /// The version and chain hash of the last command the relay shows, optimistic ones included.
+    fn head(&self) -> (i64, u64) {
+        self.optimistic
+            .last()
+            .map_or((self.confirmed_version, self.confirmed_chain_hash), |command| {
+                (command.version, command.chain_hash)
+            })
     }
 
     /// Update the confirmed state with the canonical batch and snapshot, and reversion the optimistic
-    /// commands if necessary. Returns whether the versions the subscribers were told optimistically no
-    /// longer hold, so they have to be reset and synced again.
-    pub fn accept_canonical(&mut self, canonical: &[StoredCommand], snapshot: Option<StoredSnapshot>) -> bool {
+    /// commands if necessary. If the versions the subscribers were told optimistically no longer hold,
+    /// they are marked to be synced again.
+    fn accept_canonical(&mut self, canonical: &[StoredCommand], snapshot: Option<StoredSnapshot>) {
         if let Some(last) = canonical.last() {
             self.confirmed_version = last.version;
             self.confirmed_chain_hash = last.chain_hash;
@@ -217,7 +253,9 @@ where
             .take_while(|(confirmed, optimistic)| confirmed.command_id == optimistic.command_id)
             .count();
         self.optimistic.drain(..stored);
-        self.reversion_optimistic()
+        if self.reversion_optimistic() {
+            self.reset_subscribers();
+        }
     }
 
     /// Puts the optimistic commands back on top of the confirmed history, and reports whether any of
@@ -243,8 +281,8 @@ where
             .rev()
             .find_map(|command| command.inbox_id.as_deref().and_then(InboxId::parse));
         if let Some(stored) = stored {
-            if self.cursor < stored {
-                self.cursor = stored.clone();
+            if self.read_index < stored {
+                self.read_index = stored.clone();
             }
             self.stored_inbox = self.stored_inbox.take().max(Some(stored));
         }
@@ -252,7 +290,7 @@ where
 
     /// Takes the history of the log, dropping whatever optimistic history this instance held. The first
     /// one is what the relay starts from, so it is also how an empty stream is adopted.
-    pub fn accept_reload(
+    fn accept_reload(
         &mut self,
         snapshot: Option<StoredSnapshot>,
         tail: Vec<StoredCommand>,
@@ -271,8 +309,9 @@ where
         self.optimistic.clear();
         // The reload read the log, so everything it holds is taken; re-reading the inbox from there on
         // takes the commands of this instance that it did not store again.
-        self.cursor = stored_inbox.clone().unwrap_or(InboxId::START);
+        self.read_index = stored_inbox.clone().unwrap_or(InboxId::START);
         self.stored_inbox = stored_inbox;
+        self.reset_subscribers();
     }
 
     /// The state a subscriber starts from: the latest snapshot and the commands the relay shows after it.
@@ -287,80 +326,33 @@ where
         }
     }
 
-    /// Brings one subscriber up to the version the relay shows.
-    pub async fn resync(&mut self, connection_id: Uuid) {
-        let message = Arc::new(self.sync_message());
-        self.send_to_subscriber(connection_id, message, self.head().0).await;
-    }
-
-    /// Brings all the subscribers up to the version the relay shows, usually after a reload.
-    pub async fn resync_all(&mut self) {
-        let reset = Arc::new(StreamMessage::Reset {
-            stream_id: self.stream_id.clone(),
-        });
-        self.broadcast(reset).await;
-        let sync = Arc::new(self.sync_message());
-        let (version, _) = self.head();
-        for connection_id in self.subscriber_ids() {
-            self.send_to_subscriber(connection_id, sync.clone(), version).await;
+    /// The commands after the version, as the subscribers that have it all but these need them. `None`
+    /// when the relay does not hold them contiguously any more, so the subscriber needs a sync.
+    fn follow_up(&self, after: i64) -> Option<Arc<StreamMessage>> {
+        let commands: Vec<&StoredCommand> = self
+            .confirmed
+            .iter()
+            .chain(&self.optimistic)
+            .filter(|command| command.version > after)
+            .collect();
+        if commands.first()?.version != after + 1 {
+            return None;
         }
+        Some(Arc::new(StreamMessage::Commands {
+            stream_id: self.stream_id.clone(),
+            commands: commands.into_iter().map(StreamCommand::from).collect(),
+        }))
     }
 
-    /// Sends the commands the subscribers have not seen yet in an optimistic manner.
-    pub async fn deliver(&mut self, commands: &[StoredCommand]) {
-        let (Some(first), Some(last)) = (commands.first(), commands.last()) else {
-            return;
-        };
-        let (first, last) = (first.version, last.version);
-        let all = Arc::new(StreamMessage::Commands {
-            stream_id: self.stream_id.clone(),
-            commands: commands.iter().map(StreamCommand::from).collect(),
-        });
-        for connection_id in self.subscriber_ids() {
-            let Some(&sent_through) = self.subscribers.get(&connection_id) else {
-                continue;
-            };
-            let message = if sent_through + 1 == first {
-                all.clone()
-            } else {
-                let after: Vec<_> = commands
-                    .iter()
-                    .filter(|command| command.version > sent_through)
-                    .map(StreamCommand::from)
-                    .collect();
-                if after.is_empty() {
-                    continue;
-                }
-                Arc::new(StreamMessage::Commands {
-                    stream_id: self.stream_id.clone(),
-                    commands: after,
-                })
-            };
-            self.send_to_subscriber(connection_id, message, last).await;
+    /// Resets all subscriber cursors, indicating that they need to be synced again.
+    fn reset_subscribers(&mut self) {
+        for cursor in self.subscribers.values_mut() {
+            *cursor = None;
         }
-    }
-
-    /// Tells the subscribers the state hash at a version, so they can compare it with their own.
-    pub async fn broadcast_checkpoint(&mut self, checkpoint: Checkpoint) {
-        let message = Arc::new(StreamMessage::Checkpoint {
-            stream_id: self.stream_id.clone(),
-            version: checkpoint.version,
-            state_hash: checkpoint.state_hash,
-        });
-        self.broadcast(message).await;
-    }
-
-    /// The stream cannot be served: the subscribers are dropped and have to subscribe again.
-    pub async fn give_up(&mut self) {
-        let message = Arc::new(StreamMessage::Unsynced {
-            stream_id: self.stream_id.clone(),
-        });
-        self.broadcast(message).await;
-        self.subscribers.clear();
     }
 
     async fn broadcast(&mut self, message: Arc<StreamMessage>) {
-        for connection_id in self.subscriber_ids() {
+        for connection_id in self.subscribers.keys().copied().collect::<Vec<_>>() {
             if !self.egress.send(connection_id, message.clone()).await {
                 self.subscribers.remove(&connection_id);
             }
@@ -369,7 +361,7 @@ where
 
     async fn send_to_subscriber(&mut self, connection_id: Uuid, message: Arc<StreamMessage>, version: i64) {
         if self.egress.send(connection_id, message).await {
-            self.subscribers.insert(connection_id, version);
+            self.subscribers.insert(connection_id, Some(version));
         } else {
             self.subscribers.remove(&connection_id);
         }

@@ -94,13 +94,16 @@ impl<I: CommandInboxDb, L: CommandLogDb> StreamLogService<I, L> {
         let mut after = after;
         let mut commands = Vec::new();
         loop {
-            let page = self.log.commands_after(stream_id, after, self.config.page_size).await?;
+            let page = self
+                .log
+                .commands_after(stream_id, after, self.config.log_page_size)
+                .await?;
             let count = page.len() as i64;
             if let Some(last) = page.last() {
                 after = last.version;
             }
             commands.extend(page);
-            if count < self.config.page_size {
+            if count < self.config.log_page_size {
                 return Ok(commands);
             }
         }
@@ -135,7 +138,7 @@ impl<I: CommandInboxDb, L: CommandLogDb> StreamLogService<I, L> {
     pub async fn store_snapshot(&self, stream_id: &StreamId, snapshot: &StoredSnapshot) -> SnapshotOutcome {
         match self.log.try_store_snapshot(stream_id, snapshot).await {
             Ok(()) => {
-                if let Err(error) = self.log.prune(stream_id, self.config.keep_snapshots).await {
+                if let Err(error) = self.log.prune(stream_id, self.config.log_keep_snapshots).await {
                     tracing::warn!("[{stream_id}] Failed to prune the log: {error:#?}");
                 }
                 SnapshotOutcome::Stored

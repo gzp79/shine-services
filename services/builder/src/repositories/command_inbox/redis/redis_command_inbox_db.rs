@@ -66,6 +66,10 @@ impl CommandInboxDb for RedisCommandInboxDb {
         Ok(inbox::trim(self, stream_id, up_to).await?)
     }
 
+    async fn len(&self, stream_id: &StreamId) -> Result<usize, CommandStreamError> {
+        Ok(inbox::len(self, stream_id).await?)
+    }
+
     async fn notify_persisted(&self, stream_id: &StreamId, version: i64) -> Result<(), CommandStreamError> {
         Ok(wake::notify_persisted(self, stream_id, version).await?)
     }

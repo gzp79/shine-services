@@ -11,7 +11,9 @@ use crate::{
             HubConnectionDb, HubRegistry,
         },
     },
-    services::{standard_registry, HubConfig, HubService, StreamAuthorizeService, StreamConfig, StreamRegistry},
+    services::{
+        standard_registry, HubConfig, HubService, StreamAuthorizeService, StreamConfig, StreamRegistry, StreamsConfig,
+    },
     testing::{
         command_stream::{TestInbox, TestLog},
         hub::{Egress, HubEvents, TestSession},
@@ -95,7 +97,7 @@ impl TestHub {
             let sl = TestLog::from_env().await;
             hub_builder = hub_builder
                 .with_stream_registry(|egress| {
-                    let sr = standard_registry(si.db.clone(), sl.db.clone(), egress, config)?;
+                    let sr = standard_registry(si.db.clone(), sl.db.clone(), egress, StreamsConfig::uniform(config))?;
                     stream_inbox = Some(si);
                     stream_log = Some(sl);
                     stream_registry = Some(sr.clone());

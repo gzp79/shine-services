@@ -63,7 +63,7 @@ impl AppState {
             .with_session_service(core_services.current_user_service.clone())
             .with_hub_registry(hub_registry)
             .with_stream_registry(|egress| {
-                standard_registry(command_inbox_db, command_log_db, egress, config.feature.stream.clone())
+                standard_registry(command_inbox_db, command_log_db, egress, config.feature.streams.clone())
             })?
             .with_stream_authorize_service(StreamAuthorizeService::new)
             .build()

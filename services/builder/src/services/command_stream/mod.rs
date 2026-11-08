@@ -12,7 +12,7 @@ mod stream_relay;
 mod stream_worker;
 
 pub use self::{
-    stream_config::StreamConfig,
+    stream_config::{StreamConfig, StreamsConfig},
     stream_egress::StreamEgress,
     stream_kinds::standard_registry,
     stream_log_service::{AppendOutcome, SnapshotOutcome, StoredStream, StreamLogService},

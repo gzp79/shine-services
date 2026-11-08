@@ -38,6 +38,9 @@ pub trait CommandInboxDb: Clone + Send + Sync {
         up_to: &InboxId,
     ) -> impl Future<Output = Result<usize, CommandStreamError>> + Send;
 
+    /// How many entries are in the stream's inbox.
+    fn len(&self, stream_id: &StreamId) -> impl Future<Output = Result<usize, CommandStreamError>> + Send;
+
     /// Tells the listeners that the stream is persisted up to `version`.
     fn notify_persisted(
         &self,

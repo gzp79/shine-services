@@ -237,7 +237,7 @@
         },
         {
           "label": "shine-core",
-          "value": "-p shine-core"
+          "value": "-p shine-core --features tokio,validator"
         },
         {
           "label": "shine-game",

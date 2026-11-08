@@ -9,7 +9,17 @@ use crate::{
 use shine_game::replica::{decode_snapshot, encode_snapshot, Checkpoint, ReplayState, Replica, StreamId};
 use std::sync::Arc;
 
-/// The canonical result of a persistence attempt.
+pub enum PersistenceWork {
+    /// Commands waiting to be persisted, together with the confirmed head they extend.
+    Persist {
+        baseline_version: i64,
+        baseline_chain_hash: u64,
+        commands: Arc<[StoredCommand]>,
+    },
+    /// Compares the durable head with the given one and reloads the history if they differ.
+    Reconcile { version: i64, chain_hash: u64 },
+}
+
 #[derive(Debug)]
 pub enum PersistResult {
     Current,
@@ -68,15 +78,21 @@ where
         &self.stream_id
     }
 
-    pub fn version(&self) -> i64 {
-        self.replica.version()
+    pub async fn persist(&mut self, work: PersistenceWork) -> PersistResult {
+        match work {
+            PersistenceWork::Persist {
+                baseline_version,
+                baseline_chain_hash,
+                commands,
+            } => {
+                self.persist_commands(baseline_version, baseline_chain_hash, commands)
+                    .await
+            }
+            PersistenceWork::Reconcile { version, chain_hash } => self.reconcile(version, chain_hash).await,
+        }
     }
 
-    pub fn chain_hash(&self) -> u64 {
-        self.replica.chain_hash()
-    }
-
-    pub async fn persist(
+    async fn persist_commands(
         &mut self,
         baseline_version: i64,
         baseline_chain_hash: u64,
@@ -138,7 +154,7 @@ where
     /// Checks whether the durable stream still has the head the actor knows. A peer may have advanced
     /// and trimmed the inbox before this worker observed its notification, so a mismatch reloads the
     /// canonical history even when there are no local commands to persist.
-    pub async fn reconcile(&mut self, version: i64, chain_hash: u64) -> PersistResult {
+    async fn reconcile(&mut self, version: i64, chain_hash: u64) -> PersistResult {
         match self.service.head(&self.stream_id).await {
             Ok(Some(head)) if head.version == version && head.chain_hash == chain_hash => PersistResult::Current,
             Ok(_) => {
@@ -151,7 +167,7 @@ where
 
     /// Builds the replica from the log: this instance has no history yet, or no longer agrees with the
     /// log. The same work either way, so a stream starts from a reload like any other.
-    pub async fn reload(&mut self, reason: impl Into<String>) -> PersistResult {
+    async fn reload(&mut self, reason: impl Into<String>) -> PersistResult {
         match self.load_canonical().await {
             Ok((snapshot, tail, stored_inbox, replica)) => {
                 self.replica = replica;
@@ -228,7 +244,7 @@ where
         &mut self,
         commands: &[StoredCommand],
     ) -> Result<(Option<StoredSnapshot>, Option<Checkpoint>), AdvanceError> {
-        let snapshot_every = self.service.config().snapshot_every;
+        let snapshot_every = self.service.config().log_snapshot_every;
         // Only the last snapshot boundary of the batch is kept: the ones before it are already
         // obsolete by the end of the replay.
         let boundary = if snapshot_every > 0 {
