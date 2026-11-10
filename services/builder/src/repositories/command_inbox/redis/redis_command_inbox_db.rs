@@ -48,7 +48,7 @@ impl CommandInboxDb for RedisCommandInboxDb {
         stream_id: &StreamId,
         command_id: Uuid,
         user_id: Uuid,
-        data: &str,
+        data: &[u8],
     ) -> Result<InboxId, CommandStreamError> {
         Ok(inbox::push(self, stream_id, command_id, user_id, data).await?)
     }

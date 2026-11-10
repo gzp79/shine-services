@@ -1,6 +1,9 @@
-use crate::repositories::command_log::{
-    pg::{pg_command_log_db::PgCommandLogDb, stream, PgCommandLogError},
-    StoredCommand, StreamHead,
+use crate::repositories::{
+    command_log::{
+        pg::{pg_command_log_db::PgCommandLogDb, stream, PgCommandLogError},
+        StoredCommand, StreamHead,
+    },
+    pg_types::StoredInboxId,
 };
 use postgres_types::ToSql;
 use shine_game::replica::StreamId;
@@ -23,9 +26,9 @@ const MAX_ATTEMPTS: u32 = 8;
 struct CommandInput<'a> {
     version: i64,
     command_id: Uuid,
-    inbox_id: Option<&'a str>,
+    inbox_id: StoredInboxId,
     user_id: Uuid,
-    data: &'a str,
+    data: &'a [u8],
     command_hash: i64,
     chain_hash: i64,
 }
@@ -39,9 +42,9 @@ impl<'a> From<&'a StoredCommand> for CommandInput<'a> {
         Self {
             version: command.version,
             command_id: command.command_id,
-            inbox_id: command.inbox_id.as_deref(),
+            inbox_id: StoredInboxId(command.inbox_id),
             user_id: command.user_id,
-            data: command.data.as_str(),
+            data: command.data.as_slice(),
             command_hash: command.command_hash as i64,
             chain_hash: command.chain_hash as i64,
         }

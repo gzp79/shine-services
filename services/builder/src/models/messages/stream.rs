@@ -11,7 +11,8 @@ pub struct StreamCommand {
     pub version: i64,
     pub command_id: Uuid,
     pub user_id: Uuid,
-    pub command: String,
+    /// The postcard encoding of the command, as it is stored.
+    pub command: Vec<u8>,
 }
 
 impl From<&StoredCommand> for StreamCommand {

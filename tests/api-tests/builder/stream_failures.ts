@@ -1,5 +1,5 @@
 import { expect, test } from '$fixtures/setup';
-import { type StreamFrameOf, StreamSession, wsConnectUrl, wsHeaders } from '$lib/api/builder_ws';
+import { type StreamFrameOf, StreamSession, addCommand, wsConnectUrl, wsHeaders } from '$lib/api/builder_ws';
 import { MintedSession, SessionMint } from '$lib/mocks/session_mint';
 import { waitForCondition } from '$lib/utils';
 import { randomUUID } from 'node:crypto';
@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 // the database is back. The builder keeps its sockets in both cases: the clients are not dropped for it.
 
 const newStreamId = (prefix: string) => `chat:${prefix}-${randomUUID().replace(/-/g, '')}`;
-const add = (text: string) => ({ type: 'add', text });
+const add = addCommand;
 
 test.describe('Builder stream failure tests', { tag: '@infrastructure' }, () => {
     // Injected toxics affect every service, hence these tests must never overlap with others.
@@ -103,7 +103,7 @@ test.describe('Builder stream failure tests', { tag: '@infrastructure' }, () => 
                     (f) => f.streamId === streamId,
                     12_000
                 );
-                return frame.commands.find((c) => c.command.text === 'up');
+                return frame.commands.find((c) => c.command === add('up'));
             },
             { timeout: 60_000, interval: 500, errorMessage: 'The stream did not carry on after Redis' }
         );

@@ -1,5 +1,6 @@
 use crate::{
     models::CommandStreamError,
+    repositories::command_inbox::InboxId,
     repositories::command_log::{CommandLogDb, ConsistencyIssue, StoredCommand, StoredSnapshot, StreamHead},
     testing::command_stream::{ChatLog, TestLog, TestStreamId},
 };
@@ -303,11 +304,10 @@ async fn stored_commands_cannot_be_updated() {
 }
 
 #[test]
-async fn the_inbox_position_of_a_command_is_kept_when_there_is_one_and_is_not_part_of_the_chain() {
+async fn the_inbox_position_of_a_command_is_kept_and_is_not_part_of_the_chain() {
     let log = TestLog::from_env().await;
     let id = TestStreamId::new_chat();
     let mut room = ChatLog::new("a", 4);
-    room.commands[2].inbox_id = None;
     log.db.ensure_stream(&id).await.unwrap();
 
     room.persist(&log.db, &id, 1, 4).await.unwrap();
@@ -318,6 +318,28 @@ async fn the_inbox_position_of_a_command_is_kept_when_there_is_one_and_is_not_pa
 }
 
 #[test]
+async fn inbox_positions_are_unique_per_stream() {
+    let log = TestLog::from_env().await;
+    let (first_stream, second_stream, third_stream) = (
+        TestStreamId::new_chat(),
+        TestStreamId::new_chat(),
+        TestStreamId::new_chat(),
+    );
+    let room = ChatLog::new("a", 2);
+    let mut repeating = ChatLog::new("a", 2);
+    repeating.commands[1].inbox_id = repeating.commands[0].inbox_id;
+    for id in [&first_stream, &second_stream, &third_stream] {
+        log.db.ensure_stream(id).await.unwrap();
+    }
+
+    // The same positions in another stream are other entries.
+    room.persist(&log.db, &first_stream, 1, 2).await.unwrap();
+    room.persist(&log.db, &second_stream, 1, 2).await.unwrap();
+    // A position twice in one stream is one entry stored twice.
+    assert!(repeating.persist(&log.db, &third_stream, 1, 2).await.is_err());
+}
+
+#[test]
 async fn hashes_above_i64_max_survive_the_signed_column() {
     let log = TestLog::from_env().await;
     let (id, room) = log.seeded_chat_log(3).await;
@@ -325,10 +347,10 @@ async fn hashes_above_i64_max_survive_the_signed_column() {
         version: 4,
         command_id: Uuid::new_v4(),
         user_id: Uuid::new_v4(),
-        data: "{}".to_string(),
+        data: vec![0],
         command_hash: u64::MAX,
         chain_hash: u64::MAX - 1,
-        inbox_id: None,
+        inbox_id: InboxId::new(1, 4),
     };
     log.db
         .append(&id, std::slice::from_ref(&command), room.chain_hash_at(3))

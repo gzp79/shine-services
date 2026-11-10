@@ -18,7 +18,7 @@ pub trait CommandInboxDb: Clone + Send + Sync {
         stream_id: &StreamId,
         command_id: Uuid,
         user_id: Uuid,
-        data: &str,
+        data: &[u8],
     ) -> impl Future<Output = Result<InboxId, CommandStreamError>> + Send;
 
     /// Reads up to `limit` entries after `after`, in order. Entries missing a field or holding a

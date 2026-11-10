@@ -308,7 +308,7 @@ Frames are JSON text with a camel-case `type`. `StreamId` contains the kind pref
 |---|---|---|
 | to server | `streamSubscribe` | `streamId`; authorizes and synchronizes the stream. |
 | to server | `streamUnsubscribe` | `streamId`; removes this connection's subscription. |
-| to server | `streamCommand` | `streamId`, `commandId`, `command`; requires an active subscription. |
+| to server | `streamCommand` | `streamId`, `commandId`, `command` (base64, see [Command encoding](#command-encoding)); requires an active subscription. |
 | to client | `streamSync` | `streamId`, optional snapshot, canonical commands after it; replaces client state. |
 | to client | `streamCommands` | `streamId`, contiguous optimistic or canonical command envelopes. |
 | to client | `streamCheckpoint` | `streamId`, version, state hash (not sent for now). |
@@ -318,6 +318,20 @@ Frames are JSON text with a camel-case `type`. `StreamId` contains the kind pref
 | to client | `streamSubscribeFailed` | `streamId`, reason: `unauthorized` or `failed`. |
 
 Malformed frames and invalid stream ids do not enter the hub. Valid requests that fail a protocol rule receive the corresponding refusal frame.
+
+### Command encoding
+
+A command is its **postcard** encoding, the same bytes on the client, in Redis (`data` field of the inbox entry) and in Postgres (`cl_commands.data`, `BYTEA`). In JSON frames (`streamCommand`, and the `command` of each envelope in `streamSync` and `streamCommands`) the bytes are base64. The server does not parse a command on the way out: the stored bytes are only wrapped in base64.
+
+On the way in, the registry decodes the command to check it is a well-formed command of the stream's kind. Only the canonical encoding is accepted (decoding and encoding again gives the same bytes: no trailing bytes, no non-minimal numbers), so the bytes a client sent are the bytes that are stored and hashed, and the relay does not encode them again. A command that is not base64, not canonical, not well formed, or over the size limit is refused as `invalid`.
+
+Postcard is not self-describing, so a command type is a **permanent wire and log format**: the log is replayed forever.
+
+- Enum variants are identified by their index. Add new variants at the end; never remove, reorder or insert one.
+- Do not change the fields of a variant. A different shape is a new variant (`AddV2`); the old one stays decodable and `apply`able.
+- To retire a variant, make `is_well_formed` refuse it so no new one is accepted, and keep its `apply` for the commands already in the log.
+- `StableHash` tags follow the variant index and never change.
+- Serde attributes that need a self-describing format (`tag`, `untagged`, `flatten`, `skip_serializing_if`) are not usable on commands.
 
 ## File map
 

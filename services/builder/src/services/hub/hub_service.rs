@@ -304,7 +304,7 @@ impl HubService {
         user_id: Uuid,
         stream_id: &StreamId,
         command_id: Uuid,
-        command: &str,
+        command: &[u8],
     ) -> Result<(), CommandFailure> {
         let result = match &self.inner.stream_registry {
             Some(registry) => {

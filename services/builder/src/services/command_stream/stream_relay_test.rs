@@ -1,7 +1,7 @@
 use crate::{
     models::messages::StreamMessage,
     repositories::{
-        command_inbox::{redis::RedisCommandInboxDb, CommandInboxDb},
+        command_inbox::{redis::RedisCommandInboxDb, CommandInboxDb, InboxId},
         command_log::{pg::PgCommandLogDb, CommandLogDb, StoredCommand},
     },
     services::command_stream::{
@@ -44,7 +44,7 @@ async fn setup_with(
 }
 
 /// Queues a command in the inbox of the stream, as the registry does after it has checked it.
-async fn queue(inbox: &TestInbox, stream_id: &StreamId, data: &str) -> Uuid {
+async fn queue(inbox: &TestInbox, stream_id: &StreamId, data: &[u8]) -> Uuid {
     let command_id = Uuid::new_v4();
     inbox
         .db
@@ -150,7 +150,7 @@ async fn a_command_queued_twice_is_confirmed_once_at_a_time() {
     let once = room.commands[0].clone();
     let twice = StoredCommand {
         version: 2,
-        inbox_id: Some("1-2".to_string()),
+        inbox_id: InboxId::new(1, 2),
         ..once.clone()
     };
     relay.optimistic.extend([once.clone(), twice]);
@@ -207,7 +207,7 @@ async fn ingest_versions_the_inbox_in_order_and_drops_what_is_not_a_command() {
     let stream_id = TestStreamId::new_chat();
     let (mut relay, _persistence) = setup(&stream_id, &inbox, &log).await;
     let first = queue(&inbox, &stream_id, &TestMessage::new_chat_command("a")).await;
-    queue(&inbox, &stream_id, "{not a command").await;
+    queue(&inbox, &stream_id, b"{not a command").await;
     queue(&inbox, &stream_id, &TestMessage::new_chat_command("   ")).await;
     let last = queue(&inbox, &stream_id, &TestMessage::new_chat_command("b")).await;
 

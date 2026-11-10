@@ -11,12 +11,12 @@ impl TestMessage {
     }
 
     /// An encoded command adding a chat message.
-    pub fn new_chat_command(text: &str) -> String {
+    pub fn new_chat_command(text: &str) -> Vec<u8> {
         encode_command::<ChatState>(&ChatCommand::Add { text: text.into() }).unwrap()
     }
 
     /// An encoded command painting a pixel; the position may be off the map.
-    pub fn new_paint_command(x: u8, y: u8, color: u8) -> String {
+    pub fn new_paint_command(x: u8, y: u8, color: u8) -> Vec<u8> {
         encode_command::<PixelMapState>(&PixelMapCommand::Paint { x, y, color }).unwrap()
     }
 }

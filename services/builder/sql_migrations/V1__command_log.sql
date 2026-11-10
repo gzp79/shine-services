@@ -3,7 +3,7 @@ CREATE TYPE cl_command_input AS (
     command_id UUID,
     inbox_id TEXT,
     user_id UUID,
-    data TEXT,
+    data BYTEA,
     command_hash BIGINT,
     chain_hash BIGINT
 );
@@ -21,12 +21,13 @@ CREATE TABLE cl_commands (
     id VARCHAR(64) NOT NULL,
     version BIGINT NOT NULL CHECK (version > 0),
     command_id UUID NOT NULL,
-    inbox_id TEXT,
+    inbox_id TEXT NOT NULL,
     user_id UUID NOT NULL,
-    data TEXT NOT NULL,
+    data BYTEA NOT NULL,
     command_hash BIGINT NOT NULL,
     chain_hash BIGINT NOT NULL,
     PRIMARY KEY (kind, id, version),
+    UNIQUE (kind, id, inbox_id),
     FOREIGN KEY (kind, id) REFERENCES cl_streams (kind, id) ON DELETE CASCADE
 );
 

@@ -23,7 +23,7 @@ pub const MAX_COMMAND_BYTES: usize = 16 * 1024;
 /// knows the type of the replayed state; here it is behind closures.
 struct KindEntry {
     spawn: Box<dyn Fn(StreamId) -> Arc<StreamWorker> + Send + Sync>,
-    is_valid_command: Box<dyn Fn(&str) -> bool + Send + Sync>,
+    is_valid_command: Box<dyn Fn(&[u8]) -> bool + Send + Sync>,
     backpressure: Box<dyn Fn(StreamId) -> Backpressure + Send + Sync>,
 }
 
@@ -182,7 +182,7 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
     }
 
     /// Whether `data` is a command of the kind that its worker will take.
-    pub fn validate(&self, kind: StreamKind, data: &str) -> bool {
+    pub fn validate(&self, kind: StreamKind, data: &[u8]) -> bool {
         self.inner
             .kinds
             .get(&kind)
@@ -198,7 +198,7 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
         stream_id: &StreamId,
         user_id: Uuid,
         command_id: Uuid,
-        command: &str,
+        command: &[u8],
     ) -> Result<(), CommandFailure> {
         let backpressure = {
             let state = self.inner.state.lock().unwrap();

@@ -1,7 +1,9 @@
 use crate::{
     app_state::AppState,
-    models::messages::{DisconnectReason, HubEvent, HubMessage, PingEvent, StreamMessage, TopicKey},
-    routes::ws::message::{stream_message_to_wire, PingRequest, WSMessageRequest, WSMessageResponse},
+    models::messages::{CommandFailure, DisconnectReason, HubEvent, HubMessage, PingEvent, StreamMessage, TopicKey},
+    routes::ws::message::{
+        decode_wire_command, stream_message_to_wire, PingRequest, WSMessageRequest, WSMessageResponse,
+    },
     services::{hub_metrics, HubService, MAX_COMMAND_BYTES},
 };
 use axum::{
@@ -284,9 +286,14 @@ async fn handle_stream_request(
             let Some(stream_id) = parse_stream_id(user_id, &stream_id) else {
                 return;
             };
-            let sent = hub_service
-                .send_stream_command(connection_id, user_id, &stream_id, command_id, &command.to_string())
-                .await;
+            let sent = match decode_wire_command(&command) {
+                Some(command) => {
+                    hub_service
+                        .send_stream_command(connection_id, user_id, &stream_id, command_id, &command)
+                        .await
+                }
+                None => Err(CommandFailure::Invalid),
+            };
             match sent {
                 Ok(()) => ("stream_command", "ok"),
                 Err(reason) => {

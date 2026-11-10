@@ -25,7 +25,6 @@ pub struct ChatState {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
 pub enum ChatCommand {
     /// Adds a message written by the sender.
     Add { text: String },

@@ -116,7 +116,8 @@ export class PixelMapExperiment extends Experiment {
             frame.type === 'streamCommand' &&
             'commandId' in frame &&
             typeof frame.commandId === 'string' &&
-            'command' in frame
+            'command' in frame &&
+            typeof frame.command === 'string'
         ) {
             return this.subscription.sendCommand(frame.commandId, frame.command);
         }

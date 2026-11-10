@@ -16,7 +16,7 @@ pub async fn push(
     stream_id: &StreamId,
     command_id: Uuid,
     user_id: Uuid,
-    data: &str,
+    data: &[u8],
 ) -> Result<InboxId, RedisCommandInboxError> {
     let key = RedisCommandInboxDb::stream_key(stream_id);
     let mut client = db.client().await?;
@@ -56,8 +56,8 @@ pub async fn poll(
 ) -> Result<InboxBatch, RedisCommandInboxError> {
     let mut batch = InboxBatch {
         entries: Vec::new(),
-        cursor: after.clone(),
-        more: false,
+        cursor: *after,
+        has_more: false,
     };
     if limit == 0 {
         return Ok(batch);
@@ -75,12 +75,12 @@ pub async fn poll(
         .await
         .map_err(RedisError::RawError)?;
 
-    batch.more = reply.ids.len() >= limit;
+    batch.has_more = reply.ids.len() >= limit;
     for raw in reply.ids {
         let Some(inbox_id) = InboxId::parse(&raw.id) else {
             continue;
         };
-        match parse_entry(&raw, inbox_id.clone()) {
+        match parse_entry(&raw, inbox_id) {
             Some(entry) => batch.entries.push(entry),
             None => tracing::warn!("[{stream_id}] Skipping unreadable inbox entry {inbox_id}"),
         }
@@ -123,7 +123,7 @@ fn parse_entry(raw: &StreamEntry, inbox_id: InboxId) -> Option<InboxEntry> {
         .get::<String>("command_id")
         .and_then(|id| Uuid::parse_str(&id).ok())?;
     let user_id = raw.get::<String>("user_id").and_then(|id| Uuid::parse_str(&id).ok())?;
-    let data = raw.get::<String>("data")?;
+    let data = raw.get::<Vec<u8>>("data")?;
     Some(InboxEntry {
         inbox_id,
         command_id,

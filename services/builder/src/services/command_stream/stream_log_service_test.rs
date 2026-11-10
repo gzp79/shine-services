@@ -27,7 +27,7 @@ async fn a_new_stream_loads_empty_and_is_created() {
     assert!(stored.snapshot.is_none());
     assert!(stored.tail.is_empty());
     assert!(
-        stored.stored_inbox.is_none(),
+        stored.last_inbox_id.is_none(),
         "nothing is stored, so no inbox entry may be skipped"
     );
     assert!(log.db.head(&id).await.unwrap().is_some(), "loading creates the stream");
@@ -69,9 +69,8 @@ async fn the_stored_inbox_marker_comes_from_the_last_command_of_the_tail() {
 
     let stored = service(&inbox, &log).load(&id).await.unwrap();
 
-    let expected = room.commands[9].inbox_id.as_deref().and_then(InboxId::parse);
-    assert!(expected.is_some(), "the seeded commands carry an inbox id");
-    assert_eq!(stored.stored_inbox, expected);
+    let expected = room.commands[9].inbox_id;
+    assert_eq!(stored.last_inbox_id, Some(expected));
 }
 
 /// Every command after the snapshot may be pruned away, and the marker then has to come from the
@@ -84,8 +83,5 @@ async fn the_stored_inbox_marker_survives_an_empty_tail() {
     let stored = service(&inbox, &log).load(&id).await.unwrap();
 
     assert!(stored.tail.is_empty(), "the snapshot covers every command");
-    assert_eq!(
-        stored.stored_inbox,
-        room.commands[4].inbox_id.as_deref().and_then(InboxId::parse)
-    );
+    assert_eq!(stored.last_inbox_id, Some(room.commands[4].inbox_id));
 }

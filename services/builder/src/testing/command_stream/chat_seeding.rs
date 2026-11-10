@@ -1,5 +1,6 @@
 use crate::{
     models::CommandStreamError,
+    repositories::command_inbox::InboxId,
     repositories::command_log::{pg::PgCommandLogDb, CommandLogDb, StoredCommand, StoredSnapshot, StreamHead},
     testing::command_stream::{TestLog, TestStreamId},
 };
@@ -65,7 +66,7 @@ impl ChatLog {
         self.commands.push(StoredCommand {
             version,
             command_id: envelope.header.command_id,
-            inbox_id: Some(format!("1-{version}")),
+            inbox_id: InboxId::new(1, version as u64),
             user_id: envelope.header.user_id,
             data: encode_command::<ChatState>(&envelope.command).unwrap(),
             command_hash: envelope.command_hash,

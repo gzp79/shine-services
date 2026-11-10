@@ -14,7 +14,7 @@ fn a_sync_with_a_snapshot_and_commands_is_parsed() {
     let message = parse(json!({
         "type": "streamSync", "streamId": "room-1",
         "snapshot": {"version": 8, "chainHash": "00000000000000ff", "stateHash": "0000000000000100", "data": "AQID"},
-        "commands": [{"version": 9, "commandId": command_id, "userId": user_id, "command": {"type": "add"}}]
+        "commands": [{"version": 9, "commandId": command_id, "userId": user_id, "command": "AAQFCQ=="}]
     }));
 
     let Some(ServerMessage::StreamSync { stream_id, snapshot, commands }) = message else {
@@ -31,7 +31,7 @@ fn a_sync_with_a_snapshot_and_commands_is_parsed() {
         (commands[0].version, commands[0].command_id, commands[0].user_id),
         (9, command_id, user_id)
     );
-    assert_eq!(commands[0].command, json!({"type": "add"}));
+    assert_eq!(commands[0].command, "AAQFCQ==");
 }
 
 #[test]
@@ -88,13 +88,13 @@ fn client_messages_use_the_camel_case_wire_keys() {
     let command = serde_json::to_value(ClientMessage::StreamCommand {
         stream_id: "s".into(),
         command_id,
-        command: json!({"type": "paint"}),
+        command: "AAQFCQ==".into(),
     })
     .unwrap();
 
     assert_eq!(subscribe, json!({"type": "streamSubscribe", "streamId": "pixel-map:s"}));
     assert_eq!(
         command,
-        json!({"type": "streamCommand", "streamId": "s", "commandId": command_id, "command": {"type": "paint"}})
+        json!({"type": "streamCommand", "streamId": "s", "commandId": command_id, "command": "AAQFCQ=="})
     );
 }

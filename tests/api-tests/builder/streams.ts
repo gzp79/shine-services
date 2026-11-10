@@ -1,5 +1,13 @@
 import { expect, test } from '$fixtures/setup';
-import { type StreamCommandFrame, StreamSession, wsConnectUrl, wsHeaders } from '$lib/api/builder_ws';
+import {
+    type StreamCommandFrame,
+    StreamSession,
+    addCommand,
+    encodeCommand,
+    paintCommand,
+    wsConnectUrl,
+    wsHeaders
+} from '$lib/api/builder_ws';
 import { MintedSession, SessionMint } from '$lib/mocks/session_mint';
 import { randomUUID } from 'node:crypto';
 
@@ -29,8 +37,8 @@ const within = async <T>(promise: Promise<T>, ms: number, what: string): Promise
     }
 };
 
-const add = (text: string) => ({ type: 'add', text });
-const paint = (x: number, y: number, color: number) => ({ type: 'paint', x, y, color });
+const add = addCommand;
+const paint = paintCommand;
 
 test.describe('Builder streams', { tag: ['@regression'] }, () => {
     let mint: SessionMint;
@@ -214,7 +222,12 @@ test.describe('Builder streams', { tag: ['@regression'] }, () => {
         { title: 'a paint with a color outside the palette', kind: PIXEL_MAP, command: paint(0, 0, 200) },
         { title: 'an empty chat message', kind: CHAT, command: add('   ') },
         { title: 'a command of another kind', kind: CHAT, command: paint(0, 0, 1) },
-        { title: 'a command that is not a command', kind: CHAT, command: { nonsense: true } }
+        {
+            title: 'a command that is not a command',
+            kind: CHAT,
+            command: encodeCommand(Buffer.from('{"nonsense":true}'))
+        },
+        { title: 'a command that is not base64', kind: CHAT, command: '!!not base64!!' }
     ]) {
         test(`WS stream ${invalid.title} shall be refused as invalid`, async ({ homeUrl, builderWSUrl }) => {
             const a = await connect(homeUrl, builderWSUrl, alice);
@@ -270,8 +283,8 @@ test.describe('Builder streams', { tag: ['@regression'] }, () => {
         await a.subscribe(streamId);
         const commandId = randomUUID();
 
-        // Valid but for its size, and small enough for the socket to take the message.
-        a.command(streamId, commandId, { ...paint(1, 1, 1), padding: 'x'.repeat(20_000) });
+        // Small enough for the socket to take the message, but over the size of a command.
+        a.command(streamId, commandId, encodeCommand(Buffer.alloc(20_000)));
 
         expect(await a.waitFrame('streamNack', (f) => f.commandId === commandId)).toMatchObject({
             streamId,
@@ -290,7 +303,7 @@ test.describe('Builder streams', { tag: ['@regression'] }, () => {
         const streamId = newStreamId(CHAT, 'room');
         await a.subscribe(streamId);
 
-        a.command(streamId, randomUUID(), { ...add('too much'), padding: 'x'.repeat(40_000) });
+        a.command(streamId, randomUUID(), encodeCommand(Buffer.alloc(40_000)));
 
         await within(a.closed, 5000, 'the close of the socket');
         const again = await connect(homeUrl, builderWSUrl, alice);

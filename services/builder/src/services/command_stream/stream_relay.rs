@@ -9,7 +9,7 @@ use crate::{
     },
     services::command_stream::{stream_persistence::PersistenceWork, PersistResult, StreamConfig, StreamEgress},
 };
-use shine_game::replica::{decode_command, encode_command, fold_chain_hash, Command, ReplayState, StreamId};
+use shine_game::replica::{decode_command, fold_chain_hash, Command, ReplayState, StreamId};
 use std::{collections::HashMap, marker::PhantomData, sync::Arc};
 use uuid::Uuid;
 
@@ -158,9 +158,6 @@ where
                     continue;
                 }
             };
-            let Ok(data) = encode_command::<S>(&command) else {
-                continue;
-            };
             let command_hash = command.content_hash();
             version += 1;
             chain_hash = fold_chain_hash(chain_hash, version, command_hash);
@@ -168,16 +165,16 @@ where
                 version,
                 command_id: entry.command_id,
                 user_id: entry.user_id,
-                data,
+                data: entry.data,
                 command_hash,
                 chain_hash,
-                inbox_id: Some(entry.inbox_id.to_string()),
+                inbox_id: entry.inbox_id,
             });
         }
         // A page that did not move the position would be read again and again.
         let advanced = batch.cursor != self.read_index;
         self.read_index = batch.cursor;
-        Ok(batch.more && advanced && self.optimistic.len() < self.config.relay_max_pending)
+        Ok(batch.has_more && advanced && self.optimistic.len() < self.config.relay_max_pending)
     }
 
     /// Brings every subscriber up to the version the relay shows: the ones that need a sync get one, the
@@ -276,13 +273,10 @@ where
 
     /// The commands of a confirmed batch are in the log, so their inbox entries are taken for good.
     fn advance_stored_inbox(&mut self, canonical: &[StoredCommand]) {
-        let stored = canonical
-            .iter()
-            .rev()
-            .find_map(|command| command.inbox_id.as_deref().and_then(InboxId::parse));
+        let stored = canonical.iter().map(|command| command.inbox_id).max();
         if let Some(stored) = stored {
             if self.read_index < stored {
-                self.read_index = stored.clone();
+                self.read_index = stored;
             }
             self.stored_inbox = self.stored_inbox.take().max(Some(stored));
         }
@@ -309,7 +303,7 @@ where
         self.optimistic.clear();
         // The reload read the log, so everything it holds is taken; re-reading the inbox from there on
         // takes the commands of this instance that it did not store again.
-        self.read_index = stored_inbox.clone().unwrap_or(InboxId::START);
+        self.read_index = stored_inbox.unwrap_or(InboxId::START);
         self.stored_inbox = stored_inbox;
         self.reset_subscribers();
     }

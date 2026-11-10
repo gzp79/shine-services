@@ -407,7 +407,7 @@ async fn a_stream_that_cannot_be_loaded_tells_the_waiting_subscribers_and_ends()
     let h = harness().await;
     let id = TestStreamId::new_chat();
     let mut room = ChatLog::new("seed", 3);
-    room.commands[1].data = "{not a command".to_string();
+    room.commands[1].data = b"{not a command".to_vec();
     h.log.db.ensure_stream(&id).await.unwrap();
     room.persist(&h.log.db, &id, 1, 3).await.unwrap();
     let worker = h.spawn(&id, 100, StreamConfig::quiet());
@@ -435,7 +435,7 @@ impl CommandInboxDb for FlakyInbox {
         stream_id: &StreamId,
         command_id: Uuid,
         user_id: Uuid,
-        data: &str,
+        data: &[u8],
     ) -> Result<InboxId, CommandStreamError> {
         self.inner.push(stream_id, command_id, user_id, data).await
     }

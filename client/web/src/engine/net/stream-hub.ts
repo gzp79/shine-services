@@ -8,7 +8,7 @@ export interface StreamListener {
 
 export interface StreamSubscription {
     subscribe(): Promise<void>;
-    sendCommand(commandId: string, command: unknown): boolean;
+    sendCommand(commandId: string, command: string): boolean;
     unsubscribe(): void;
 }
 

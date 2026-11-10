@@ -20,7 +20,8 @@ pub struct WireCommand {
     pub version: i64,
     pub command_id: Uuid,
     pub user_id: Uuid,
-    pub command: serde_json::Value,
+    /// The command, base64 of its postcard encoding.
+    pub command: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -69,7 +70,8 @@ pub enum ClientMessage {
     StreamCommand {
         stream_id: String,
         command_id: Uuid,
-        command: serde_json::Value,
+        /// The command, base64 of its postcard encoding.
+        command: String,
     },
 }
 

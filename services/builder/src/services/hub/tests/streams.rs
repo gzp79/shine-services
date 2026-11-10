@@ -237,7 +237,7 @@ mod served {
         let hub = &test.hub;
         let id = TestStreamId::new_pixel_map();
         let off_the_map = TestMessage::new_paint_command(99, 0, 1);
-        let send = |stream: &StreamId, command: String| {
+        let send = |stream: &StreamId, command: Vec<u8>| {
             let hub = hub.clone();
             let stream = stream.clone();
             async move {
@@ -305,7 +305,7 @@ async fn a_hub_without_streams_refuses_them() {
     );
     assert_eq!(
         test.hub
-            .send_stream_command(connection, Uuid::new_v4(), &id, Uuid::new_v4(), "{}")
+            .send_stream_command(connection, Uuid::new_v4(), &id, Uuid::new_v4(), b"{}")
             .await,
         Err(CommandFailure::NotSubscribed)
     );

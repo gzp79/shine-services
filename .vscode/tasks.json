@@ -244,6 +244,10 @@
           "value": "-p shine-game"
         },
         {
+          "label": "shine-game-tools",
+          "value": "-p shine-game-tools"
+        },
+        {
           "label": "shine-test",
           "value": "-p shine-test"
         },

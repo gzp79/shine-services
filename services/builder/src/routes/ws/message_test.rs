@@ -28,7 +28,8 @@ fn a_sync_carries_the_snapshot_and_the_commands() {
             version: 9,
             command_id,
             user_id,
-            command: r#"{"type":"add","text":"hi"}"#.to_string(),
+            // Variant 0 (`Add`), then the text: its length and bytes.
+            command: vec![0, 2, b'h', b'i'],
         }],
     });
 
@@ -38,7 +39,7 @@ fn a_sync_carries_the_snapshot_and_the_commands() {
             "type": "streamSync",
             "streamId": "chat:room-1",
             "snapshot": {"version": 8, "chainHash": "00000000000000ab", "stateHash": "ffffffffffffffff", "data": "AQID"},
-            "commands": [{"version": 9, "commandId": command_id, "userId": user_id, "command": {"type": "add", "text": "hi"}}]
+            "commands": [{"version": 9, "commandId": command_id, "userId": user_id, "command": "AAJoaQ=="}]
         })
     );
 }
@@ -68,10 +69,10 @@ fn the_other_stream_messages_have_their_own_frames() {
                 version: 3,
                 command_id,
                 user_id: Uuid::nil(),
-                command: "{\"type\":\"paint\",\"x\":1,\"y\":2,\"color\":3}".to_string(),
+                command: vec![0, 1, 2, 3],
             }]
-        })["commands"][0]["command"]["color"],
-        3
+        })["commands"][0]["command"],
+        "AAECAw=="
     );
     assert_eq!(
         frame(StreamMessage::Checkpoint {

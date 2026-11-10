@@ -40,6 +40,6 @@ export default [
         }
     },
     {
-        ignores: ['node_modules/', 'reports/', 'todo/']
+        ignores: ['node_modules/', 'reports/', 'todo/', 'src/api/builder_bindings/']
     }
 ];

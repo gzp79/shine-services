@@ -64,7 +64,8 @@ describe('WebSocketStreamHub', () => {
         socket.emit('message', JSON.stringify({ type: 'connected', userId }));
         socket.emit('message', JSON.stringify({ type: 'streamSync', streamId: 'pixel-map:demo', commands: [] }));
         await connected;
-        subscription.sendCommand('command-1', { color: 2 });
+        // PixelMapCommand::Paint { x: 1, y: 2, color: 3 }: variant 0, then the fields, in base64.
+        subscription.sendCommand('command-1', 'AAECAw==');
         subscription.unsubscribe();
 
         expect(socket.sent.map((frame) => JSON.parse(frame))).toEqual([
@@ -73,7 +74,7 @@ describe('WebSocketStreamHub', () => {
                 type: 'streamCommand',
                 streamId: 'pixel-map:demo',
                 commandId: 'command-1',
-                command: { color: 2 }
+                command: 'AAECAw=='
             },
             { type: 'streamUnsubscribe', streamId: 'pixel-map:demo' }
         ]);

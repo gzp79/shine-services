@@ -188,7 +188,7 @@ where
     ) -> Result<(Option<StoredSnapshot>, Vec<StoredCommand>, Option<InboxId>, Replica<S>), CommandStreamError> {
         let stored = self.service.load(&self.stream_id).await?;
         let replica = Self::rebuild(stored.snapshot.as_ref(), &stored.tail)?;
-        Ok((stored.snapshot, stored.tail, stored.stored_inbox, replica))
+        Ok((stored.snapshot, stored.tail, stored.last_inbox_id, replica))
     }
 
     /// Rebuilds the replica from the given snapshot and commands.

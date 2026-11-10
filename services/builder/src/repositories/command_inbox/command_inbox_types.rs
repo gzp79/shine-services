@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 /// The position of an entry in a stream's inbox: the Redis stream id `<ms>-<seq>`. Ordered
 /// numerically, which the string form is not (`"10-0"` sorts before `"9-0"`).
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct InboxId {
     ms: u64,
     seq: u64,
@@ -13,6 +13,10 @@ pub struct InboxId {
 impl InboxId {
     /// Before every entry: polling after it reads the inbox from its start.
     pub const START: InboxId = InboxId { ms: 0, seq: 0 };
+
+    pub const fn new(ms: u64, seq: u64) -> Self {
+        Self { ms, seq }
+    }
 
     pub fn parse(value: &str) -> Option<Self> {
         let (ms, seq) = value.split_once('-')?;
@@ -58,7 +62,7 @@ pub struct InboxEntry {
     pub inbox_id: InboxId,
     pub command_id: Uuid,
     pub user_id: Uuid,
-    pub data: String,
+    pub data: Vec<u8>,
 }
 
 /// The result of a poll.
@@ -66,8 +70,7 @@ pub struct InboxEntry {
 pub struct InboxBatch {
     pub entries: Vec<InboxEntry>,
     pub cursor: InboxId,
-    /// The poll filled its limit: there may be more entries after the cursor.
-    pub more: bool,
+    pub has_more: bool,
 }
 
 /// A hint that a stream may have something to do. The notifications are not reliable, so a consumer should also poll on its own timer.

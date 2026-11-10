@@ -197,7 +197,7 @@ async fn a_command_that_is_not_valid_for_the_kind_is_refused_and_not_queued() {
     let off_the_map = TestMessage::new_paint_command(90, 1, 1);
     let too_long = TestMessage::new_chat_command(&"a".repeat(MAX_COMMAND_BYTES + 1));
     h.registry.open(connection, &id).unwrap();
-    let push = |command: String| {
+    let push = |command: Vec<u8>| {
         let (registry, id) = (h.registry.clone(), id.clone());
         async move {
             registry
@@ -209,7 +209,7 @@ async fn a_command_that_is_not_valid_for_the_kind_is_refused_and_not_queued() {
     let results = [
         push(paint).await,
         push(off_the_map).await,
-        push("{not json".to_string()).await,
+        push(b"{not json".to_vec()).await,
         push(too_long).await,
     ];
 

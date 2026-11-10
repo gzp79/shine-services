@@ -1,6 +1,7 @@
 import { DEFAULT_USER_AGENT, joinURL } from '$lib/utils';
 import { IncomingMessage } from 'node:http';
 import { WebSocket } from 'ws';
+import { serialize } from './builder_bindings/postcard-bindings';
 
 export type WsConnectOptions = {
     // Omit to send no Cookie header at all (unauthenticated); pass a bad value to test a tampered sid.
@@ -39,13 +40,20 @@ export function wsHeaders(homeUrl: string, endpointUrl: string): WsConnectOption
 }
 
 // The stream frames mirror WSMessageRequest/WSMessageResponse in the service (internally tagged,
-// camelCased). Hashes are hex text, snapshot data is base64, and a command is the JSON of its kind.
+// camelCased). Hashes are hex text, snapshot data and commands are base64 of their postcard encoding.
 export type StreamCommandFrame = {
     version: number;
     commandId: string;
     userId: string;
-    command: Record<string, unknown>;
+    command: string;
 };
+
+// Commands travel as base64 of their postcard encoding. The serializers are generated from the Rust command
+// types (`pnpm gen:builder-bindings`); regenerate them whenever a command type changes.
+export const encodeCommand = (bytes: Uint8Array) => Buffer.from(bytes).toString('base64');
+export const addCommand = (text: string) => encodeCommand(serialize('ChatCommand', { tag: 'Add', value: { text } }));
+export const paintCommand = (x: number, y: number, color: number) =>
+    encodeCommand(serialize('PixelMapCommand', { tag: 'Paint', value: { x, y, color } }));
 
 export type StreamSnapshotFrame = { version: number; chainHash: string; stateHash: string; data: string };
 
@@ -174,7 +182,7 @@ export class StreamSession {
         this.send({ type: 'streamUnsubscribe', streamId });
     }
 
-    command(streamId: string, commandId: string, command: object): void {
+    command(streamId: string, commandId: string, command: string): void {
         this.send({ type: 'streamCommand', streamId, commandId, command });
     }
 

@@ -47,7 +47,7 @@ impl Server {
         self.replica.apply_next(&envelope).unwrap();
         self.entries.push(json!({
             "version": envelope.header.version, "commandId": id(command_id), "userId": id(user),
-            "command": serde_json::to_value(&command).unwrap()
+            "command": STANDARD.encode(postcard::to_allocvec(&command).unwrap())
         }));
     }
 
@@ -188,7 +188,11 @@ fn a_local_command_is_shown_at_once_and_stays_pending() {
     assert_eq!(sent["type"], "streamCommand");
     assert_eq!(sent["streamId"], "pixel-map:s");
     assert_eq!(sent["commandId"], json!(id(1)));
-    assert_eq!(sent["command"], json!({"type": "paint", "x": 4, "y": 5, "color": 9}));
+    // Variant 0, then the fields: `Paint { x: 4, y: 5, color: 9 }`.
+    assert_eq!(
+        STANDARD.decode(sent["command"].as_str().unwrap()).unwrap(),
+        [0, 4, 5, 9]
+    );
     assert_eq!(at(&client.view(), 4, 5), 9);
     assert_eq!(client.pending_count(), 1);
     assert_eq!(client.version(), 0);

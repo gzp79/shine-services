@@ -14,7 +14,7 @@ use tracing::instrument;
 pub struct StoredStream {
     pub snapshot: Option<StoredSnapshot>,
     pub tail: Vec<StoredCommand>,
-    pub stored_inbox: Option<InboxId>,
+    pub last_inbox_id: Option<InboxId>,
 }
 
 /// What the log made of an offered batch.
@@ -74,14 +74,11 @@ impl<I: CommandInboxDb, L: CommandLogDb> StreamLogService<I, L> {
         // snapshot are pruned. Everything is then derived from this one read, so no command appended
         // between two reads can claim inbox entries that are missing from the tail.
         let mut tail = self.commands_after(stream_id, (after - 1).max(0)).await?;
-        let stored_inbox = tail
-            .last()
-            .and_then(|command| command.inbox_id.as_deref())
-            .and_then(InboxId::parse);
+        let last_inbox_id = tail.last().map(|command| command.inbox_id);
         if tail.first().is_some_and(|command| command.version == after) {
             tail.remove(0);
         }
-        Ok(StoredStream { snapshot, tail, stored_inbox })
+        Ok(StoredStream { snapshot, tail, last_inbox_id })
     }
 
     /// Every command the log holds after the given version.
@@ -158,10 +155,7 @@ impl<I: CommandInboxDb, L: CommandLogDb> StreamLogService<I, L> {
     /// missed trim only leaves entries that are stored again, which the log refuses a second time.
     #[instrument(level = "debug", skip_all, fields(stream_id = %stream_id))]
     pub async fn trim_inbox(&self, stream_id: &StreamId, commands: &[StoredCommand]) {
-        let trim_through = commands
-            .iter()
-            .filter_map(|command| command.inbox_id.as_deref().and_then(InboxId::parse))
-            .max();
+        let trim_through = commands.iter().map(|command| command.inbox_id).max();
         if let Some(trim_through) = trim_through {
             if let Err(error) = self.inbox.trim(stream_id, &trim_through).await {
                 tracing::warn!("[{stream_id}] Failed to trim the inbox: {error:#?}");

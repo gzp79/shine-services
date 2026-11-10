@@ -21,8 +21,8 @@ impl Default for PixelMapState {
     }
 }
 
+/// Postcard encodes the variant by its index: new variants go to the end, none is reordered or removed.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
 pub enum PixelMapCommand {
     /// Sets the pixel to a color of the palette; color 0 erases it.
     Paint { x: u8, y: u8, color: u8 },

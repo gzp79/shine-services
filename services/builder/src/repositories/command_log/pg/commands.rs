@@ -1,6 +1,9 @@
-use crate::repositories::command_log::{
-    pg::{pg_command_log_db::PgCommandLogDb, PgCommandLogError},
-    StoredCommand,
+use crate::repositories::{
+    command_log::{
+        pg::{pg_command_log_db::PgCommandLogDb, PgCommandLogError},
+        StoredCommand,
+    },
+    pg_types::StoredInboxId,
 };
 use postgres_from_row::FromRow;
 use shine_game::replica::StreamId;
@@ -18,7 +21,7 @@ impl FromRow for StoredCommand {
         Ok(Self {
             version: row.try_get("version")?,
             command_id: row.try_get("command_id")?,
-            inbox_id: row.try_get("inbox_id")?,
+            inbox_id: row.try_get::<_, StoredInboxId>("inbox_id")?.0,
             user_id: row.try_get("user_id")?,
             data: row.try_get("data")?,
             command_hash: row.try_get::<_, i64>("command_hash")? as u64,

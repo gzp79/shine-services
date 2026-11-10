@@ -1,8 +1,4 @@
-// Not read by anything outside this module's own tests yet: the service layer that calls through
-// `CommandLogDb` is a later round.
-#![allow(dead_code)]
-
-use crate::models::CommandStreamError;
+use crate::{models::CommandStreamError, repositories::command_inbox::InboxId};
 use shine_game::replica::{decode_command, CommandEnvelope, CommandHeader, ReplayState};
 use uuid::Uuid;
 
@@ -18,9 +14,9 @@ pub struct StreamHead {
 pub struct StoredCommand {
     pub version: i64,
     pub command_id: Uuid,
-    pub inbox_id: Option<String>,
+    pub inbox_id: InboxId,
     pub user_id: Uuid,
-    pub data: String,
+    pub data: Vec<u8>,
     pub command_hash: u64,
     pub chain_hash: u64,
 }

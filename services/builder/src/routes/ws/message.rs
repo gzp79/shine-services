@@ -25,7 +25,7 @@ pub enum WSMessageRequest {
     StreamCommand {
         stream_id: String,
         command_id: Uuid,
-        command: serde_json::Value,
+        command: String,
     },
     Ping(PingRequest),
 }
@@ -45,7 +45,7 @@ pub struct WireStreamCommand {
     pub version: i64,
     pub command_id: Uuid,
     pub user_id: Uuid,
-    pub command: serde_json::Value,
+    pub command: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -94,17 +94,16 @@ fn hex(hash: u64) -> String {
 }
 
 fn wire_command(command: &StreamCommand) -> WireStreamCommand {
-    // Commands are stored as canonical JSON text; a client gets the JSON itself.
-    let parsed = serde_json::from_str(&command.command).unwrap_or_else(|err| {
-        tracing::error!("Stored command {} is not JSON: {err:#?}", command.version);
-        serde_json::Value::Null
-    });
     WireStreamCommand {
         version: command.version,
         command_id: command.command_id,
         user_id: command.user_id,
-        command: parsed,
+        command: STANDARD.encode(&command.command),
     }
+}
+
+pub fn decode_wire_command(command: &str) -> Option<Vec<u8>> {
+    STANDARD.decode(command).ok()
 }
 
 fn nack_reason(reason: CommandFailure) -> &'static str {

@@ -2,8 +2,8 @@
 //! reactions to the frames of the server. It does no I/O; the caller moves the frames.
 
 use crate::replica::{
-    decode_snapshot, parse_server_message, ClientMessage, CommandEnvelope, CommandHeader, ReplayState, Replica,
-    ServerMessage, StreamId, WireCommand,
+    decode_command, decode_snapshot, parse_server_message, ClientMessage, CommandEnvelope, CommandHeader, ReplayState,
+    Replica, ServerMessage, StreamId, WireCommand,
 };
 use base64::{engine::general_purpose::STANDARD, Engine};
 use std::collections::VecDeque;
@@ -269,10 +269,11 @@ fn frame(message: &ClientMessage) -> String {
 }
 
 fn command_frame<C: serde::Serialize>(stream_id: &StreamId, command_id: Uuid, command: &C) -> String {
+    let bytes = postcard::to_allocvec(command).expect("a command is always encodable");
     frame(&ClientMessage::StreamCommand {
         stream_id: stream_id.to_string(),
         command_id,
-        command: serde_json::to_value(command).expect("a command is always valid JSON"),
+        command: STANDARD.encode(bytes),
     })
 }
 
@@ -286,7 +287,10 @@ fn restore<S: ReplayState>(snapshot: &crate::replica::WireSnapshot) -> Option<Re
 
 /// Applies a command of the log to the replica; false if it cannot be applied.
 fn apply_wire<S: ReplayState>(replica: &mut Replica<S>, hashes: &mut VecDeque<(i64, u64)>, wire: &WireCommand) -> bool {
-    let Ok(command) = serde_json::from_value::<S::Command>(wire.command.clone()) else {
+    let Ok(bytes) = STANDARD.decode(&wire.command) else {
+        return false;
+    };
+    let Ok(command) = decode_command::<S>(&bytes) else {
         return false;
     };
     // The wire carries no chain hash: the replica continues its own chain, the state hashes of the
