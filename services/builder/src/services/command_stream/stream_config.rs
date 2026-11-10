@@ -18,10 +18,10 @@ pub struct StreamConfig {
     #[serde(default = "duration::seconds::<10>", with = "duration::seconds")]
     #[validate(custom(function = "non_zero_duration"))]
     pub inbox_recovery_poll_interval: Duration,
-    /// Pushes wait once the inbox holds this many entries...
+    /// Pushes wait once the inbox holds this many entries.
     #[serde(default = "consts::usize::<1024>")]
     pub inbox_backpressure_high: usize,
-    /// ...until it is down to this many.
+    /// Pushes wait until it is down to this many entries once the backpressure is triggered.
     #[serde(default = "consts::usize::<256>")]
     pub inbox_backpressure_low: usize,
     /// Milliseconds between the checks of the inbox length for the backpressure.

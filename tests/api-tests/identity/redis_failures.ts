@@ -5,19 +5,19 @@ test.describe('Redis failure tests', { tag: '@infrastructure' }, () => {
     // Injected toxics affect every service, hence these tests must never overlap with others.
     test.describe.configure({ mode: 'serial' });
 
-    test('Redis connection failure shall return 503 and recover', async ({ api, toxiproxy }) => {
+    test('Redis connection failure shall return 503 and recover', async ({ api, infraOutage }) => {
         const user = await api.testUsers.createGuest();
 
         // Take Redis down
-        const redisProxy = await toxiproxy.get('redis');
-        await redisProxy.update({ enabled: false, listen: redisProxy.listen, upstream: redisProxy.upstream });
+        const outage = infraOutage('identity');
+        await outage.stopRedis();
 
         // Should fail with 503
         const failResponse = await api.user.getUserInfoRequest(user.sid, 'fast');
         expect(failResponse).toHaveStatus(503);
 
         // Restore
-        await redisProxy.update({ enabled: true, listen: redisProxy.listen, upstream: redisProxy.upstream });
+        await outage.startRedis();
 
         // Should recover
         await waitForCondition(
@@ -36,18 +36,11 @@ test.describe('Redis failure tests', { tag: '@infrastructure' }, () => {
         expect(recovery.userId).toEqual(user.userId);
     });
 
-    test('Redis high latency shall not hang requests', async ({ api, toxiproxy }) => {
+    test('Redis high latency shall not hang requests', async ({ api, infraOutage }) => {
         const user = await api.testUsers.createGuest();
 
         // Inject 10-second latency
-        const redisProxy = await toxiproxy.get('redis');
-        await redisProxy.addToxic({
-            name: 'slow',
-            type: 'latency',
-            stream: 'downstream',
-            toxicity: 1.0,
-            attributes: { latency: 10000, jitter: 0 }
-        });
+        await infraOutage('identity').slowRedis(10000);
 
         // Should timeout before hanging (< 10s)
         const start = Date.now();

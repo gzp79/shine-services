@@ -9,7 +9,7 @@ use crate::{
     },
     services::command_stream::{stream_persistence::PersistenceWork, PersistResult, StreamConfig, StreamEgress},
 };
-use shine_game::replica::{decode_command, fold_chain_hash, Command, ReplayState, StreamId};
+use shine_game::replica::{decode_command, fold_chain_hash, Checkpoint, Command, ReplayState, StreamId};
 use std::{collections::HashMap, marker::PhantomData, sync::Arc};
 use uuid::Uuid;
 
@@ -40,6 +40,8 @@ where
     stored_inbox: Option<InboxId>,
 
     subscribers: HashMap<Uuid, Option<i64>>,
+    /// The last checkpoint the persistence confirmed that the subscribers were not told yet.
+    pending_checkpoint: Option<Checkpoint>,
     _state: PhantomData<fn() -> S>,
 }
 
@@ -64,6 +66,7 @@ where
             read_index: InboxId::START,
             stored_inbox: None,
             subscribers: HashMap::new(),
+            pending_checkpoint: None,
             _state: PhantomData,
         }
     }
@@ -114,7 +117,15 @@ where
     pub fn accept(&mut self, result: PersistResult) -> Result<(), CommandStreamError> {
         match result {
             PersistResult::Current => {}
-            PersistResult::Advanced { canonical, snapshot, .. } => self.accept_canonical(&canonical, snapshot),
+            PersistResult::Advanced {
+                canonical,
+                snapshot,
+                checkpoint,
+            } => {
+                self.accept_canonical(&canonical, snapshot);
+                // Only the latest one matters, an older one that was not sent yet is obsolete.
+                self.pending_checkpoint = checkpoint.or(self.pending_checkpoint.take());
+            }
             PersistResult::Reloaded {
                 snapshot,
                 tail,
@@ -198,6 +209,16 @@ where
             let message =
                 follow_up.unwrap_or_else(|| sync.get_or_insert_with(|| Arc::new(self.sync_message())).clone());
             self.send_to_subscriber(connection_id, message, head).await;
+        }
+
+        // Every subscriber has the commands up to the checkpoint by now, so they can compare their state.
+        if let Some(checkpoint) = self.pending_checkpoint.take() {
+            let message = Arc::new(StreamMessage::Checkpoint {
+                stream_id: self.stream_id.clone(),
+                version: checkpoint.version,
+                state_hash: checkpoint.state_hash,
+            });
+            self.broadcast(message).await;
         }
     }
 
@@ -301,8 +322,7 @@ where
         self.snapshot = snapshot;
         self.confirmed = tail;
         self.optimistic.clear();
-        // The reload read the log, so everything it holds is taken; re-reading the inbox from there on
-        // takes the commands of this instance that it did not store again.
+        self.pending_checkpoint = None;
         self.read_index = stored_inbox.unwrap_or(InboxId::START);
         self.stored_inbox = stored_inbox;
         self.reset_subscribers();

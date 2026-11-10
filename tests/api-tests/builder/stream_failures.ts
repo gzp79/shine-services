@@ -44,19 +44,19 @@ test.describe('Builder stream failure tests', { tag: '@infrastructure' }, () => 
     test('Subscribing while Postgres is down shall be told the stream is unsynced and work again after', async ({
         homeUrl,
         builderWSUrl,
-        toxiproxy
+        infraOutage
     }) => {
+        const outage = infraOutage('builder');
         const a = await connect(homeUrl, builderWSUrl);
         const streamId = newStreamId('room');
 
-        const postgres = await toxiproxy.get('postgres');
-        await postgres.update({ enabled: false, listen: postgres.listen, upstream: postgres.upstream });
+        await outage.stopPostgres();
 
         // The stream cannot be loaded, so the worker gives up and tells the subscriber who was waiting for it.
         a.send({ type: 'streamSubscribe', streamId });
         await a.waitFrame('streamUnsynced', (f) => f.streamId === streamId, 20_000);
 
-        await postgres.update({ enabled: true, listen: postgres.listen, upstream: postgres.upstream });
+        await outage.startPostgres();
 
         // The next subscribe starts the stream again; the pools of the builder may need a try to drop the
         // connections that were cut.
@@ -73,14 +73,14 @@ test.describe('Builder stream failure tests', { tag: '@infrastructure' }, () => 
     test('Command while Redis is down shall be refused as failed and the stream shall carry on after', async ({
         homeUrl,
         builderWSUrl,
-        toxiproxy
+        infraOutage
     }) => {
+        const outage = infraOutage('builder');
         const a = await connect(homeUrl, builderWSUrl);
         const streamId = newStreamId('room');
         await a.subscribe(streamId);
 
-        const redis = await toxiproxy.get('redis');
-        await redis.update({ enabled: false, listen: redis.listen, upstream: redis.upstream });
+        await outage.stopRedis();
 
         // The commands wait in Redis; that they cannot be queued is the sender's to know, it may send again.
         const refused = randomUUID();
@@ -90,7 +90,7 @@ test.describe('Builder stream failure tests', { tag: '@infrastructure' }, () => 
             reason: 'failed'
         });
 
-        await redis.update({ enabled: true, listen: redis.listen, upstream: redis.upstream });
+        await outage.startRedis();
 
         // A refused command may or may not have been queued, so the later ones are matched by their ids. The
         // worker looks at the inbox again at the latest on its backstop tick.

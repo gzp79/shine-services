@@ -11,8 +11,13 @@
       "heartbeat": 300,
       "sessionCheck": 2
     },
-    "chat": {
-      "syncIntervalSeconds": 1
+    "streams": {
+      "chat": {
+        "inboxRecoveryPollInterval": 1
+      },
+      "pixelMap": {
+        "inboxRecoveryPollInterval": 1
+      }
     },
     "db": {
       "redisCns": "redis://redis.mockbox.foo:6379?timeout=3000&pool_timeout=5000",

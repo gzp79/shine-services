@@ -28,6 +28,7 @@ if (enableLogging) {
 
 const config: PlaywrightTestConfig<ServiceOptions> = {
     testDir: './',
+    globalSetup: './fixtures/global_setup.ts',
     fullyParallel: true,
     forbidOnly: isCiPipeline,
     retries: isCiPipeline ? 2 : 0,

@@ -15,6 +15,7 @@ use crate::{
 };
 use shine_game::replica::{ChatState, StreamId};
 use shine_test::test;
+use std::sync::Arc;
 use uuid::Uuid;
 
 type Relay = StreamRelay<ChatState, RedisCommandInboxDb, TestEgress>;
@@ -414,5 +415,113 @@ async fn a_failed_persistence_is_an_error_of_the_relay_and_changes_nothing() {
     assert!(
         relay.work_to_persist().is_some(),
         "what is not durable is still to be persisted"
+    );
+}
+
+/// Like `setup`, with a snapshot at every second version, so a checkpoint comes with a few commands.
+async fn setup_snapshot_every_two(stream_id: &StreamId, inbox: &TestInbox, log: &TestLog) -> (Relay, Persistence) {
+    let config = StreamConfig {
+        log_snapshot_every: 2,
+        ..StreamConfig::default()
+    };
+    let mut persistence = Persistence::new(
+        stream_id.clone(),
+        StreamLogService::new(inbox.db.clone(), log.db.clone(), config),
+    );
+    let mut relay = Relay::new(
+        stream_id.clone(),
+        inbox.db.clone(),
+        TestEgress::default(),
+        StreamConfig::default(),
+    );
+    let loaded = persistence.persist(relay.reconcile_work()).await;
+    relay.accept(loaded).unwrap();
+    (relay, persistence)
+}
+
+/// Versions the given commands, makes them durable and takes the answer.
+async fn ingest_and_persist(
+    relay: &mut Relay,
+    persistence: &mut Persistence,
+    inbox: &TestInbox,
+    stream_id: &StreamId,
+    texts: &[&str],
+) {
+    for text in texts {
+        queue(inbox, stream_id, &TestMessage::new_chat_command(text)).await;
+    }
+    relay.ingest().await.unwrap();
+    let result = persistence.persist(relay.work_to_persist().unwrap()).await;
+    relay.accept(result).unwrap();
+}
+
+#[test]
+async fn a_confirmed_checkpoint_is_sent_after_the_commands_it_covers() {
+    let inbox = TestInbox::from_env().await;
+    let log = TestLog::from_env().await;
+    let stream_id = TestStreamId::new_chat();
+    let (mut relay, mut persistence) = setup_snapshot_every_two(&stream_id, &inbox, &log).await;
+    let connection = Uuid::new_v4();
+    relay.subscribe(connection);
+
+    ingest_and_persist(&mut relay, &mut persistence, &inbox, &stream_id, &["a", "b", "c"]).await;
+    assert!(
+        relay.egress().messages(connection).is_empty(),
+        "accepting the answer tells nobody"
+    );
+    relay.deliver().await;
+    relay.deliver().await;
+
+    assert_eq!(
+        TestEgress::kinds(&relay.egress().messages(connection)),
+        ["sync:1", "checkpoint:2"],
+        "the sync holds the snapshot at 2 and the command after it, then the checkpoint comes once"
+    );
+}
+
+#[test]
+async fn only_the_latest_unsent_checkpoint_is_sent() {
+    let inbox = TestInbox::from_env().await;
+    let log = TestLog::from_env().await;
+    let stream_id = TestStreamId::new_chat();
+    let (mut relay, mut persistence) = setup_snapshot_every_two(&stream_id, &inbox, &log).await;
+    let connection = Uuid::new_v4();
+    relay.subscribe(connection);
+
+    ingest_and_persist(&mut relay, &mut persistence, &inbox, &stream_id, &["a", "b"]).await;
+    ingest_and_persist(&mut relay, &mut persistence, &inbox, &stream_id, &["c", "d"]).await;
+    relay.deliver().await;
+
+    assert_eq!(
+        TestEgress::kinds(&relay.egress().messages(connection)),
+        ["sync:0", "checkpoint:4"],
+        "the snapshot at 4 covers all the commands, the first checkpoint at 2 is obsolete"
+    );
+}
+
+#[test]
+async fn a_reload_drops_the_checkpoint_that_was_not_sent() {
+    let inbox = TestInbox::from_env().await;
+    let log = TestLog::from_env().await;
+    let stream_id = TestStreamId::new_chat();
+    let (mut relay, mut persistence) = setup_snapshot_every_two(&stream_id, &inbox, &log).await;
+    let connection = Uuid::new_v4();
+    relay.subscribe(connection);
+
+    ingest_and_persist(&mut relay, &mut persistence, &inbox, &stream_id, &["a", "b"]).await;
+    relay
+        .accept(PersistResult::Reloaded {
+            snapshot: None,
+            tail: Arc::from(Vec::new()),
+            stored_inbox: None,
+            reason: "test".into(),
+        })
+        .unwrap();
+    relay.deliver().await;
+
+    assert_eq!(
+        TestEgress::kinds(&relay.egress().messages(connection)),
+        ["sync:0"],
+        "the subscriber starts again from the log, there is nothing to compare"
     );
 }

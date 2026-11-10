@@ -6,22 +6,14 @@ import { TestUser, TestUserHelper } from '$lib/api/test_user';
 import { TokenAPI } from '$lib/api/token_api';
 import { UserAPI } from '$lib/api/user_api';
 import OAuth2MockServer from '$lib/mocks/oauth2';
-import { SharedServiceName, waitForCondition } from '$lib/utils';
-import { Toxiproxy } from 'toxiproxy-node-client';
+import { SharedServiceName } from '$lib/utils';
 import { expect as authExpect } from './expect/auth_exts';
 import { expect as commonExpect } from './expect/common';
 import { expect as mailExpect } from './expect/mail';
 import { expect as responseExpect } from './expect/response';
+import { InfraOutage, OutageService } from './infra_outage';
 
 export const expect = mergeExpects(commonExpect, responseExpect, authExpect, mailExpect);
-
-type ProxyState = { enabled: boolean; toxics: unknown[] };
-
-async function hasInjectedFault(toxiproxyUrl: string): Promise<boolean> {
-    const response = await fetch(`${toxiproxyUrl}/proxies`);
-    const proxies = (await response.json()) as Record<string, ProxyState>;
-    return Object.values(proxies).some((proxy) => !proxy.enabled || proxy.toxics.length > 0);
-}
 
 export type ServiceOptions = {
     enableRequestLogging: boolean;
@@ -52,7 +44,11 @@ export type Api = {
 export type ServiceTestFixture = {
     api: Api;
     serviceUrl: (serviceName: SharedServiceName) => string;
-    toxiproxy: Toxiproxy;
+    /**
+     * Breaks the database or the cache of the given services for the test, see {@link InfraOutage}. The services
+     * have to work again by the end of the test.
+     */
+    infraOutage: (...services: [OutageService, ...OutageService[]]) => InfraOutage;
 };
 
 export const test = base.extend<ServiceTestFixture, ServiceOptions>({
@@ -86,43 +82,24 @@ export const test = base.extend<ServiceTestFixture, ServiceOptions>({
         { scope: 'worker' }
     ],
 
-    // Every service reaches its database through toxiproxy, hence a fault left behind by any test
-    // breaks the whole suite, not just the fault-injection tests. Restore a known good state both
-    // before and after each test.
-    toxiproxy: [
-        async ({ toxiproxyUrl, identityUrl, defaultRedirects, enableRequestLogging }, use) => {
-            const toxiproxy = new Toxiproxy(toxiproxyUrl);
+    infraOutage: [
+        async ({ toxiproxyUrl, homeUrl, identityUrl, builderWSUrl, defaultRedirects, enableRequestLogging }, use) => {
+            const outages: InfraOutage[] = [];
+            await use((...services) => {
+                const outage = new InfraOutage(
+                    { toxiproxyUrl, homeUrl, identityUrl, builderWSUrl, defaultRedirects, enableRequestLogging },
+                    services
+                );
+                outages.push(outage);
+                return outage;
+            });
 
-            // A test that restores its proxy itself still leaves the services with broken
-            // connections, so the state of toxiproxy alone cannot tell whether a fault was
-            // injected. Track whether the test reached for a proxy at all.
-            let faultInjected = false;
-            const getProxy = toxiproxy.get.bind(toxiproxy);
-            toxiproxy.get = async (name: string) => {
-                faultInjected = true;
-                return await getProxy(name);
-            };
-
-            const restore = async (faulted: boolean) => {
-                faulted = faulted || (await hasInjectedFault(toxiproxyUrl));
-                await toxiproxy.reset();
-                if (faulted) {
-                    // Cutting the proxied connections leaves dead sockets in the service pools that
-                    // are evicted only once a request stumbles on them. Drain them with a request
-                    // covering both the database and the cache, so the fault stops here.
-                    const auth = new AuthAPI(identityUrl, defaultRedirects, enableRequestLogging);
-                    await waitForCondition(async () => await auth.loginAsGuestUser(), {
-                        timeout: 15000,
-                        errorMessage: 'Service did not recover from the injected fault'
-                    });
-                }
-            };
-
-            await restore(false);
-            await use(toxiproxy);
-            await restore(faultInjected);
+            // Whatever happened in the test, the outage is cleared and the services have to work again.
+            for (const outage of outages) {
+                await outage.dispose();
+            }
         },
-        { scope: 'test', auto: true }
+        { scope: 'test' }
     ],
 
     api: [
