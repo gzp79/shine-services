@@ -8,6 +8,11 @@ export default defineConfig(({ command }) => {
 
     return {
         plugins: [wasmPackPlugin({ profiling: heapProfiling })],
+        resolve: {
+            alias: {
+                '#game-bindings': fileURLToPath(new URL('../game-bindings/index.ts', import.meta.url))
+            }
+        },
         define: {
             'import.meta.env.VITE_HEAP_PROFILING': JSON.stringify(heapProfiling)
         },
@@ -17,6 +22,8 @@ export default defineConfig(({ command }) => {
                       host: 'local.scytta.com',
                       port: 5173,
                       strictPort: true,
+                      // The shared game bindings live next to the web client.
+                      fs: { allow: ['.', '../game-bindings'] },
                       https: {
                           cert: readFileSync(fileURLToPath(new URL('../../certificates/scytta.crt', import.meta.url))),
                           key: readFileSync(fileURLToPath(new URL('../../certificates/scytta.key', import.meta.url)))

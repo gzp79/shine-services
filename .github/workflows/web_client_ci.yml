@@ -64,6 +64,11 @@ jobs:
           pnpm install
           pnpm run mkcert
 
+      - name: Check game bindings are up to date
+        run: |
+          cargo run --manifest-path crates/shine-game/tools/Cargo.toml -- ts-bindings --out client/game-bindings/generated
+          git diff --exit-code -- client/game-bindings
+
       - name: Build
         working-directory: client/web
         run: |

@@ -2,6 +2,7 @@ use postcard_bindgen::PostcardBindings;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, PostcardBindings)]
+#[serde(rename_all = "camelCase")]
 pub struct ChatMessage {
     pub id: Vec<u8>,
     pub user_id: Vec<u8>,
@@ -15,6 +16,7 @@ pub struct ChatState {
 }
 
 #[derive(Serialize, Deserialize, PostcardBindings)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum ChatCommand {
     Add { text: String },
     Remove { id: Vec<u8> },

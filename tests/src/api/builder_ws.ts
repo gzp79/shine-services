@@ -1,7 +1,7 @@
+import { ChatCommand, PixelMapCommand, toBase64 } from '#game-bindings';
 import { DEFAULT_USER_AGENT, joinURL } from '$lib/utils';
 import { IncomingMessage } from 'node:http';
 import { WebSocket } from 'ws';
-import { serialize } from './builder_bindings/postcard-bindings';
 
 export type WsConnectOptions = {
     // Omit to send no Cookie header at all (unauthenticated); pass a bad value to test a tampered sid.
@@ -48,12 +48,11 @@ export type StreamCommandFrame = {
     command: string;
 };
 
-// Commands travel as base64 of their postcard encoding. The serializers are generated from the Rust command
-// types (`pnpm gen:builder-bindings`); regenerate them whenever a command type changes.
-export const encodeCommand = (bytes: Uint8Array) => Buffer.from(bytes).toString('base64');
-export const addCommand = (text: string) => encodeCommand(serialize('ChatCommand', { tag: 'Add', value: { text } }));
+// Commands travel as base64 of their postcard encoding; the helpers come from the shared game bindings.
+export const encodeCommand = toBase64;
+export const addCommand = (text: string) => ChatCommand.encode(ChatCommand.add(text));
 export const paintCommand = (x: number, y: number, color: number) =>
-    encodeCommand(serialize('PixelMapCommand', { tag: 'Paint', value: { x, y, color } }));
+    PixelMapCommand.encode(PixelMapCommand.paint(x, y, color));
 
 export type StreamSnapshotFrame = { version: number; chainHash: string; stateHash: string; data: string };
 

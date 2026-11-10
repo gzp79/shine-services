@@ -7,6 +7,7 @@ pub struct PixelMapState {
 }
 
 #[derive(Serialize, Deserialize, PostcardBindings)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum PixelMapCommand {
     Paint { x: u8, y: u8, color: u8 },
 }
