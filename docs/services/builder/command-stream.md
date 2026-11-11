@@ -4,7 +4,7 @@
 
 ## Problem
 
-Collaborative state such as chat or a shared pixel map needs one ordered command history, cheap writes, fast subscriber feedback and bounded catch-up for late joiners. Several builder instances may serve the same stream, so none is the authority. Redis takes short-lived command proposals and wakes workers, Postgres owns the canonical order and the snapshots, and every loaded worker serves an optimistic in-memory tail that it corrects when durable history disagrees. The client-facing side is [Hub Streams](hub.md).
+Collaborative state such as chat or a shared pixel map needs one ordered command history, cheap writes, fast subscriber feedback and bounded catch-up for late joiners. Several builder instances may serve the same stream, so none is the authority. Redis takes short-lived command proposals and wakes workers, Postgres owns the canonical order and the snapshots, and every loaded worker serves an optimistic in-memory tail that it corrects when durable history disagrees. The client-facing side is [Hub](hub.md).
 
 A **snapshot** is replayed state at a version. A **chain hash** covers the ordered command envelopes and lets workers and clients detect incompatible history.
 

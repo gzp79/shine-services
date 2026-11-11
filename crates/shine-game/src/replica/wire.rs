@@ -1,5 +1,3 @@
-//! The JSON frames of the stream protocol, as the web client sees them (`docs/services/builder/hub.md`).
-
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
