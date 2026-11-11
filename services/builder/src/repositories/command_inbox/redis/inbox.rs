@@ -47,7 +47,7 @@ pub async fn push(
     InboxId::parse(&id).ok_or_else(|| RedisCommandInboxError::Malformed(format!("stream id {id:?}")))
 }
 
-#[instrument(level = "debug", skip_all, fields(stream_id = %stream_id, limit))]
+#[instrument(level = "trace", skip_all, fields(stream_id = %stream_id, limit))]
 pub async fn poll(
     db: &RedisCommandInboxDb,
     stream_id: &StreamId,
@@ -107,7 +107,7 @@ pub async fn trim(
     Ok(removed)
 }
 
-#[instrument(level = "debug", skip_all, fields(stream_id = %stream_id))]
+#[instrument(level = "trace", skip_all, fields(stream_id = %stream_id))]
 pub async fn len(db: &RedisCommandInboxDb, stream_id: &StreamId) -> Result<usize, RedisCommandInboxError> {
     let mut client = db.client().await?;
     let len: usize = redis::cmd("XLEN")

@@ -141,19 +141,12 @@
     {
       "label": "identity: local",
       "type": "shell",
-      "command": "cargo run -p shine-identity --release -- test",
+      "command": "cargo run -p shine-identity --release -- ${input:config-stage}",
       "options": {
         "cwd": "services/identity",
         "env": {
-          "RUST_BACKTRACE": "full",
-          "SHINE--SERVICE--TLS--CERT": "../../certificates/scytta.crt",
-          "SHINE--SERVICE--TLS--KEY": "../../certificates/scytta.key",
-          "SHINE--SERVICE--PORT": "8443",
-          "SHINE--TELEMETRY--METRICS--TYPE": "otlp",
-          "SHINE--TELEMETRY--METRICS--ENDPOINT": "http://localhost:4317",
-          "SHINE--TELEMETRY--TRACING--TYPE": "otlp",
-          "SHINE--TELEMETRY--TRACING--ENDPOINT": "http://localhost:4317",
-          "SHINE--TELEMETRY--DEFAULT_LEVEL": "INFO,shine=DEBUG"
+          "RUST_LOG": "info,shine_game=trace,shine_forge=trace,shine_infra=trace,shine_builder=debug,test_map=trace",
+          "RUST_BACKTRACE": "full"
         }
       },
       "problemMatcher": [
@@ -181,22 +174,13 @@
     {
       "label": "builder: local",
       "type": "shell",
-      "command": "cargo run -p shine-builder --release -- test",
+      "command": "cargo run -p shine-builder --release -- ${input:config-stage}",
       "options": {
         "cwd": "services/builder",
         "env": {
-          "RUST_LOG": "info,shine_game=trace,shine_forge=trace,shine_infra=trace,test_map=trace",
-          "RUST_BACKTRACE": "full",
-          "SHINE--SERVICE--TLS--CERT": "../../certificates/scytta.crt",
-          "SHINE--SERVICE--TLS--KEY": "../../certificates/scytta.key",
-          "SHINE--SERVICE--PORT": "8444",
-          "SHINE--TELEMETRY--METRICS--TYPE": "otlp",
-          "SHINE--TELEMETRY--METRICS--ENDPOINT": "http://localhost:4317",
-          "SHINE--TELEMETRY--LOGGING--TYPE": "otlp",
-          "SHINE--TELEMETRY--LOGGING--ENDPOINT": "http://localhost:4317",
-          "SHINE--TELEMETRY--TRACING--TYPE": "otlp",
-          "SHINE--TELEMETRY--TRACING--ENDPOINT": "http://localhost:4317",
-          "SHINE--TELEMETRY--DEFAULT_LEVEL": "info,shine_game=trace,shine_forge=trace,shine_infra=trace,test_map=trace"
+          "_RUST_LOG": "info,shine_game=trace,shine_forge=trace,shine_infra=trace,shine_builder=debug,test_map=trace",
+          "RUST_LOG": "info",
+          "RUST_BACKTRACE": "full"
         }
       },
       "problemMatcher": [
@@ -206,6 +190,16 @@
     }
   ],
   "inputs": [
+    {
+      "type": "pickString",
+      "id": "config-stage",
+      "description": "Select config (local: dev overrides on top of test; test: as used by CI)",
+      "options": [
+        "local",
+        "test"
+      ],
+      "default": "local"
+    },
     {
       "type": "pickString",
       "id": "projects",

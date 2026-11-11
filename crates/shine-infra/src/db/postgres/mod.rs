@@ -29,14 +29,16 @@ pub use tracing as __tracing;
 #[macro_export]
 macro_rules! __pg_span {
     ($id:ident, $op:literal, $stmt:expr) => {
-        $crate::db::postgres::__tracing::trace_span!(
-            "pg",
-            otel.name = concat!(stringify!($id), "::", $op),
-            otel.kind = "client",
-            db.system = "postgresql",
-            db.operation.name = $op,
-            db.query.text = %$stmt,
-        )
+        $crate::telemetry::child_span(|| {
+            $crate::db::postgres::__tracing::trace_span!(
+                "pg",
+                otel.name = concat!(stringify!($id), "::", $op),
+                otel.kind = "client",
+                db.system = "postgresql",
+                db.operation.name = $op,
+                db.query.text = %$stmt,
+            )
+        })
     };
 }
 

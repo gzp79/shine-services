@@ -62,6 +62,8 @@ pub enum Tracing {
 pub struct TelemetryConfig {
     pub default_level: Option<String>,
     pub allow_reconfigure: bool,
+    #[serde(default)]
+    pub root_span_origin: bool,
     pub logging: Logging,
     pub metrics: Metering,
     pub tracing: Tracing,

@@ -1,7 +1,8 @@
 use crate::telemetry::log_metrics::LogMetricsLayer;
 use crate::telemetry::otel_http::TRACING_TARGET;
 use crate::telemetry::{
-    ConsoleLogFormat, Logging, Metering, OtelLayer, TelemetryBuildError, TelemetryConfig, TelemetryError, Tracing,
+    ConsoleLogFormat, Logging, Metering, OtelLayer, RootSpanOriginLayer, TelemetryBuildError, TelemetryConfig,
+    TelemetryError, Tracing,
 };
 use opentelemetry::{
     global,
@@ -272,6 +273,8 @@ impl TelemetryService {
             Some(self.tracing_ot(config, resource, scope)?.boxed())
         };
         let sinks = Layer::and_then(logging_layer, tracing_layer);
+        let root_origin = config.root_span_origin.then(RootSpanOriginLayer::new);
+        let sinks = Layer::and_then(sinks, root_origin);
 
         if config.allow_reconfigure {
             Self::set_global_tracing_pipeline(

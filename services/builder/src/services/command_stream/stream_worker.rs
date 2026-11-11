@@ -13,6 +13,7 @@ use tokio::{
     task::JoinHandle,
     time::{self, MissedTickBehavior},
 };
+use tracing::{Instrument, Span};
 use uuid::Uuid;
 
 /// Only one batch per stream may be in flight, so nothing is gained by a deeper queue.
@@ -112,6 +113,16 @@ struct PersistenceRequest {
     response: oneshot::Sender<PersistResult>,
 }
 
+/// Only a batch of commands is traced as a unit of work; a reconcile, or a pass with nothing to store, is idle noise.
+fn persist_span(stream_id: &StreamId, work: &PersistenceWork) -> Span {
+    match work {
+        PersistenceWork::Persist { commands, .. } if !commands.is_empty() => {
+            tracing::info_span!("persist stream", stream_id = %stream_id, commands = commands.len())
+        }
+        _ => tracing::trace_span!("persist stream", stream_id = %stream_id),
+    }
+}
+
 async fn run_persistence<S, I, L>(
     mut persistence: StreamPersistence<S, I, L>,
     mut requests: mpsc::Receiver<PersistenceRequest>,
@@ -121,7 +132,8 @@ async fn run_persistence<S, I, L>(
     L: CommandLogDb + 'static,
 {
     while let Some(PersistenceRequest { work, response }) = requests.recv().await {
-        response.send(persistence.persist(work).await).ok();
+        let span = persist_span(persistence.stream_id(), &work);
+        response.send(persistence.persist(work).instrument(span).await).ok();
     }
 }
 

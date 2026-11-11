@@ -55,7 +55,7 @@ pub struct HubStats {
 pub struct HubConfig {
     #[serde(default = "duration::seconds::<300>", with = "duration::seconds")]
     pub heartbeat: Duration,
-    #[serde(default = "duration::seconds::<60>", with = "duration::seconds")]
+    #[serde(default = "duration::seconds::<900>", with = "duration::seconds")]
     pub session_check: Duration,
     #[serde(default = "duration::seconds::<10>", with = "duration::seconds")]
     pub stream_shutdown_timeout: Duration,
@@ -67,7 +67,7 @@ impl HubConfig {
     pub const fn defaults() -> Self {
         Self {
             heartbeat: duration::seconds::<300>(),
-            session_check: duration::seconds::<60>(),
+            session_check: duration::seconds::<900>(),
             stream_shutdown_timeout: duration::seconds::<10>(),
             ping_enabled: true,
         }

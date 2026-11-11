@@ -1,0 +1,43 @@
+{
+  "beforeLayers": ["file://../server_config_test.json", "file://server_config.test.json"],
+  "afterLayers": ["environment", "file?://../../temp/server_config.json"],
+
+  "service": {
+    "port": 8444,
+    "tls": {
+      "cert": "../../certificates/scytta.crt",
+      "key": "../../certificates/scytta.key"
+    }
+  },
+
+  "telemetry": {
+    "defaultLevel": "info,shine_game=trace,shine_forge=trace,shine_infra=trace,shine_builder=debug,test_map=trace",
+    "rootSpanOrigin": true,
+    "logging": {
+      "type": "otlp",
+      "endpoint": "http://localhost:4317"
+    },
+    "metrics": {
+      "type": "otlp",
+      "endpoint": "http://localhost:4317"
+    },
+    "tracing": {
+      "type": "otlp",
+      "endpoint": "http://localhost:4317"
+    }
+  },
+
+  "builder": {
+    "hub": {
+      "sessionCheck": 900
+    },
+    "streams": {
+      "chat": {
+        "inboxRecoveryPollInterval": 60
+      },
+      "pixelMap": {
+        "inboxRecoveryPollInterval": 60
+      }
+    }
+  }
+}

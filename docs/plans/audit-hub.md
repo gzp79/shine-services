@@ -102,9 +102,12 @@ Fix: spawn through a supervisor (restart consumers, or trip the health check and
 
 - `tasks/session_checker.rs:34-54`: `get_current_user` is awaited for every tracked connection one after another every 60 s. With N connections and per-lookup latency L, a tick takes N*L (10k * 2 ms = 20 s; 100k exceeds the interval and `MissedTickBehavior::Delay` stretches it).
 - While `on_tick` runs, the `tokio::select!` in `connection_tracker.rs:~125` does not drain the subscription, so lifecycle events pile up in the unbounded queue.
-- Revoked sessions keep their sockets for at least `session_check` (60 s) plus tick time; a logged-out user keeps live stream access. Stream authorization is not re-evaluated at all after subscribe.
+- Revoked sessions keep their sockets for at least `session_check` (now 900 s in prod, was 60 s) plus tick time; a logged-out user keeps live stream access. Stream authorization is not re-evaluated at all after subscribe.
+- `get_current_user` also extends the session TTL (`current_user_service.rs:125-131`). For a WebSocket-only user the checker is the only keepalive, so `session_check` must stay well below `sessionTtl` (1800 s).
 
 Fix: bounded-concurrency checks (`buffer_unordered(32)` or a batched session lookup); revoke by event (publish on logout) rather than polling only.
+
+Cheaper check (allows a short interval again without the cost or the TTL side effect): add a read-only existence check to `CurrentUserService` that only tests the sentinel key (`EXISTS`, or one `MGET`/pipeline for all tracked connections per tick) and does not read the session data or run the `EXPIRE` pipeline. Keep the TTL refresh on the normal request path (and, if needed, a rare refresh in the checker, e.g. every 15 min), so the frequent check stays a single cheap Redis round-trip per tick.
 
 ## 9. Low: O(n) `remove_connection_by_id`
 

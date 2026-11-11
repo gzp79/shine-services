@@ -1,0 +1,25 @@
+{
+  "beforeLayers": ["file://../server_config_test.json", "file://server_config.test.json"],
+  "afterLayers": ["environment"],
+
+  "service": {
+    "port": 8443,
+    "tls": {
+      "cert": "../../certificates/scytta.crt",
+      "key": "../../certificates/scytta.key"
+    }
+  },
+
+  "telemetry": {
+    "defaultLevel": "INFO,shine=DEBUG",
+    "rootSpanOrigin": true,
+    "metrics": {
+      "type": "otlp",
+      "endpoint": "http://localhost:4317"
+    },
+    "tracing": {
+      "type": "otlp",
+      "endpoint": "http://localhost:4317"
+    }
+  }
+}

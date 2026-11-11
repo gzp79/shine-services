@@ -12,7 +12,7 @@
   "builder": {
     "hub": {
       "heartbeat": 300,
-      "sessionCheck": 60,
+      "sessionCheck": 900,
       "pingEnabled": false
     },
     "ws": {

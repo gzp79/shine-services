@@ -8,6 +8,7 @@ use crate::{
         time_db_operation, CnsParamError,
     },
     health::StatusProvider,
+    telemetry::child_span,
 };
 use async_trait::async_trait;
 use bb8::{ManageConnection, Pool as BB8Pool, PooledConnection, RunError};
@@ -74,14 +75,16 @@ impl ConnectionLike for RedisConnection {
     fn req_packed_command<'a>(&'a mut self, cmd: &'a Cmd) -> RedisFuture<'a, Value> {
         let name = redis_command_name(cmd);
         assert_not_blocking(name);
-        let span = tracing::trace_span!(
-            "redis",
-            otel.name = name,
-            otel.kind = "client",
-            db.system = "redis",
-            db.operation.name = name,
-            db.query.text = name,
-        );
+        let span = child_span(|| {
+            tracing::trace_span!(
+                "redis",
+                otel.name = name,
+                otel.kind = "client",
+                db.system = "redis",
+                db.operation.name = name,
+                db.query.text = name,
+            )
+        });
         let broken = self.broken.clone();
         let client = &mut self.client;
         Box::pin(async move {
@@ -97,15 +100,17 @@ impl ConnectionLike for RedisConnection {
         offset: usize,
         count: usize,
     ) -> RedisFuture<'a, Vec<Value>> {
-        let span = tracing::trace_span!(
-            "redis",
-            otel.name = "PIPELINE",
-            otel.kind = "client",
-            db.system = "redis",
-            db.operation.name = "PIPELINE",
-            db.operation.batch.size = tracing::field::Empty,
-            db.query.text = tracing::field::Empty,
-        );
+        let span = child_span(|| {
+            tracing::trace_span!(
+                "redis",
+                otel.name = "PIPELINE",
+                otel.kind = "client",
+                db.system = "redis",
+                db.operation.name = "PIPELINE",
+                db.operation.batch.size = tracing::field::Empty,
+                db.query.text = tracing::field::Empty,
+            )
+        });
         for name in cmd.cmd_iter().map(redis_command_name) {
             assert_not_blocking(name);
         }
