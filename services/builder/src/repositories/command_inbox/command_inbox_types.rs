@@ -1,5 +1,9 @@
 use shine_game::replica::StreamId;
-use std::{cmp::Ordering, fmt};
+use std::{
+    cmp::Ordering,
+    fmt,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 use uuid::Uuid;
 
 /// The position of an entry in a stream's inbox: the Redis stream id `<ms>-<seq>`. Ordered
@@ -24,6 +28,16 @@ impl InboxId {
             ms: ms.parse().ok()?,
             seq: seq.parse().ok()?,
         })
+    }
+
+    /// Roughly how long ago the entry was added. The id carries the clock of the Redis server and this
+    /// is compared with the clock of this instance, so a difference between them shifts it: for metrics
+    /// only, never for decisions. Zero if the entry seems to be from the future.
+    pub fn metric_age(&self) -> Duration {
+        let now_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |since| since.as_millis() as u64);
+        Duration::from_millis(now_ms.saturating_sub(self.ms))
     }
 
     /// The smallest id above this one.

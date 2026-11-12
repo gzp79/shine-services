@@ -7,10 +7,16 @@ use crate::{
         command_inbox::{CommandInboxDb, InboxId},
         command_log::{StoredCommand, StoredSnapshot},
     },
-    services::command_stream::{stream_persistence::PersistenceWork, PersistResult, StreamConfig, StreamEgress},
+    services::command_stream::{
+        stream_metrics::{elapsed_seconds, kind_label, stream_metrics},
+        stream_persistence::PersistenceWork,
+        PersistResult, StreamConfig, StreamEgress,
+    },
 };
+use opentelemetry::KeyValue;
 use shine_game::replica::{decode_command, fold_chain_hash, Checkpoint, Command, ReplayState, StreamId};
-use std::{collections::HashMap, marker::PhantomData, sync::Arc};
+use shine_infra::telemetry::label;
+use std::{collections::HashMap, marker::PhantomData, sync::Arc, time::Instant};
 use uuid::Uuid;
 
 /// The inbox and client side of the stream. It takes the commands waiting in the inbox,
@@ -80,11 +86,32 @@ where
     }
 
     pub fn subscribe(&mut self, connection_id: Uuid) {
-        self.subscribers.insert(connection_id, None);
+        if self.subscribers.insert(connection_id, None).is_none() {
+            stream_metrics().subscribers.add(1, &[self.kind_label()]);
+        }
     }
 
     pub fn unsubscribe(&mut self, connection_id: Uuid) {
-        self.subscribers.remove(&connection_id);
+        self.remove_subscriber(&connection_id);
+    }
+
+    /// Forgets every subscriber: the stream ends or cannot be served any more.
+    pub fn release_subscribers(&mut self) {
+        let count = self.subscribers.len();
+        self.subscribers.clear();
+        if count > 0 {
+            stream_metrics().subscribers.add(-(count as i64), &[self.kind_label()]);
+        }
+    }
+
+    fn remove_subscriber(&mut self, connection_id: &Uuid) {
+        if self.subscribers.remove(connection_id).is_some() {
+            stream_metrics().subscribers.add(-1, &[self.kind_label()]);
+        }
+    }
+
+    fn kind_label(&self) -> KeyValue {
+        kind_label(self.stream_id.kind())
     }
 
     pub fn has_subscribers(&self) -> bool {
@@ -152,7 +179,18 @@ where
             return Ok(false);
         }
         let limit = self.config.inbox_poll_limit.min(room);
+        let started = Instant::now();
         let batch = self.inbox.poll(&self.stream_id, &self.read_index, limit).await?;
+        let metrics = stream_metrics();
+        let kind = self.kind_label();
+        // Passes that found nothing are the idle polling, they would only dilute the measures.
+        let found = !batch.entries.is_empty();
+        if let Some(oldest) = batch.entries.first() {
+            metrics
+                .inbox_age
+                .record(oldest.inbox_id.metric_age().as_secs_f64(), std::slice::from_ref(&kind));
+        }
+        let mut taken = 0u64;
         let (mut version, mut chain_hash) = self.head();
         for entry in batch.entries {
             if self
@@ -160,15 +198,22 @@ where
                 .as_ref()
                 .is_some_and(|stored| entry.inbox_id <= *stored)
             {
+                metrics
+                    .commands_dropped
+                    .add(1, &[kind.clone(), label("reason", "already_stored")]);
                 continue;
             }
             let command = match decode_command::<S>(&entry.data) {
                 Ok(command) if S::is_well_formed(&command) => command,
                 _ => {
                     tracing::warn!("[{}] Dropping malformed command {}", self.stream_id, entry.command_id);
+                    metrics
+                        .commands_dropped
+                        .add(1, &[kind.clone(), label("reason", "malformed")]);
                     continue;
                 }
             };
+            taken += 1;
             let command_hash = command.content_hash();
             version += 1;
             chain_hash = fold_chain_hash(chain_hash, version, command_hash);
@@ -181,6 +226,11 @@ where
                 chain_hash,
                 inbox_id: entry.inbox_id,
             });
+        }
+        if found {
+            metrics.commands_ingested.add(taken, std::slice::from_ref(&kind));
+            metrics.ingest_batch_size.record(taken, std::slice::from_ref(&kind));
+            metrics.ingest_duration.record(elapsed_seconds(started), &[kind]);
         }
         // A page that did not move the position would be read again and again.
         let advanced = batch.cursor != self.read_index;
@@ -228,7 +278,7 @@ where
             stream_id: self.stream_id.clone(),
         });
         self.broadcast(message).await;
-        self.subscribers.clear();
+        self.release_subscribers();
     }
 
     /// The version and chain hash of the last command the relay shows, optimistic ones included.
@@ -368,7 +418,7 @@ where
     async fn broadcast(&mut self, message: Arc<StreamMessage>) {
         for connection_id in self.subscribers.keys().copied().collect::<Vec<_>>() {
             if !self.egress.send(connection_id, message.clone()).await {
-                self.subscribers.remove(&connection_id);
+                self.remove_subscriber(&connection_id);
             }
         }
     }
@@ -377,7 +427,7 @@ where
         if self.egress.send(connection_id, message).await {
             self.subscribers.insert(connection_id, Some(version));
         } else {
-            self.subscribers.remove(&connection_id);
+            self.remove_subscriber(&connection_id);
         }
     }
 }

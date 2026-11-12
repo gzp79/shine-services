@@ -227,15 +227,23 @@ Clients build and read commands and snapshots with the generated TypeScript bind
 
 ## Metrics
 
-The hub works asynchronously — commands queue for the loop, messages are pushed to clients, consumers tick on their own schedule — so request-style metrics do not apply. `hub_metrics()` exposes a process-wide set of OpenTelemetry instruments (meter `shine-builder-hub`); without a configured meter provider they are no-ops. Labels take a small fixed set of values; user and connection ids appear only in traces.
+The hub works asynchronously — control commands queue for the loop, messages are pushed to clients, consumers tick on their own schedule — so request-style metrics do not apply. Metrics are split by scope, each a process-wide set of OpenTelemetry instruments with its own meter and prefix; without a configured meter provider they are no-ops. Labels take a small fixed set of values; user and connection ids appear only in traces.
+
+| Scope | Meter | Prefix | Covers |
+|---|---|---|---|
+| Hub | `shine-builder-hub` (`hub_metrics()`) | `hub_` | Connections, control commands, pushes to clients, background ticks. |
+| WebSocket | `shine-builder-ws` (`ws_metrics()`) | `ws_` | What the clients send. |
+| Command streams | `shine-builder-stream` (`stream_metrics()`) | `stream_` | Stream commands, throttling, ingest, persistence and workers — see [command-stream.md](command-stream.md#metrics). |
+
+A *control command* is the hub's own input (connect, disconnect, subscribe…), not a command of a stream.
 
 | Metric | Measures |
 |---|---|
 | `hub_connections` | Live connections. |
 | `hub_connections_dropped` | Connections the hub removed, by reason. |
-| `hub_commands` | Control commands processed, by command. |
-| `hub_command_duration` | Processing time of a command in the loop. |
-| `hub_command_queue_delay` | Time a command waited before the loop picked it up. |
+| `hub_control_commands` | Control commands processed, by command. |
+| `hub_control_command_duration` | Processing time of a control command in the loop. |
+| `hub_control_command_queue_delay` | Time a control command waited before the loop picked it up. |
 | `hub_messages_sent` | Messages pushed to connections, by kind and outcome. |
 | `hub_tick_duration` | Tick time of the background consumers, by consumer. |
 | `ws_messages_received` | Messages received from clients, by kind and outcome. |
@@ -268,6 +276,7 @@ The hub works asynchronously — commands queue for the loop, messages are pushe
 | `services/builder/src/services/hub/hub_subscribers.rs` | Internal lossless fan-out subscribers. |
 | `services/builder/src/services/hub/hub_status.rs` | Health provider reporting live connection/subscriber counts. |
 | `services/builder/src/services/hub/hub_metrics.rs` | OpenTelemetry instruments of the hub. |
+| `services/builder/src/routes/ws/ws_metrics.rs` | OpenTelemetry instruments of the websocket endpoint. |
 | `services/builder/src/services/hub/tasks/connection_tracker.rs` | Event-sourced per-consumer tracker and the periodic loop driver. |
 | `services/builder/src/services/hub/tasks/heartbeat.rs` | Batched registry TTL refresh; disconnects registry-dropped connections. |
 | `services/builder/src/services/hub/tasks/session_checker.rs` | Per-tick session validation; disconnect on expiry. |

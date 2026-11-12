@@ -1,10 +1,11 @@
 use crate::{
     app_state::AppState,
     models::messages::{CommandFailure, DisconnectReason, HubEvent, HubMessage, PingEvent, StreamMessage, TopicKey},
-    routes::ws::message::{
-        decode_wire_command, stream_message_to_wire, PingRequest, WSMessageRequest, WSMessageResponse,
+    routes::ws::{
+        message::{decode_wire_command, stream_message_to_wire, PingRequest, WSMessageRequest, WSMessageResponse},
+        ws_metrics::ws_metrics,
     },
-    services::{hub_metrics, HubService, MAX_COMMAND_BYTES},
+    services::{HubService, MAX_COMMAND_BYTES},
 };
 use axum::{
     extract::{
@@ -186,8 +187,8 @@ async fn serve_socket<S, R, E>(
                             .await;
                     }
                     Err(_) => {
-                        hub_metrics()
-                            .ws_messages_received
+                        ws_metrics()
+                            .messages_received
                             .add(1, &[label("kind", "unknown"), label("outcome", "invalid")]);
                         tracing::trace!("[{current_user_id}] Received invalid message: {text}");
                     }
@@ -323,8 +324,8 @@ async fn handle_stream_request(
             ("ping", outcome)
         }
     };
-    hub_metrics()
-        .ws_messages_received
+    ws_metrics()
+        .messages_received
         .add(1, &[label("kind", kind), label("outcome", outcome)]);
 }
 

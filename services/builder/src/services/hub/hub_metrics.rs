@@ -5,7 +5,7 @@ use opentelemetry::{
 use shine_infra::telemetry::SECONDS_BUCKETS;
 use std::sync::LazyLock;
 
-/// Metrics of the hub. Unlike the request metrics, the hub works asynchronously: commands are queued and processed
+/// Metrics of the hub. Unlike the request metrics, the hub works asynchronously: control commands are queued and processed
 /// by a single loop, messages are pushed to the clients and background consumers run on their own schedule.
 /// Labels have a small fixed set of values, ids of users and connections are only available in the traces.
 pub struct HubMetrics {
@@ -14,17 +14,15 @@ pub struct HubMetrics {
     /// Connections removed by the hub, by reason.
     pub connections_dropped: Counter<u64>,
     /// Processed control commands, by command.
-    pub commands: Counter<u64>,
-    /// Processing time of a command in the command loop, by command.
-    pub command_duration: Histogram<f64>,
-    /// Time a command waits in the queue before the command loop picks it up, by command.
-    pub command_queue_delay: Histogram<f64>,
+    pub control_commands: Counter<u64>,
+    /// Processing time of a control command in the command loop, by command.
+    pub control_command_duration: Histogram<f64>,
+    /// Time a control command waits in the queue before the command loop picks it up, by command.
+    pub control_command_queue_delay: Histogram<f64>,
     /// Messages pushed to the connections, by kind and outcome.
     pub messages_sent: Counter<u64>,
     /// Duration of the ticks of the background consumers, by consumer.
     pub tick_duration: Histogram<f64>,
-    /// Messages received from the clients, by kind and outcome.
-    pub ws_messages_received: Counter<u64>,
 }
 
 static METRICS: LazyLock<HubMetrics> = LazyLock::new(HubMetrics::new);
@@ -46,18 +44,18 @@ impl HubMetrics {
                 .u64_counter("hub_connections_dropped")
                 .with_description("Connections removed by the hub")
                 .build(),
-            commands: meter
-                .u64_counter("hub_commands")
+            control_commands: meter
+                .u64_counter("hub_control_commands")
                 .with_description("Processed hub control commands")
                 .build(),
-            command_duration: meter
-                .f64_histogram("hub_command_duration")
+            control_command_duration: meter
+                .f64_histogram("hub_control_command_duration")
                 .with_unit("s")
                 .with_boundaries(SECONDS_BUCKETS.to_vec())
                 .with_description("Processing time of a hub control command")
                 .build(),
-            command_queue_delay: meter
-                .f64_histogram("hub_command_queue_delay")
+            control_command_queue_delay: meter
+                .f64_histogram("hub_control_command_queue_delay")
                 .with_unit("s")
                 .with_boundaries(SECONDS_BUCKETS.to_vec())
                 .with_description("Time a hub control command waits before it is processed")
@@ -71,10 +69,6 @@ impl HubMetrics {
                 .with_unit("s")
                 .with_boundaries(SECONDS_BUCKETS.to_vec())
                 .with_description("Duration of the ticks of the hub background consumers")
-                .build(),
-            ws_messages_received: meter
-                .u64_counter("ws_messages_received")
-                .with_description("Messages received from the websocket clients")
                 .build(),
         }
     }

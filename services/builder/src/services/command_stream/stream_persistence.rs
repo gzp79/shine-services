@@ -4,9 +4,13 @@ use crate::{
         command_inbox::{CommandInboxDb, InboxId},
         command_log::{CommandLogDb, StoredCommand, StoredSnapshot},
     },
-    services::command_stream::stream_log_service::{AppendOutcome, SnapshotOutcome, StreamLogService},
+    services::command_stream::{
+        stream_log_service::{AppendOutcome, SnapshotOutcome, StreamLogService},
+        stream_metrics::{kind_label, stream_metrics},
+    },
 };
 use shine_game::replica::{decode_snapshot, encode_snapshot, Checkpoint, ReplayState, Replica, StreamId};
+use shine_infra::telemetry::label;
 use std::sync::Arc;
 
 pub enum PersistenceWork {
@@ -271,23 +275,34 @@ where
         };
 
         let (snapshot, checkpoint) = match snapshot {
-            Some(snapshot) => match self.service.store_snapshot(&self.stream_id, &snapshot).await {
-                SnapshotOutcome::Stored => {
-                    let checkpoint = Checkpoint {
-                        version: snapshot.version,
-                        chain_hash: snapshot.chain_hash,
-                        state_hash: snapshot.hash,
-                    };
-                    (Some(snapshot), Some(checkpoint))
+            Some(snapshot) => {
+                let outcome = self.service.store_snapshot(&self.stream_id, &snapshot).await;
+                let name = match outcome {
+                    SnapshotOutcome::Stored => "stored",
+                    SnapshotOutcome::Diverged => "diverged",
+                    SnapshotOutcome::Skipped => "skipped",
+                };
+                stream_metrics()
+                    .snapshots
+                    .add(1, &[kind_label(self.stream_id.kind()), label("outcome", name)]);
+                match outcome {
+                    SnapshotOutcome::Stored => {
+                        let checkpoint = Checkpoint {
+                            version: snapshot.version,
+                            chain_hash: snapshot.chain_hash,
+                            state_hash: snapshot.hash,
+                        };
+                        (Some(snapshot), Some(checkpoint))
+                    }
+                    SnapshotOutcome::Diverged => {
+                        return Err(AdvanceError::Reload(format!(
+                            "snapshot {} differs from the stored snapshot",
+                            snapshot.version
+                        )));
+                    }
+                    SnapshotOutcome::Skipped => (None, None),
                 }
-                SnapshotOutcome::Diverged => {
-                    return Err(AdvanceError::Reload(format!(
-                        "snapshot {} differs from the stored snapshot",
-                        snapshot.version
-                    )));
-                }
-                SnapshotOutcome::Skipped => (None, None),
-            },
+            }
             None => (None, None),
         };
         Ok((snapshot, checkpoint))

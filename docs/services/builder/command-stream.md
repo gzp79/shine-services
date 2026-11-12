@@ -193,6 +193,34 @@ A snapshot that disagrees with the one in the log reloads the stream. Any other 
 
 After advancing, the persistence trims the Redis inbox through the latest stored position and publishes a persisted notification. Inbox positions, not client command ids, keep durable proposals from being ingested twice.
 
+## Metrics
+
+`stream_metrics()` exposes the OpenTelemetry instruments of the streams (meter `shine-builder-stream`, prefix `stream_`); without a configured meter provider they are no-ops. Every instrument carries the stream `kind` (`chat`, `pixel-map`) and, where listed, one more label with a small fixed set of values. Stream, user and command ids appear only in traces. The hub, websocket and control-command metrics are in [hub.md](hub.md#metrics).
+
+| Metric | Labels | Measures |
+|---|---|---|
+| `stream_commands_pushed` | outcome: `queued`, `invalid`, `not_subscribed`, `busy`, `failed` | Commands offered to the write path. Tells apart what the websocket metric reports as `refused`. |
+| `stream_push_throttle_wait` | outcome: `ok`, `timeout` | Time a push waited for the inbox to drain. Only pushes that had to wait are recorded, so the count is the number of throttled pushes. |
+| `stream_inbox_depth` | | Inbox length, sampled by the back-pressure check. |
+| `stream_commands_ingested` | | Commands taken from the inbox and versioned. |
+| `stream_commands_dropped` | reason: `malformed`, `already_stored` | Inbox entries a pass did not take. |
+| `stream_ingest_duration` | | One pass over the inbox that found entries, polling included. |
+| `stream_ingest_batch_size` | | Entries a pass took. |
+| `stream_inbox_age` | | Age of the oldest entry of a pass when it was taken: the delay between push and ingest. |
+| `stream_persist_duration` | result: `advanced`, `reloaded`, `failed` | A persistence pass that had work. |
+| `stream_commands_persisted` | | Commands made durable. |
+| `stream_persist_delay` | | Age of the oldest command of a persisted batch when it became durable: the push-to-log latency. |
+| `stream_reloads` | | Reloads of the history from the log; each is a divergence from it. |
+| `stream_snapshots` | outcome: `stored`, `diverged`, `skipped` | Snapshots the persistence tried to store. |
+| `stream_workers` | | Running workers. |
+| `stream_worker_stops` | reason: `stopped`, `idle`, `gave_up` | Workers that ended. |
+| `stream_subscribers` | | Connections subscribed to a worker. |
+
+- **Idle work is not measured.** Polls that find nothing, and persistence passes that find the head current or have no batch, are left out so they do not dilute the histograms.
+- **Ages are approximate.** `stream_inbox_age` and `stream_persist_delay` compare the timestamp in the Redis inbox id with this instance's clock (`InboxId::metric_age`), so a clock difference between the two shifts them. Use them for trends, not for exact latency.
+- **Reading them together.** Rising `stream_inbox_depth` and `stream_push_throttle_wait`, with `stream_persist_duration` growing, show the slow-persistence chain of [Back-pressure](#back-pressure); `busy` in `stream_commands_pushed` is where it reaches clients.
+- **Traces.** A persistence pass that stores commands is traced as a `persist stream` span, idle passes are not.
+
 ## Key rules
 
 | Concern | Rule |
@@ -224,6 +252,7 @@ After advancing, the persistence trims the Redis inbox through the latest stored
 | `services/builder/src/services/command_stream/stream_relay.rs` | Fast side: ingest, optimistic versions, subscriber cursors, delivery, sync, checkpoint. |
 | `services/builder/src/services/command_stream/stream_persistence.rs` | Durable side: canonical replica, append, reconcile, reload, snapshot, cleanup. |
 | `services/builder/src/services/command_stream/stream_log_service.rs` | Durable repository operations used by the persistence. |
+| `services/builder/src/services/command_stream/stream_metrics.rs` | OpenTelemetry instruments of the streams. |
 | `services/builder/src/services/command_stream/stream_config.rs` | Poll, back-pressure, pending, snapshot, recovery and unload-grace limits. |
 | `services/builder/src/services/command_stream/stream_egress.rs` | Transport-independent worker-to-connection delivery interface. |
 | `crates/shine-core/src/tokio/backpressure.rs` | Watermark soft limit polled from an async count. |

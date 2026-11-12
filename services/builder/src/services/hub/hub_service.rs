@@ -468,7 +468,7 @@ impl HubService {
                 let name = command.name();
                 let metrics = hub_metrics();
                 metrics
-                    .command_queue_delay
+                    .control_command_queue_delay
                     .record(queued_at.elapsed().as_secs_f64(), &[label("command", name)]);
 
                 // Linked, not parented: the queued command must not keep the originating request span open.
@@ -482,9 +482,9 @@ impl HubService {
                 link_span(&span, origin);
                 let start = Instant::now();
                 let keep_running = service.process(command).instrument(span).await;
-                metrics.commands.add(1, &[label("command", name)]);
+                metrics.control_commands.add(1, &[label("command", name)]);
                 metrics
-                    .command_duration
+                    .control_command_duration
                     .record(start.elapsed().as_secs_f64(), &[label("command", name)]);
                 if !keep_running {
                     break;

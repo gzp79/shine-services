@@ -4,15 +4,19 @@ use crate::{
         command_inbox::{CommandInboxDb, InboxWake},
         command_log::CommandLogDb,
     },
-    services::command_stream::{StreamConfig, StreamEgress, StreamLogService, StreamWorker},
+    services::command_stream::{
+        stream_metrics::{elapsed_seconds, kind_label, stream_metrics},
+        StreamConfig, StreamEgress, StreamLogService, StreamWorker,
+    },
 };
 use futures::future::join_all;
 use shine_core::tokio::Backpressure;
 use shine_game::replica::{decode_command, ReplayState, StreamId, StreamKind};
+use shine_infra::telemetry::label;
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
-    time::Duration,
+    time::{Duration, Instant},
 };
 use uuid::Uuid;
 
@@ -200,6 +204,30 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
         command_id: Uuid,
         command: &[u8],
     ) -> Result<(), CommandFailure> {
+        let result = self
+            .try_push(connection_id, stream_id, user_id, command_id, command)
+            .await;
+        let outcome = match &result {
+            Ok(()) => "queued",
+            Err(CommandFailure::NotSubscribed) => "not_subscribed",
+            Err(CommandFailure::Invalid) => "invalid",
+            Err(CommandFailure::Busy) => "busy",
+            Err(CommandFailure::Failed) => "failed",
+        };
+        stream_metrics()
+            .commands_pushed
+            .add(1, &[kind_label(stream_id.kind()), label("outcome", outcome)]);
+        result
+    }
+
+    async fn try_push(
+        &self,
+        connection_id: Uuid,
+        stream_id: &StreamId,
+        user_id: Uuid,
+        command_id: Uuid,
+        command: &[u8],
+    ) -> Result<(), CommandFailure> {
         let backpressure = {
             let state = self.inner.state.lock().unwrap();
             let is_open = state
@@ -219,7 +247,18 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
             return Err(CommandFailure::Invalid);
         }
 
-        if backpressure.wait().await.is_err() {
+        // Only the pushes that had to wait are measured, a free inbox would flood the histogram with zeros.
+        let throttled = backpressure.is_blocked();
+        let waiting_since = Instant::now();
+        let released = backpressure.wait().await;
+        if throttled {
+            let outcome = if released.is_ok() { "ok" } else { "timeout" };
+            stream_metrics().push_throttle_wait.record(
+                elapsed_seconds(waiting_since),
+                &[kind_label(stream_id.kind()), label("outcome", outcome)],
+            );
+        }
+        if released.is_err() {
             tracing::info!("[{stream_id}] The inbox stayed full");
             return Err(CommandFailure::Busy);
         }
@@ -360,10 +399,18 @@ fn inbox_backpressure<I: CommandInboxDb + 'static>(
             let (inbox, stream_id) = (inbox.clone(), stream_id.clone());
             async move {
                 // An unreadable length does not block the pushes: they fail on their own if the inbox is down.
-                inbox.len(&stream_id).await.unwrap_or_else(|err| {
-                    tracing::warn!("[{stream_id}] Failed to read the inbox length: {err:#?}");
-                    0
-                })
+                match inbox.len(&stream_id).await {
+                    Ok(len) => {
+                        stream_metrics()
+                            .inbox_depth
+                            .record(len as u64, &[kind_label(stream_id.kind())]);
+                        len
+                    }
+                    Err(err) => {
+                        tracing::warn!("[{stream_id}] Failed to read the inbox length: {err:#?}");
+                        0
+                    }
+                }
             }
         },
     )

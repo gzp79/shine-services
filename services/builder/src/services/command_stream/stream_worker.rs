@@ -1,13 +1,22 @@
 use crate::{
-    repositories::{command_inbox::CommandInboxDb, command_log::CommandLogDb},
+    repositories::{
+        command_inbox::{CommandInboxDb, InboxId},
+        command_log::CommandLogDb,
+    },
     services::command_stream::{
-        stream_persistence::PersistenceWork, stream_relay::StreamRelay, PersistResult, StreamConfig, StreamEgress,
-        StreamLogService, StreamPersistence,
+        stream_metrics::{elapsed_seconds, kind_label, stream_metrics},
+        stream_persistence::PersistenceWork,
+        stream_relay::StreamRelay,
+        PersistResult, StreamConfig, StreamEgress, StreamLogService, StreamPersistence,
     },
 };
 use shine_core::tokio::GraceTimer;
-use shine_game::replica::{ReplayState, StreamId};
-use std::sync::{Arc, Mutex};
+use shine_game::replica::{ReplayState, StreamId, StreamKind};
+use shine_infra::telemetry::label;
+use std::{
+    sync::{Arc, Mutex},
+    time::Instant,
+};
 use tokio::{
     sync::{mpsc, oneshot, Notify},
     task::JoinHandle,
@@ -58,6 +67,7 @@ impl StreamWorker {
 
         let relay = StreamRelay::<S, I, E>::new(stream_id.clone(), inbox, egress, stream_config);
         let fast = tokio::spawn(run_relay(relay, config, wake.clone(), message_rx, request_tx));
+        stream_metrics().workers.add(1, &[kind_label(stream_id.kind())]);
 
         Arc::new(StreamWorker {
             stream_id,
@@ -133,7 +143,65 @@ async fn run_persistence<S, I, L>(
 {
     while let Some(PersistenceRequest { work, response }) = requests.recv().await {
         let span = persist_span(persistence.stream_id(), &work);
-        response.send(persistence.persist(work).instrument(span).await).ok();
+        let kind = persistence.stream_id().kind();
+        let (count, oldest) = match &work {
+            PersistenceWork::Persist { commands, .. } => (commands.len(), commands.first().map(|c| c.inbox_id)),
+            PersistenceWork::Reconcile { .. } => (0, None),
+        };
+        let started = Instant::now();
+        let result = persistence.persist(work).instrument(span).await;
+        record_persist(kind, started, count, oldest, &result);
+        response.send(result).ok();
+    }
+}
+
+/// Measures a persistence pass. A pass with nothing to do (the head is current, or there was no batch) is idle
+/// and left out, it would only dilute the measures.
+fn record_persist(kind: StreamKind, started: Instant, count: usize, oldest: Option<InboxId>, result: &PersistResult) {
+    let metrics = stream_metrics();
+    let (outcome, idle) = match result {
+        PersistResult::Current => ("current", true),
+        PersistResult::Advanced { .. } => ("advanced", count == 0),
+        PersistResult::Reloaded { .. } => ("reloaded", false),
+        PersistResult::Failed { .. } => ("failed", false),
+    };
+    if !idle {
+        metrics
+            .persist_duration
+            .record(elapsed_seconds(started), &[kind_label(kind), label("result", outcome)]);
+    }
+    match result {
+        PersistResult::Advanced { .. } if count > 0 => {
+            metrics.commands_persisted.add(count as u64, &[kind_label(kind)]);
+            if let Some(oldest) = oldest {
+                metrics
+                    .persist_delay
+                    .record(oldest.metric_age().as_secs_f64(), &[kind_label(kind)]);
+            }
+        }
+        PersistResult::Reloaded { .. } => metrics.reloads.add(1, &[kind_label(kind)]),
+        _ => {}
+    }
+}
+
+/// Why the fast task ended.
+#[derive(Clone, Copy)]
+enum StopReason {
+    /// The registry asked the worker to stop.
+    Stopped,
+    /// Nobody was subscribed for the grace period.
+    Idle,
+    /// The stream could not be served any more.
+    GaveUp,
+}
+
+impl StopReason {
+    fn as_str(self) -> &'static str {
+        match self {
+            StopReason::Stopped => "stopped",
+            StopReason::Idle => "idle",
+            StopReason::GaveUp => "gave_up",
+        }
     }
 }
 
@@ -156,11 +224,19 @@ async fn run_relay<S, I, E>(
         wake,
         in_flight: None,
     };
-    if relay_loop.preflight().await {
-        relay_loop.run(&config, &mut receiver).await;
-    }
+    let stop = if relay_loop.preflight().await {
+        relay_loop.run(&config, &mut receiver).await
+    } else {
+        StopReason::GaveUp
+    };
     // Whoever was queued before the stream ended, or while it was loading, is told to start again.
     reject_queued(relay_loop.relay.egress(), relay_loop.relay.stream_id(), &mut receiver).await;
+
+    let kind = kind_label(relay_loop.relay.stream_id().kind());
+    relay_loop.relay.release_subscribers();
+    let metrics = stream_metrics();
+    metrics.workers.add(-1, std::slice::from_ref(&kind));
+    metrics.worker_stops.add(1, &[kind, label("reason", stop.as_str())]);
 }
 
 /// Answers the subscribers that queued up while the stream was loading or ending.
@@ -233,7 +309,7 @@ where
         true
     }
 
-    async fn run(&mut self, config: &StreamConfig, receiver: &mut mpsc::UnboundedReceiver<Message>) {
+    async fn run(&mut self, config: &StreamConfig, receiver: &mut mpsc::UnboundedReceiver<Message>) -> StopReason {
         let mut poll = time::interval(config.inbox_recovery_poll_interval);
         poll.set_missed_tick_behavior(MissedTickBehavior::Skip);
         poll.tick().await;
@@ -241,6 +317,8 @@ where
         let mut close_timer = GraceTimer::new(config.worker_unload_grace);
 
         let mut alive = self.process_inbox().await;
+        // Leaving the loop with a dead stream is the stream giving up.
+        let mut stop = StopReason::GaveUp;
         while alive {
             close_timer.arm_if(!self.relay.has_subscribers());
 
@@ -254,7 +332,10 @@ where
                         self.wake.notify_one();
                     }
                     Some(Message::Unsubscribe(connection_id)) => self.relay.unsubscribe(connection_id),
-                    Some(Message::Stop) | None => break,
+                    Some(Message::Stop) | None => {
+                        stop = StopReason::Stopped;
+                        break;
+                    }
                 },
 
                 // Handle persistence results.
@@ -276,7 +357,10 @@ where
                 _ = poll.tick() => alive = self.process_inbox().await,
 
                 // Graceful shutdown after the no-subscriber grace period.
-                _ = close_timer.wait() => break,
+                _ = close_timer.wait() => {
+                    stop = StopReason::Idle;
+                    break;
+                }
             }
         }
 
@@ -285,6 +369,7 @@ where
             receiver.close();
             self.drain().await;
         }
+        stop
     }
 
     /// One look at the inbox: a page of what waits there is versioned, sent to the subscribers and, if

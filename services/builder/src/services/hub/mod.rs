@@ -7,7 +7,6 @@ mod hub_subscribers;
 mod tasks;
 
 pub use self::{
-    hub_metrics::hub_metrics,
     hub_service::{HubConfig, HubService},
     hub_status::HubStatus,
 };
