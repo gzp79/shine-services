@@ -49,9 +49,9 @@ ENV RUST_BACKTRACE=1
 ENV RUST_LOG="debug"
 ENV SHINE_TEST_TOXIPROXY_URL="http://toxiproxy.mockbox.foo:8474"
 ENV SHINE_TEST_REDIS_CNS="redis://redis.mockbox.foo:6379"
-ENV SHINE_TEST_REDIS_CNS_DIRECT="redis://redis.mockbox.foo:26379"
+ENV SHINE_TEST_REDIS_CNS_DIRECT="redis://redis-direct.mockbox.foo:6379"
 ENV SHINE_TEST_PG_CNS="postgres://username:password@postgres.mockbox.foo:5432/database-test?sslmode=disable"
-ENV SHINE_TEST_PG_CNS_DIRECT="postgres://username:password@postgres.mockbox.foo:25432/database-test?sslmode=disable"
+ENV SHINE_TEST_PG_CNS_DIRECT="postgres://username:password@postgres-direct.mockbox.foo:5432/database-test?sslmode=disable"
 
 # build the final project  
 RUN for proj in $SERVICE_PROJECTS; do PROJECTS="$PROJECTS -p $proj"; done \
