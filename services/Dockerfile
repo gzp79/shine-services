@@ -114,11 +114,17 @@ COPY ./certificates/scytta.crt ./certificates/scytta.crt
 COPY ./certificates/scytta.key ./certificates/scytta.key
 COPY ./services/docker/nginx.test.conf /etc/nginx/nginx-shine-server.conf
 
-WORKDIR /app/services
-COPY ./services/server_config_test.json ./
+WORKDIR /app/services/config
+COPY ./services/config/common.mock.json ./services/config/common.test.json ./
+
+WORKDIR /app/services/identity/config
+COPY ./services/identity/config/mock.json ./
 
 WORKDIR /app/services/identity
 COPY ./services/identity/server_config.test.json ./
+
+WORKDIR /app/services/builder/config
+COPY ./services/builder/config/mock.json ./
 
 WORKDIR /app/services/builder
 COPY ./services/builder/server_config.test.json ./
@@ -135,8 +141,8 @@ FROM base AS prod
 WORKDIR /app
 COPY ./services/docker/nginx.prod.conf /etc/nginx/nginx-shine-server.conf
 
-WORKDIR /app/services
-COPY ./services/server_config.json ./
+WORKDIR /app/services/config
+COPY ./services/config/common.prod.json ./
 
 WORKDIR /app/services/identity
 COPY ./services/identity/server_config.prod.json ./

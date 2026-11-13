@@ -4,7 +4,7 @@
 
 ## Problem
 
-Collaborative state such as chat or a shared pixel map needs one ordered command history, cheap writes, fast subscriber feedback and bounded catch-up for late joiners. Several builder instances may serve the same stream, so none is the authority. Redis takes short-lived command proposals and wakes workers, Postgres owns the canonical order and the snapshots, and every loaded worker serves an optimistic in-memory tail that it corrects when durable history disagrees. The client-facing side is [Hub](hub.md).
+Collaborative state such as chat or a shared pixel map needs one ordered command history, cheap writes, fast subscriber feedback and bounded catch-up for late joiners. Several builder instances may serve the same stream, so none is the authority. Redis takes short-lived command proposals and wakes workers, Postgres owns the canonical order and the snapshots, and every loaded worker serves an optimistic in-memory tail that it corrects when durable history disagrees. Clients reach a stream over their [hub](hub.md) connection, see [Client access](#client-access).
 
 A **snapshot** is replayed state at a version. A **chain hash** covers the ordered command envelopes and lets workers and clients detect incompatible history.
 
@@ -82,6 +82,64 @@ The checks run in this order, each with its refusal reason:
 2. The command is at most `MAX_COMMAND_BYTES` (16 KiB) and is the canonical encoding of a well-formed command of the stream's kind, meaning decoding and encoding again gives the same bytes: `invalid`. So the bytes a client sends are the bytes that are stored and hashed.
 3. The inbox back-pressure admits it: `busy`, see [Back-pressure](#back-pressure).
 4. The inbox push succeeds: `failed`. The command may or may not have been queued.
+
+## Client access
+
+A stream is named by a `StreamId` whose prefix selects the registered replay kind (`chat`, `pixel-map`). Clients use it over a WebSocket that is also a [hub](hub.md) connection: the hub supplies the authenticated user id and the connection id, neither of which ever comes from a frame, and carries the worker's messages back to the socket. Everything else on this page is independent of the transport.
+
+### Subscribe
+
+`streamSubscribe` carries only `streamId`. The hub authorizes the user (`StreamAuthorizeService`, which currently allows every stream), then **opens** the stream for the connection: the registry checks that the kind is registered, and from then on the connection may push. The subscription itself travels as an event through the hub loop, which keeps it ordered with the connection's lifecycle: a subscribe for a connection that is gone, or a stream closed since, is ignored. Unsubscribe and disconnect reach the registry directly.
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant H as Hub
+    participant D as Stream dispatcher
+    participant R as Registry
+    participant W as Stream worker
+
+    C->>H: streamSubscribe(streamId)
+    H->>H: authorize
+    H->>R: open(connection, streamId)
+    alt unauthorized, unknown kind, or hub stopped
+        H-->>C: streamSubscribeFailed
+    else accepted
+        H->>D: Subscribed event
+        D->>R: subscribe(connection, streamId)
+        R->>W: start the worker if absent, then subscribe
+        W-->>C: streamSync at the start of its next pass
+    end
+```
+
+### Submit
+
+The hub passes a command to the registry's write path ([Stream registry](#stream-registry)). There is no success acknowledgement: the sender sees its own `commandId` in a `streamCommands` batch once the worker has versioned it. A refusal answers with `streamNack`; `busy` also drops the connection (close code 4000, reason `busy`).
+
+### Client protocol
+
+Frames are JSON text with a camel-case `type`; the `StreamId` carries the kind prefix.
+
+| Direction | Message | Fields and behavior |
+|---|---|---|
+| to server | `streamSubscribe` | `streamId`; authorizes and synchronizes the stream. |
+| to server | `streamUnsubscribe` | `streamId`; removes this connection's subscription. |
+| to server | `streamCommand` | `streamId`, `commandId`, `command` (base64, see [Command encoding](#command-encoding)); needs an open stream. |
+| to client | `streamSync` | `streamId`, optional snapshot, the commands after it; replaces the client's state. |
+| to client | `streamCommands` | `streamId`, contiguous optimistic or canonical commands. |
+| to client | `streamCheckpoint` | `streamId`, `version`, `stateHash`; sent after the commands it covers, to compare with the client's own state hash at that version. |
+| to client | `streamUnsynced` | `streamId`; the worker cannot serve the stream now, subscribe again. |
+| to client | `streamNack` | `streamId`, `commandId`, reason `notSubscribed`, `invalid`, `failed` or `busy` (then the connection is dropped). |
+| to client | `streamSubscribeFailed` | `streamId`, reason `unauthorized` or `failed`. |
+| to client | `streamReset` | Defined but never sent: a sync alone replaces the state. |
+
+A frame that carries an invalid stream id is ignored without an answer. A valid request that breaks a rule, such as a command that does not decode, gets the matching refusal frame. A socket message over twice `MAX_COMMAND_BYTES` ends the socket.
+
+### Command encoding
+
+A command is its **postcard** encoding: the same bytes on the client, in the Redis inbox and in Postgres. JSON frames carry them as base64. The server accepts only the canonical encoding of a well-formed command of the stream's kind and refuses anything else as `invalid`, so the bytes a client sends are the bytes that are stored and hashed.
+
+Clients build and read commands and snapshots with the generated TypeScript bindings in `client/game-bindings` (`pnpm gen:game-bindings` writes them).
 
 ## Relay loop
 
@@ -238,6 +296,11 @@ After advancing, the persistence trims the Redis inbox through the latest stored
 | Redis loss | Unsequenced proposals may be lost; canonical Postgres history stays valid. |
 | Isolation | A slow or failing stream does not block another stream's tasks. |
 | Slow subscriber | `StreamEgress::send` never waits; when it cannot queue, the relay forgets the subscriber. |
+| Identity | The user id and connection id come from the authenticated connection, never from a frame. |
+| Authorization | `StreamAuthorizeService` decides a subscribe; it currently allows every stream. |
+| Busy connection | A push into an inbox that stays full is nacked `busy` and the connection is dropped (close code 4000, reason `busy`). |
+| Socket limit | A socket message over twice `MAX_COMMAND_BYTES` ends the socket; the command limits are the registry's. |
+| Shutdown | On the hub's shutdown the dispatcher has the registry persist what is waiting, for up to `stream_shutdown_timeout`. |
 
 ## File map
 
@@ -255,6 +318,14 @@ After advancing, the persistence trims the Redis inbox through the latest stored
 | `services/builder/src/services/command_stream/stream_metrics.rs` | OpenTelemetry instruments of the streams. |
 | `services/builder/src/services/command_stream/stream_config.rs` | Poll, back-pressure, pending, snapshot, recovery and unload-grace limits. |
 | `services/builder/src/services/command_stream/stream_egress.rs` | Transport-independent worker-to-connection delivery interface. |
+| `services/builder/src/services/hub/hub_service.rs` | Stream side of the hub: authorized subscribe, unsubscribe, command submission, busy-connection drop; `StreamEgress` implementation. |
+| `services/builder/src/services/hub/tasks/stream_dispatcher.rs` | Applies ordered subscribe events to the registry, purges ended workers, shuts the registry down. |
+| `services/builder/src/services/stream_authorize/stream_authorize_service.rs` | Decides whether a user may use a stream. |
+| `services/builder/src/models/messages/stream.rs` | Internal stream messages, events and failures. |
+| `services/builder/src/routes/ws/connect.rs`, `services/builder/src/routes/ws/message.rs` | Stream requests of the socket, wire shapes, conversion from `StreamMessage`. |
+| `client/web/src/engine/net/stream-hub.ts` | Scene-facing transport contract: subscriptions and listener callbacks. |
+| `client/web/src/engine/net/websocket-stream-hub.ts` | Development implementation: one reconnecting socket that waits for `connected`, resubscribes its streams and routes frames by `streamId`. |
+| `client/game-bindings/` | Generated postcard serializers and helpers to build and parse commands and snapshots. |
 | `crates/shine-core/src/tokio/backpressure.rs` | Watermark soft limit polled from an async count. |
 | `crates/shine-core/src/tokio/grace_timer.rs` | Countdown that survives a cancelled wait, used for the unload grace. |
 
@@ -279,8 +350,29 @@ Append, catch-up, snapshot and pruning must not stall subscriptions or optimisti
 
 </details>
 
+<details data-agent="implementation">
+<summary>Command types are a permanent wire and log format</summary>
+
+Postcard is not self-describing and the log is replayed forever.
+
+- Enum variants are identified by their index. Add new variants at the end; never remove, reorder or insert one.
+- Do not change the fields of a variant. A different shape is a new variant (`AddV2`); the old one stays decodable and applicable.
+- To retire a variant, make `is_well_formed` refuse it so no new one is accepted, and keep its `apply` for commands already in the log.
+- `StableHash` tags follow the variant index and never change.
+- Serde attributes that need a self-describing format (`tag`, `untagged`, `flatten`, `skip_serializing_if`) are not usable on commands.
+- The TypeScript bindings come from twin types in `crates/shine-game/tools`; change a command type there too and regenerate. CI fails on a stale `client/game-bindings`.
+
+</details>
+
 <details data-agent="test">
 <summary>Where the stream side is covered</summary>
+
+`services/builder/src/services/hub/tests/streams.rs` covers subscribe events (ordered with the connection's lifecycle, ignored for a connection that is gone) and delivery to a connection by id. `tests/api-tests/builder/streams.ts` covers the wire protocol against the real service, and `stream_failures.ts` the Postgres and Redis outages (`infraOutage`).
+
+</details>
+
+<details data-agent="test">
+<summary>Where the registry, worker and persistence are covered</summary>
 
 `stream_registry_test.rs` covers kind validation, open-stream bookkeeping, write refusal, write-side back-pressure (a push into an inbox that stays full fails `busy` and is not queued), wake routing, worker reuse, purge and shutdown. `stream_worker_test.rs` covers sync and ordered exactly-once delivery, backlog draining, late subscribers, the recovery poll, forgotten subscribers, the grace period, shutdown drain, a log contradicting the worker, load failure and inbox read failure. `stream_relay_test.rs` covers re-versioning, cursors, the canonical prefix, reloads and checkpoint delivery. `stream_persistence_test.rs` and `stream_log_service_test.rs` cover loading, append and replay, concurrent instances converging, reconcile and the stored inbox marker.
 

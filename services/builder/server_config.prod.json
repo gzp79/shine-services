@@ -1,6 +1,6 @@
 {
   "beforeLayers": [
-    "file://../server_config.json",
+    "file://../config/common.prod.json",
     "azk://shine-keyvault.vault.azure.net/"
   ],
   "afterLayers": ["environment"],

@@ -1,10 +1,8 @@
 {
   "service": {
-    "port": 0,
     "allowedOrigins": [
       "^https:\\/\\/([a-zA-Z0-9-]+\\.)*local\\.scytta\\.com(:\\d+)?$"
     ],
-
     "fullProblemResponse": true,
     "captchaSecret": "0000000000000000000000000000000000",
     "sessionSecret": "J6leERkPT8a5xz5d6VlMIBCwUGA9vMA2OxVBcCi6sMBheHQZ474lcGhEhchBxxqz9uahTpur4X6oEqX8DECcXA",
@@ -13,19 +11,7 @@
     "exposePoweredBy": true,
     "exposeApiDocs": true
   },
-
   "telemetry": {
-    "allowReconfigure": true,
-    "defaultLevel": "INFO,shine_core=TRACE,shine_infra=TRACE,shine_identity=TRACE,shine_builder=TRACE",
-    "logging": {
-      "type": "console",
-      "format": "compact"
-    },
-    "metrics": {
-      "type": "none"
-    },
-    "tracing": {
-      "type": "none"
-    }
+    "allowReconfigure": true
   }
 }

@@ -1,16 +1,16 @@
 # Hub
 
-*The builder's WebSocket hub: one live connection per user, kept in sync with the session and a cross-instance registry, carrying ordered command streams to and from clients.*
+*The builder's WebSocket hub: one live connection per user, kept in sync with the session and a cross-instance registry, and a topic-based message bus that delivers serialized messages to those connections.*
 
 ## Problem
 
-The hub tracks who is connected and fans lifecycle signals out to the tasks that keep that view honest. A user ends up with at most one live connection — a fresh connect supersedes the previous one — and a connection never outlives its session or its registry entry. These properties come from one *serial command loop* that is the sole writer of connection state, a connection identity (`connection_id`) that tells a stale request from a fresh reconnect, and a Redis registry that extends the last-wins rule across service instances.
+The hub tracks who is connected and distributes messages to them. A user has at most one live connection — a fresh connect supersedes the previous one — and a connection never outlives its session or its registry entry. These properties come from one *serial command loop* that is the sole writer of connection state, a connection identity (`connection_id`) that tells a stale request from a fresh reconnect, and a Redis registry that extends the last-wins rule across service instances.
 
-On top of that connection layer, clients share ordered, replayable state such as chat or a pixel map through **streams**. A stream is named by a `StreamId` whose prefix selects the registered replay kind (`chat`, `pixel-map`). The hub authenticates through the connection, authorizes subscriptions, hands subscriptions and commands to the stream registry, and delivers whatever the stream workers send back. The registry, the inbox, ordering, persistence and snapshots are described in [Command Streams](command-stream.md).
+On top of that, the hub distributes messages by **topic**. Delivery is serialized through the loop and deliberately simple, not a high-throughput path. There are two topics: `Hub` carries the connection lifecycle events, `Ping` carries a ping message that exercises delivery. Anything else a client does over the socket is outside the hub; [Command Streams](command-stream.md) is a separate system.
 
 ## Architecture
 
-The hub has two halves: the connection lifecycle owns *who is connected*, the stream transport owns *what they exchange*. After the upgrade and the connection's registration, the server's first frame is `{"type":"connected","userId":"<uuid>"}`. The client waits for it before subscribing. That user id is the identity of every command sent over the connection; neither it nor the connection id ever comes from a frame.
+A WebSocket client reaches the hub through the WS route, which registers the connection and forwards what the hub sends back. After the upgrade and the registration, the server's first frame is `{"type":"connected","userId":"<uuid>"}`. The user id and the connection id come from the authenticated connection, never from a frame.
 
 ```mermaid
 flowchart LR
@@ -18,19 +18,52 @@ flowchart LR
     classDef teal fill:#14b8a622,stroke:#14b8a6
     classDef blue fill:#0ea5e922,stroke:#0ea5e9
     classDef green fill:#22c55e22,stroke:#22c55e
+    classDef orange fill:#fb923c22,stroke:#fb923c
 
     Client["WebSocket client"]:::indigo
-    Route["WS route<br/>parse, size limit"]:::teal
-    Hub["Hub service<br/>connections, authorize, egress"]:::blue
-    Dispatcher["Stream dispatcher<br/>ordered subscribe events"]:::blue
-    Streams["Command streams<br/>registry, inbox, workers"]:::green
+    Route["WS route<br/>upgrade, parse, forward"]:::teal
+    Hub["Hub service<br/>command loop, topic delivery"]:::blue
+    State["Connections<br/>Redis registry"]:::green
+    Tasks["Periodic tasks<br/>heartbeat, session checker"]:::orange
 
-    Client -- "request frames" --> Route --> Hub
-    Hub -- "open, close, push" --> Streams
-    Hub -. "Subscribed event" .-> Dispatcher -- "subscribe" --> Streams
-    Streams -- "StreamEgress" --> Hub
-    Hub -- "stream frames" --> Client
+    Client -- "ping frame" --> Route -- "send_to_user or broadcast" --> Hub
+    Route -- "connect, disconnect" --> Hub
+    Hub -- "register, remove" --> State
+    Hub -- "Hub topic events" --> Tasks
+    Tasks -- "DisconnectUser" --> Hub
+    Hub -- "queued messages" --> Route -- "text frames, close" --> Client
 ```
+
+### Topics
+
+A message on the bus has exactly one topic. A connection declares its topics when it connects (the WS route uses `Hub` and `Ping`) and receives only messages of those topics. Internal tasks subscribe to topics in the same way.
+
+| Topic | Message | Carries |
+|---|---|---|
+| `Hub` | `HubEvent` | Connection lifecycle: `UserConnected`, `UserDisconnected`, `Shutdown`. |
+| `Ping` | `PingEvent` | A client-chosen `id`, delivered to one user or to every connection subscribed to the topic. |
+
+| Delivery | Recipients |
+|---|---|
+| `send_to_connection` | One connection by id. |
+| `send_to_user` | The user's active connection. |
+| `broadcast` | Every connection whose topics include the message's topic. |
+| `subscribe` | An internal task, on its own channel. |
+
+### Ping
+
+A client sends `{"type":"ping","id":"…","userId":"<uuid>?"}`. With a `userId` the ping goes to that user's active connection, without one it goes to every connection subscribed to `Ping`, the sender included. Recipients get `{"type":"ping","id":"…"}`. `id` is at most 255 characters; an invalid ping is ignored. With `ping_enabled` off the request is counted as `disabled` and nothing is delivered.
+
+### Wire protocol
+
+| Direction | Frame | Fields and behavior |
+|---|---|---|
+| to server | `ping` | `id`, optional `userId`. |
+| to client | `connected` | `userId`; first frame of a connection. |
+| to client | `ping` | `id`. |
+| to client | close | Sent when the hub drops the connection: code 4000 with the `DisconnectReason` name as reason, or 1001 (going away) on shutdown. A client-initiated disconnect sends none. |
+
+Frames that are not text, do not parse, or fail validation are ignored without an answer and do not end the connection.
 
 ## Connection lifecycle
 
@@ -72,8 +105,10 @@ The loop is the sole emitter of `HubEvent` (defined in `models/messages/hub.rs`)
 | Event | Payload | Emitted when |
 |---|---|---|
 | `UserConnected` | `user_id`, `connection_id`, `session_key` | A new connection is registered (after any prior one is superseded). |
-| `UserDisconnected` | `user_id`, `connection_id` | A connection is removed — superseded, disconnected, dropped-dead, or found inactive in the registry. |
+| `UserDisconnected` | `user_id`, `connection_id`, `reason` | A connection is removed — superseded, disconnected, dropped-dead, or found inactive in the registry. |
 | `Shutdown` | — | The hub is shutting down; ends every consumer loop. |
+
+`reason` is a `DisconnectReason`. `Client` is a disconnect the client asked for; every other reason is a *drop* — counted in `hub_connections_dropped` and told to the socket as its close reason.
 
 Every `HubEvent` is carried on the `Hub` topic. The bus has two classes of recipient, and the split is the reason lifecycle signals are never lost to the tasks:
 
@@ -84,25 +119,22 @@ Every `HubEvent` is carried on the `Hub` topic. The bus has two classes of recip
 
 ### Event fan-out to tasks
 
-Each periodic task subscribes to the `Hub` topic and event-sources its *own* `ConnectionTracker` from the stream — there is no shared connection map between tasks and no lock. The tracker applies each event to a private `user_id → (connection_id, session_key)` map.
+Each periodic task subscribes to the `Hub` topic and event-sources its *own* `ConnectionTracker` from the events — there is no shared connection map between tasks and no lock. The tracker applies each event to a private `user_id → (connection_id, session_key)` map.
 
 ```mermaid
 flowchart TD
     classDef orange fill:#fb923c22,stroke:#fb923c
     classDef green fill:#22c55e22,stroke:#22c55e
-    classDef dim fill:#94a3b81a,stroke:#94a3b8,stroke-dasharray:4 3
 
     E["<b>HubEvent</b> (Hub topic)<br/>UserConnected / UserDisconnected / Shutdown"]:::orange
     HB["<b>Heartbeat</b>"]:::green
     SC["<b>SessionChecker</b>"]:::green
-    CD["<b>ChatDispatcher</b>"]:::dim
 
     E -- "refreshes each tracked connection's Redis TTL;<br/>disconnects any the registry dropped" --> HB
     E -- "re-validates each tracked session;<br/>disconnects on expiry" --> SC
-    E -- "owns its own tracker for chat delivery<br/>(out of scope here)" --> CD
 ```
 
-All subscriptions are registered synchronously before the command loop starts dispatching, so no task can miss an event emitted during startup — see `hub_service.rs · HubService::new`. The tracker's tick is prioritized over the event stream (`biased` select in `run_connection_loop`) so a heavy event burst cannot starve TTL refreshes and let a live connection expire.
+All subscriptions are registered synchronously before the command loop starts dispatching, so no task can miss an event emitted during startup — see `hub_service.rs · HubServiceBuilder::build`. The tracker's tick is prioritized over the event stream (`biased` select in `run_connection_loop`) so a heavy event burst cannot starve TTL refreshes and let a live connection expire.
 
 ### Last connection wins
 
@@ -148,83 +180,6 @@ The Redis registry (`repositories/hub_registry`) extends last-wins beyond a sing
 | `heartbeat_connections` | `MGET` + pipelined `EXPIRE` | Batched, no per-key CAS; compares in memory and returns the entries no longer holding this id. |
 | `remove_connection_if_active` | WATCH/GET/`DEL` txn + `PUBLISH` | CAS: deletes only when both user and id match, then notifies. |
 
-## Streams
-
-### Subscribe
-
-`streamSubscribe` carries only `streamId`. The hub authorizes the user, then **opens** the stream for the connection: the registry checks that the kind is registered, and from then on the connection may push. The subscription itself travels as an event through the hub loop, which keeps it ordered with the connection's lifecycle: a subscribe for a connection that is gone, or a stream closed since, is ignored. Unsubscribe and disconnect reach the registry directly.
-
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant H as Hub
-    participant D as Stream dispatcher
-    participant R as Registry
-    participant W as Stream worker
-
-    C->>H: streamSubscribe(streamId)
-    H->>H: authorize
-    H->>R: open(connection, streamId)
-    alt unauthorized, unknown kind, or hub stopped
-        H-->>C: streamSubscribeFailed
-    else accepted
-        H->>D: Subscribed event
-        D->>R: subscribe(connection, streamId)
-        R->>W: start the worker if absent, then subscribe
-        W-->>C: streamSync at the start of its next pass
-    end
-```
-
-### Submit
-
-The hub passes a command to the registry's write path ([Stream registry](command-stream.md#stream-registry)), which validates it and queues it in the stream's inbox. There is no success acknowledgement: the sender sees its own `commandId` in a `streamCommands` batch once the worker has versioned it.
-
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant H as Hub
-    participant R as Registry
-
-    C->>H: streamCommand(streamId, commandId, command)
-    H->>R: push(connection, user, stream, command)
-    alt not open, invalid, too large, inbox stayed full, or push failed
-        R-->>H: refusal
-        H-->>C: streamNack(reason)
-        opt inbox stayed full (busy)
-            H->>H: drop the connection
-        end
-    else queued
-        R-->>H: ok
-        Note over C,H: the command comes back to every subscriber in a streamCommands batch
-    end
-```
-
-### Client protocol
-
-Frames are JSON text with a camel-case `type`; the `StreamId` carries the kind prefix.
-
-| Direction | Message | Fields and behavior |
-|---|---|---|
-| to server | `streamSubscribe` | `streamId`; authorizes and synchronizes the stream. |
-| to server | `streamUnsubscribe` | `streamId`; removes this connection's subscription. |
-| to server | `streamCommand` | `streamId`, `commandId`, `command` (base64, see [Command encoding](#command-encoding)); needs an open stream. |
-| to client | `connected` | `userId`; first frame of a connection. |
-| to client | `streamSync` | `streamId`, optional snapshot, the commands after it; replaces the client's state. |
-| to client | `streamCommands` | `streamId`, contiguous optimistic or canonical commands. |
-| to client | `streamCheckpoint` | `streamId`, `version`, `stateHash`; sent after the commands it covers, to compare with the client's own state hash at that version. |
-| to client | `streamUnsynced` | `streamId`; the worker cannot serve the stream now, subscribe again. |
-| to client | `streamNack` | `streamId`, `commandId`, reason `notSubscribed`, `invalid`, `failed` or `busy` (then the connection is dropped). |
-| to client | `streamSubscribeFailed` | `streamId`, reason `unauthorized` or `failed`. |
-| to client | `streamReset` | Defined but never sent: a sync alone replaces the state. |
-
-Frames that do not parse, are not text, or carry an invalid stream id are ignored without an answer. A valid request that breaks a rule gets the matching refusal frame.
-
-### Command encoding
-
-A command is its **postcard** encoding: the same bytes on the client, in the Redis inbox and in Postgres. JSON frames carry them as base64. The server accepts only the canonical encoding of a well-formed command of the stream's kind and refuses anything else as `invalid`, so the bytes a client sends are the bytes that are stored and hashed.
-
-Clients build and read commands and snapshots with the generated TypeScript bindings in `client/game-bindings` (`pnpm gen:game-bindings` writes them).
-
 ## Metrics
 
 The hub works asynchronously — control commands queue for the loop, messages are pushed to clients, consumers tick on their own schedule — so request-style metrics do not apply. Metrics are split by scope, each a process-wide set of OpenTelemetry instruments with its own meter and prefix; without a configured meter provider they are no-ops. Labels take a small fixed set of values; user and connection ids appear only in traces.
@@ -233,9 +188,8 @@ The hub works asynchronously — control commands queue for the loop, messages a
 |---|---|---|---|
 | Hub | `shine-builder-hub` (`hub_metrics()`) | `hub_` | Connections, control commands, pushes to clients, background ticks. |
 | WebSocket | `shine-builder-ws` (`ws_metrics()`) | `ws_` | What the clients send. |
-| Command streams | `shine-builder-stream` (`stream_metrics()`) | `stream_` | Stream commands, throttling, ingest, persistence and workers — see [command-stream.md](command-stream.md#metrics). |
 
-A *control command* is the hub's own input (connect, disconnect, subscribe…), not a command of a stream.
+A *control command* is the hub's own input (connect, disconnect, registry change…).
 
 | Metric | Measures |
 |---|---|
@@ -257,20 +211,18 @@ A *control command* is the hub's own input (connect, disconnect, subscribe…), 
 | Session bound | `SessionChecker` disconnects on definitive session loss, so a connection never outlives its session. |
 | Crashed instance | Registry entries carry a TTL kept alive only by the live instance's heartbeat, so its connections self-clean. |
 | Lifecycle delivery | Lossless unbounded subscriber channels, with all subscriptions registered before the loop starts, so internal tasks never miss an event. |
+| Topics | A connection receives only the topics it declared at connect time; a message has exactly one topic. |
 | Identity | The user id and connection id come from the authenticated connection, never from a frame. |
-| Authorization | `StreamAuthorizeService` decides a subscribe; it currently allows every stream. |
-| Busy connection | A push into an inbox that stays full is nacked `busy` and the connection is dropped (close code 4000, reason `busy`). |
-| Socket limit | A socket message over twice `MAX_COMMAND_BYTES` ends the socket; the command limits are the registry's. |
-| Slow connection | Egress never waits: a connection whose queue is full is dropped, and the worker forgets it as a subscriber. |
-| Shutdown | On the hub's shutdown the dispatcher has the registry persist what is waiting, for up to `stream_shutdown_timeout`. |
+| Slow connection | Egress never waits: a connection whose queue is full is dropped as `slow_consumer`. |
+| Ping | Gated by `ping_enabled`; `id` is at most 255 characters. |
 
 ## File map
 
 | File | Role |
 |---|---|
-| `services/builder/src/routes/ws/connect.rs` | Upgrade, `connected` frame, request dispatch to the hub, egress to the socket, close codes. |
-| `services/builder/src/routes/ws/message.rs` | Wire request and response shapes, conversion from `StreamMessage`. |
-| `services/builder/src/services/hub/hub_service.rs` | Command loop (sole writer); connect/disconnect/drop/registry-change handling; event publish; authorized subscribe, unsubscribe, command submission, busy-connection drop; `StreamEgress` implementation. |
+| `services/builder/src/routes/ws/connect.rs` | Upgrade, `connected` frame, ping request, egress to the socket, close codes. |
+| `services/builder/src/routes/ws/message.rs` | Wire request and response shapes. |
+| `services/builder/src/services/hub/hub_service.rs` | Command loop (sole writer); connect/disconnect/drop/registry-change handling; event publish; topic delivery (`send_to_connection`, `send_to_user`, `broadcast`, `subscribe`). |
 | `services/builder/src/services/hub/hub_command.rs` | `ControlCommand` enum — the loop's input vocabulary. |
 | `services/builder/src/services/hub/hub_connections.rs` | Addressable connection registry; bounded egress; dead-channel detection. |
 | `services/builder/src/services/hub/hub_subscribers.rs` | Internal lossless fan-out subscribers. |
@@ -280,17 +232,12 @@ A *control command* is the hub's own input (connect, disconnect, subscribe…), 
 | `services/builder/src/services/hub/tasks/connection_tracker.rs` | Event-sourced per-consumer tracker and the periodic loop driver. |
 | `services/builder/src/services/hub/tasks/heartbeat.rs` | Batched registry TTL refresh; disconnects registry-dropped connections. |
 | `services/builder/src/services/hub/tasks/session_checker.rs` | Per-tick session validation; disconnect on expiry. |
-| `services/builder/src/services/hub/tasks/stream_dispatcher.rs` | Applies ordered subscribe events to the registry, purges ended workers, shuts the registry down. |
-| `services/builder/src/services/stream_authorize/stream_authorize_service.rs` | Decides whether a user may use a stream. |
-| `services/builder/src/models/messages/hub.rs` | `HubEvent`, `HubMessage`, `TopicKey`, `ToTopic`. |
-| `services/builder/src/models/messages/stream.rs` | Internal stream messages, events and failures. |
+| `services/builder/src/models/messages/hub.rs` | `HubEvent`, `DisconnectReason`, `HubMessage`, `TopicKey`, `ToTopic`. |
+| `services/builder/src/models/messages/ping.rs` | `PingEvent`. |
 | `services/builder/src/repositories/hub_registry/hub_registry.rs` | `HubRegistry` trait — cross-instance connection contract. |
 | `services/builder/src/repositories/hub_registry/redis/redis_hub_registry.rs` | Redis implementation: SET/EXPIRE/DEL, CAS transactions, pub/sub. |
 | `services/builder/src/repositories/hub_registry/redis/redis_hub_connection_db.rs` | Pooled context factory; registry-change listener with self-origin filtering. |
-| `services/builder/src/app_config.rs`, `services/builder/src/app_state.rs` | Hub and stream configuration and application wiring. |
-| `client/web/src/engine/net/stream-hub.ts` | Scene-facing transport contract: subscriptions and listener callbacks. |
-| `client/web/src/engine/net/websocket-stream-hub.ts` | Development implementation: one reconnecting socket that waits for `connected`, resubscribes its streams and routes frames by `streamId`. |
-| `client/game-bindings/` | Generated postcard serializers and helpers to build and parse commands and snapshots. |
+| `services/builder/src/app_config.rs`, `services/builder/src/app_state.rs` | Hub configuration (`heartbeat`, `session_check`, `ping_enabled`) and application wiring. |
 
 <details data-agent="implementation">
 <summary>Why the registry write precedes local teardown in ConnectUser</summary>
@@ -306,23 +253,9 @@ The `hub-registry-changed` listener treats a `None` payload (Redis reconnect) as
 
 </details>
 
-<details data-agent="implementation">
-<summary>Command types are a permanent wire and log format</summary>
-
-Postcard is not self-describing and the log is replayed forever.
-
-- Enum variants are identified by their index. Add new variants at the end; never remove, reorder or insert one.
-- Do not change the fields of a variant. A different shape is a new variant (`AddV2`); the old one stays decodable and applicable.
-- To retire a variant, make `is_well_formed` refuse it so no new one is accepted, and keep its `apply` for commands already in the log.
-- `StableHash` tags follow the variant index and never change.
-- Serde attributes that need a self-describing format (`tag`, `untagged`, `flatten`, `skip_serializing_if`) are not usable on commands.
-- The TypeScript bindings come from twin types in `crates/shine-game/tools`; change a command type there too and regenerate. CI fails on a stale `client/game-bindings`.
-
-</details>
-
 <details data-agent="test">
-<summary>Where the hub side is covered</summary>
+<summary>Where the hub is covered</summary>
 
-`services/builder/src/services/hub/tests/streams.rs` covers subscribe events (ordered with the connection's lifecycle, ignored for a connection that is gone) and delivery to a connection by id. `tests/api-tests/builder/streams.ts` covers the wire protocol against the real service, and `stream_failures.ts` the Postgres and Redis outages (`infraOutage`).
+`services/builder/src/services/hub/tests/` covers the loop: `lifecycle.rs` (last-wins, disconnect, topic delivery, heartbeat, session checks), `contention.rs` (concurrent connects and broadcasts, across instances) and `fault.rs` (registry write failures). Unit tests sit beside `hub_connections.rs`, `hub_subscribers.rs` and `tasks/connection_tracker.rs`, and `routes/ws/connect_test.rs` covers the socket. `tests/api-tests/builder/ws_connect.ts` covers the real service: origin and auth rejection, ping delivery, malformed frames, last-wins and the session-deleted drop.
 
 </details>

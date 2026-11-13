@@ -7,13 +7,12 @@
       "^https:\\/\\/ws\\.scytta\\.com$",
       "^https:\\/\\/scytta\\.com$"
     ],
-
     "fullProblemResponse": false,
     "sessionTtl": 1800
   },
   "telemetry": {
     "allowReconfigure": true,
-    "defaultLevel": "INFO",
+    "defaultLevel": "info",
     "logging": {
       "type": "console",
       "format": "compact"

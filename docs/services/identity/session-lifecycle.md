@@ -88,7 +88,7 @@ A session counts as alive only if *both* keys exist. Splitting sentinel from dat
 | `services/identity/src/repositories/db.rs` | Declares `redis_cns` on `DBConfig` — the `identity`-credential connection string, identity-only. |
 | `services/identity/src/repositories/session/redis/redis_sessions.rs` | Session create/extend/delete — the write path that runs as `identity`. |
 | `services/identity/server_config.test.json` | `identity.db.redisCns` value. |
-| `services/server_config_test.json` | `service.sessionRedisCns` value, shared by identity and builder test configs via `beforeLayers`. |
+| `services/config/common.mock.json` | `service.sessionRedisCns` value, shared by identity and builder test and local configs via `beforeLayers`. |
 | `.vscode/tasks.json` | Local dev env vars for both connection strings, one source variable per credential. |
 
 <details data-agent="security">

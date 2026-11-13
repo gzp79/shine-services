@@ -1,5 +1,9 @@
 {
-  "beforeLayers": ["file://../server_config_test.json", "file://server_config.test.json"],
+  "beforeLayers": [
+    "file://../config/common.mock.json",
+    "file://config/mock.json",
+    "file://../config/telemetry.local.json"
+  ],
   "afterLayers": ["environment"],
 
   "service": {
@@ -11,15 +15,6 @@
   },
 
   "telemetry": {
-    "defaultLevel": "INFO,shine=DEBUG",
-    "rootSpanOrigin": true,
-    "metrics": {
-      "type": "otlp",
-      "endpoint": "http://localhost:4317"
-    },
-    "tracing": {
-      "type": "otlp",
-      "endpoint": "http://localhost:4317"
-    }
+    "defaultLevel": "info,shine_infra=trace,shine_identity=debug"
   }
 }

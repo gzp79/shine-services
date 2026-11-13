@@ -118,34 +118,12 @@
       "isBackground": true
     },
     {
-      "label": "identity: cloud",
-      "type": "shell",
-      "command": "cargo run -p shine-identity --release -- prod",
-      "options": {
-        "cwd": "services/identity",
-        "env": {
-          "RUST_BACKTRACE": "full",
-          "SHINE--SERVICE--TLS--CERT": "../../certificates/scytta.crt2",
-          "SHINE--SERVICE--TLS--KEY": "../../certificates/scytta.key",
-          "SHINE--SERVICE--PORT": "8443",
-          "SHINE--SERVICE--SESSION_REDIS_CNS": "${env:SHINE_REDIS_CNS}",
-          "SHINE--IDENTITY--AUTH--AUTH_BASE_URL": "https://local-cloud.scytta.com:8443/identity/auth/",
-          "SHINE--IDENTITY--DB--REDIS_CNS": "${env:SHINE_REDIS_CNS}"
-        }
-      },
-      "problemMatcher": [
-        "$rustc"
-      ],
-      "group": "build"
-    },
-    {
-      "label": "identity: local",
+      "label": "run identity",
       "type": "shell",
       "command": "cargo run -p shine-identity --release -- ${input:config-stage}",
       "options": {
         "cwd": "services/identity",
         "env": {
-          "RUST_LOG": "info,shine_game=trace,shine_forge=trace,shine_infra=trace,shine_builder=debug,test_map=trace",
           "RUST_BACKTRACE": "full"
         }
       },
@@ -155,31 +133,12 @@
       "group": "build"
     },
     {
-      "label": "builder: cloud",
-      "type": "shell",
-      "command": "cargo run -p shine-builder --release -- prod",
-      "options": {
-        "cwd": "services/builder",
-        "env": {
-          "SHINE--SERVICE--TLS--CERT": "../../certificates/scytta.crt",
-          "SHINE--SERVICE--TLS--KEY": "../../certificates/scytta.key",
-          "SHINE--SERVICE--POSRT": "8443"
-        }
-      },
-      "problemMatcher": [
-        "$rustc"
-      ],
-      "group": "build"
-    },
-    {
-      "label": "builder: local",
+      "label": "run builder",
       "type": "shell",
       "command": "cargo run -p shine-builder --release -- ${input:config-stage}",
       "options": {
         "cwd": "services/builder",
         "env": {
-          "_RUST_LOG": "info,shine_game=trace,shine_forge=trace,shine_infra=trace,shine_builder=debug,test_map=trace",
-          "RUST_LOG": "info",
           "RUST_BACKTRACE": "full"
         }
       },
@@ -295,7 +254,7 @@
         },
         {
           "label": "stop",
-          "value": "down"
+          "value": "--profile \"*\" down"
         },
         {
           "label": "status",
