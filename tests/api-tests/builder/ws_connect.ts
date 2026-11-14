@@ -389,7 +389,13 @@ test.describe('Builder websocket', { tag: ['@regression'] }, () => {
         expect(firstResult).toEqual({ kind: 'closed', code: HUB_DROPPED_CLOSE_CODE, reason: 'replaced' });
     });
 
-    test('WS connection shall be dropped when session is deleted', async ({ homeUrl, builderWSUrl }) => {
+    test('WS connection shall be dropped when session is deleted', async ({
+        homeUrl,
+        builderWSUrl,
+        serviceTestInfo
+    }) => {
+        await serviceTestInfo('builder').runIf(['test']);
+
         const url = wsConnectUrl(builderWSUrl);
         const authCheckIntervalMs = 2_000;
 
