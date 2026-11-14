@@ -17,13 +17,7 @@ use axum::{
 };
 use axum_server::Handle;
 use serde::de::DeserializeOwned;
-use std::{
-    env, fmt::Debug, fs,
-    future::Future,
-    net::SocketAddr,
-    pin::Pin,
-    time::Duration as StdDuration,
-};
+use std::{env, fmt::Debug, fs, future::Future, net::SocketAddr, pin::Pin, time::Duration as StdDuration};
 use tokio::{net::TcpListener, runtime::Runtime, signal, time::sleep};
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tracing::{instrument, level_filters::LevelFilter};

@@ -35,7 +35,7 @@ mod tests {
         name: String,
     }
 
-    #[derive(Debug, Deserialize)]    
+    #[derive(Debug, Deserialize)]
     struct Required {
         value: u32,
     }
