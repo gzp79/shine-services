@@ -68,8 +68,6 @@ pub enum StreamMessage {
         version: i64,
         state_hash: u64,
     },
-    /// What the subscriber had of the stream is void; a `Sync` follows.
-    Reset { stream_id: StreamId },
     /// The stream cannot be served now. The subscriber is dropped and has to subscribe again.
     Unsynced { stream_id: StreamId },
     CommandFailed {
@@ -89,7 +87,6 @@ impl StreamMessage {
             StreamMessage::Sync { stream_id, .. }
             | StreamMessage::Commands { stream_id, .. }
             | StreamMessage::Checkpoint { stream_id, .. }
-            | StreamMessage::Reset { stream_id }
             | StreamMessage::Unsynced { stream_id }
             | StreamMessage::CommandFailed { stream_id, .. }
             | StreamMessage::SubscribeFailed { stream_id, .. } => stream_id,

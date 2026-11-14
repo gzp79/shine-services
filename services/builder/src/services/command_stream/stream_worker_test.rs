@@ -448,7 +448,7 @@ impl CommandInboxDb for FlakyInbox {
     ) -> Result<InboxBatch, CommandStreamError> {
         let failing = self
             .fail
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |left| left.checked_sub(1))
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |left| left.checked_sub(1))
             .is_ok();
         if failing {
             return Err(CommandStreamError::Corrupt("injected failure".to_string()));

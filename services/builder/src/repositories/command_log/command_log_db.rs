@@ -1,7 +1,3 @@
-// Not called by anything outside this module's own tests yet: the service layer that calls through
-// `CommandLogDb` is a later round.
-#![allow(dead_code)]
-
 use crate::{
     models::CommandStreamError,
     repositories::command_log::{ConsistencyReport, StoredCommand, StoredSnapshot, StreamHead},
@@ -21,16 +17,17 @@ pub trait CommandLogDb: Clone + Send + Sync {
     fn head(&self, stream_id: &StreamId)
         -> impl Future<Output = Result<Option<StreamHead>, CommandStreamError>> + Send;
 
-    /// Stores the rows above the head and proves the overlap with it by chain hash. `commands` must
+    /// Stores the rows above the head and checks retained overlapping rows by chain and command hash.
+    /// An inbox position already stored at another version is diverged. `commands` must
     /// be a dense, contiguous run of versions; `baseline_hash` is the chain hash through the version
     /// right before the first of them.
     ///
     /// #Return
     /// `Ok(head)` is the stream's head after the call, whether something new was stored or the batch
-    /// was already covered. If `head.version` is not beyond the last command, the batch is in the log
-    /// exactly as sent. If it is beyond, the log is ahead of the batch and nothing of it could be
-    /// compared: the caller has to catch up (`commands_after`) before it trusts the batch.
-    /// `Err(CommandStreamError::Diverged { head })` if the batch does not match the log, with the head it
+    /// was already covered. Retained overlapping commands must match both hashes; pruned commands
+    /// cannot be verified and are never reinserted. If the returned head is beyond the batch, the
+    /// caller has to catch up (`commands_after`).
+    /// `Err(CommandStreamError::LogDiverged { head })` if the batch does not match the log, with the head it
     /// was compared with.
     fn append(
         &self,

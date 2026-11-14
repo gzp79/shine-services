@@ -32,12 +32,22 @@ try {
     docker compose -f services/docker-compose.yml -p shine up -d
     $pg_host=docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' shine-postgres-1
     $redis_host=docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' shine-redis-1
+    $toxiproxy_host=docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' shine-toxiproxy-1
     Write-Host "  pg: $pg_host"
     Write-Host "  redis: $redis_host"
+    Write-Host "  toxiproxy: $toxiproxy_host"
 
     Write-Host "Build action"
+    # Keep the hosts in sync with server_ci.yml: the proxied names go through toxiproxy (fault injection),
+    # the -direct names reach the databases on their in-network ports.
     # --load option is added only for local test to cache the layers for the next build
-    docker buildx build --progress=plain -f services/Dockerfile --target test --add-host postgres.mockbox.foo:$pg_host --add-host redis.mockbox.foo:$redis_host -t gzp79/shine-services:test --load .
+    docker buildx build --progress=plain -f services/Dockerfile --target test `
+        --add-host postgres.mockbox.foo:$toxiproxy_host `
+        --add-host redis.mockbox.foo:$toxiproxy_host `
+        --add-host postgres-direct.mockbox.foo:$pg_host `
+        --add-host redis-direct.mockbox.foo:$redis_host `
+        --add-host toxiproxy.mockbox.foo:$toxiproxy_host `
+        -t gzp79/shine-services:test --load .
 
     Write-Host "Start service in docker"
     docker compose -f services/docker-compose.yml -p shine --profile test up -d --no-recreate

@@ -239,16 +239,64 @@ async fn a_different_history_is_diverged_however_it_overlaps_the_head() {
 }
 
 #[test]
-async fn a_batch_ending_behind_the_head_is_unverified_and_returns_the_head_beyond_it() {
+async fn a_batch_ending_behind_the_head_must_match_the_retained_commands() {
     let log = TestLog::from_env().await;
     let (id, seed) = log.seeded_chat_log(5).await;
     let other = ChatLog::new("other", 3);
 
-    // The head is ahead of this batch's tip, so there is nothing of the batch to compare it with:
-    // the caller learns it from the returned head being beyond the batch.
-    let head = other.persist(&log.db, &id, 1, 3).await.unwrap();
+    let head = seed.persist(&log.db, &id, 1, 3).await.unwrap();
+    let result = other.persist(&log.db, &id, 1, 3).await;
 
+    assert!(
+        matches!(&result, Err(CommandStreamError::LogDiverged { head: seen }) if *seen == head),
+        "{result:?}"
+    );
     assert_eq!((head.version, head.chain_hash), (5, seed.chain_hash_at(5)));
+    assert_eq!(log.all_commands(&id).await, seed.commands);
+}
+
+#[test]
+async fn either_hash_mismatching_in_the_overlap_rejects_the_whole_batch() {
+    let log = TestLog::from_env().await;
+    let (id, seed) = log.seeded_chat_log(5).await;
+    let head = log.db.head(&id).await.unwrap().unwrap();
+
+    for last in [3, 5, 7] {
+        for change_chain_hash in [false, true] {
+            let mut batch = ChatLog::new("seed", 7);
+            if change_chain_hash {
+                batch.commands[1].chain_hash ^= 1;
+            } else {
+                batch.commands[1].command_hash ^= 1;
+            }
+
+            let result = batch.persist(&log.db, &id, 1, last).await;
+
+            assert!(
+                matches!(&result, Err(CommandStreamError::LogDiverged { head: seen }) if *seen == head),
+                "last {last}, change_chain_hash {change_chain_hash}: {result:?}"
+            );
+            assert_eq!(log.db.head(&id).await.unwrap(), Some(head.clone()));
+            assert_eq!(log.all_commands(&id).await, seed.commands);
+        }
+    }
+}
+
+#[test]
+async fn an_inbox_position_already_stored_at_another_version_is_diverged() {
+    let log = TestLog::from_env().await;
+    let (id, seed) = log.seeded_chat_log(3).await;
+    let head = log.db.head(&id).await.unwrap().unwrap();
+    let mut longer = ChatLog::new("seed", 5);
+    longer.commands[3].inbox_id = seed.commands[0].inbox_id;
+
+    let result = longer.persist(&log.db, &id, 4, 5).await;
+
+    assert!(
+        matches!(&result, Err(CommandStreamError::LogDiverged { head: seen }) if *seen == head),
+        "{result:?}"
+    );
+    assert_eq!(log.db.head(&id).await.unwrap(), Some(head));
     assert_eq!(log.all_commands(&id).await, seed.commands);
 }
 
@@ -307,7 +355,7 @@ async fn stored_commands_cannot_be_updated() {
 async fn the_inbox_position_of_a_command_is_kept_and_is_not_part_of_the_chain() {
     let log = TestLog::from_env().await;
     let id = TestStreamId::new_chat();
-    let mut room = ChatLog::new("a", 4);
+    let room = ChatLog::new("a", 4);
     log.db.ensure_stream(&id).await.unwrap();
 
     room.persist(&log.db, &id, 1, 4).await.unwrap();
@@ -337,6 +385,14 @@ async fn inbox_positions_are_unique_per_stream() {
     room.persist(&log.db, &second_stream, 1, 2).await.unwrap();
     // A position twice in one stream is one entry stored twice.
     assert!(repeating.persist(&log.db, &third_stream, 1, 2).await.is_err());
+    assert_eq!(
+        log.db.head(&third_stream).await.unwrap(),
+        Some(StreamHead { version: 0, chain_hash: 0 }),
+        "a rejected batch must not advance the head"
+    );
+    assert!(log.all_commands(&third_stream).await.is_empty());
+    room.persist(&log.db, &third_stream, 1, 2).await.unwrap();
+    assert_eq!(log.all_commands(&third_stream).await, room.commands);
 }
 
 #[test]
@@ -739,7 +795,9 @@ async fn a_pruned_stream_keeps_its_head_and_stays_appendable() {
     log.db.prune(&id, 1).await.unwrap();
 
     assert_eq!(log.db.head(&id).await.unwrap().unwrap(), head);
-    longer.persist(&log.db, &id, 13, 15).await.unwrap();
+    longer.persist(&log.db, &id, 1, 6).await.unwrap();
+    assert_eq!(log.all_commands(&id).await, longer.commands[8..12]);
+    longer.persist(&log.db, &id, 1, 15).await.unwrap();
     assert_eq!(log.db.head(&id).await.unwrap().unwrap().version, 15);
     assert_eq!(log.all_commands(&id).await, longer.commands[8..]);
 }

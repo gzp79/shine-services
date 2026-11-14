@@ -159,7 +159,6 @@ impl Connections {
     }
 
     /// Sends a message to the user's active connection. `Err` carries the dead connection to prune.
-    #[allow(dead_code)]
     pub async fn send_to_user(&self, user_id: Uuid, message: HubMessage) -> Result<(), DeadConnection> {
         let registry = self.registry.read().await;
         let Some(&connection_id) = registry.users.get(&user_id) else {

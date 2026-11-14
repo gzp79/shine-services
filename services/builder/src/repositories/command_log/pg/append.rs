@@ -54,11 +54,29 @@ impl<'a> From<&'a StoredCommand> for CommandInput<'a> {
 // One round trip for the whole batch: the array of commands is unnested into rows instead of one
 // execute() per command.
 pg_query!( pub InsertCommands =>
-    in = kind: &str, id: &str, commands: &[CommandInput<'_>];
+    in = kind: &str, id: &str, commands: &[CommandInput<'_>], head_version: i64;
+    out = matches: bool;
     sql = r#"
-        INSERT INTO cl_commands (kind, id, version, command_id, inbox_id, user_id, data, command_hash, chain_hash)
-        SELECT $1, $2, (cmd).* FROM UNNEST($3::cl_command_input[]) AS cmd
-        ON CONFLICT (kind, id, version) DO NOTHING
+        WITH input AS (
+            SELECT (cmd).* FROM UNNEST($3::cl_command_input[]) AS cmd
+        ), validation AS (
+            SELECT NOT EXISTS (
+                SELECT 1 FROM input
+                JOIN cl_commands AS stored
+                    ON stored.kind = $1 AND stored.id = $2
+                    AND (stored.version = input.version OR stored.inbox_id = input.inbox_id)
+                WHERE stored.version <> input.version
+                    OR stored.chain_hash <> input.chain_hash
+                    OR stored.command_hash <> input.command_hash
+            ) AS matches
+        ), inserted AS (
+            INSERT INTO cl_commands (kind, id, version, command_id, inbox_id, user_id, data, command_hash, chain_hash)
+            SELECT $1, $2, input.* FROM input, validation
+            WHERE validation.matches AND input.version > $4
+            ON CONFLICT (kind, id, version) DO NOTHING
+            RETURNING version
+        )
+        SELECT matches FROM validation
     "#
 );
 
@@ -96,9 +114,7 @@ pub async fn append(
     for attempt in 1..=MAX_ATTEMPTS {
         let mut client = db.client().await?;
 
-        // Read and validate outside any transaction: a verify-only (or rejected) append never
-        // needs to write at all, and the write below only needs the row for as long as its own
-        // statements take.
+        // Reject gaps and a mismatching head before taking the stream's row lock.
         let head: StreamHead = stream::get_head(db, &client, stream_id)
             .await?
             .ok_or(PgCommandLogError::StreamNotFound)?;
@@ -106,9 +122,7 @@ pub async fn append(
         if head.version < first_version - 1 {
             return Err(PgCommandLogError::LogDiverged { head });
         }
-        // The chain hash I can claim at head.version, if it falls within what I hold. When the head
-        // is already ahead of my own tip, I have nothing of mine to compare: the caller sees it from
-        // the returned head being beyond the batch.
+        // Compare the head when the batch covers it; SQL checks every retained overlapping row.
         let my_hash_at_head = if head.version == first_version - 1 {
             Some(baseline_hash)
         } else if head.version <= last_version {
@@ -126,26 +140,17 @@ pub async fn append(
         // rows above `head.version` are always a suffix, not an arbitrary subset.
         let new_start = ((head.version - first_version + 1) as usize).min(commands.len());
         let new = &commands[new_start..];
-        let Some(new_first) = new.first() else {
-            return Ok(head);
-        };
-        if new_first.version != head.version + 1 || new.windows(2).any(|w| w[1].version != w[0].version + 1) {
-            return Err(PgCommandLogError::LogDiverged { head });
+        if let Some(new_first) = new.first() {
+            if new_first.version != head.version + 1 || new.windows(2).any(|w| w[1].version != w[0].version + 1) {
+                return Err(PgCommandLogError::LogDiverged { head });
+            }
         }
 
         let tx = client.transaction(Some(IsolationLevel::ReadCommitted)).await?;
         tx.batch_execute(APPEND_TIMEOUTS).await?;
 
-        // Idempotent: a concurrent attempt inserting the same rows at the same versions is harmless
-        // (`ON CONFLICT DO NOTHING`); only advancing the head below needs a conflict check. No
-        // calculation here: every value is already decided above, outside the transaction. One
-        // batch insert, not one round trip per command.
-        let commands: Vec<CommandInput<'_>> = new.iter().map(CommandInput::from).collect();
-        stmts
-            .insert_commands
-            .execute(&tx, kind, id, commands.as_slice())
-            .await?;
-
+        // Claim the head before inserting: a stale writer must retry before it can collide with
+        // the winner's inbox IDs. The head and commands become visible together at commit.
         let new_version = new.last().map_or(head.version, |c| c.version);
         let new_chain_hash = new.last().map_or(head.chain_hash, |c| c.chain_hash);
         let moved = stmts
@@ -162,6 +167,15 @@ pub async fn append(
             .await?;
 
         if moved == 1 {
+            let commands: Vec<CommandInput<'_>> = commands.iter().map(CommandInput::from).collect();
+            let matches = stmts
+                .insert_commands
+                .query_one(&tx, kind, id, commands.as_slice(), head.version)
+                .await?;
+            if !matches {
+                tx.rollback().await?;
+                return Err(PgCommandLogError::LogDiverged { head });
+            }
             tx.commit().await?;
             return Ok(StreamHead {
                 version: new_version,

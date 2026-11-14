@@ -179,6 +179,8 @@ The relay keeps one cursor per subscriber: the version it has been sent through,
 
 Postgres decides which proposed continuation is canonical. The persistence task keeps a private replica and compares every request with its canonical version and chain hash. Settling a result sends nothing: the relay wakes itself, and the next pass delivers and submits. A `Current` result (the head still matches) changes nothing.
 
+The command-log append checks both `chain_hash` and `command_hash` for every retained overlapping version in SQL, including batches ending behind the head. A hash mismatch or an inbox position already stored at another version returns `LogDiverged` without storing any of the batch or advancing the head. Pruned commands cannot be verified and are never reinserted. Head arbitration and the guarded insert share one transaction.
+
 ```mermaid
 sequenceDiagram
     participant P as Persistence task

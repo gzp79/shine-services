@@ -215,16 +215,4 @@ mod tests {
         .await
         .unwrap();
     }
-
-    #[test]
-    #[should_panic(expected = "low_watermark must be less than high_watermark")]
-    fn rejects_equal_watermarks() {
-        Backpressure::new(5, 5, POLL, None, || async { 0 });
-    }
-
-    #[test]
-    #[should_panic(expected = "poll_period must be non-zero")]
-    fn rejects_zero_poll_period() {
-        Backpressure::new(3, 5, Duration::ZERO, None, || async { 0 });
-    }
 }

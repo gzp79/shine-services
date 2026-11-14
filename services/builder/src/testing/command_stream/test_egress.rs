@@ -77,7 +77,6 @@ impl TestEgress {
                 StreamMessage::Sync { commands, .. } => format!("sync:{}", commands.len()),
                 StreamMessage::Commands { commands, .. } => format!("commands:{}", commands.len()),
                 StreamMessage::Checkpoint { version, .. } => format!("checkpoint:{version}"),
-                StreamMessage::Reset { .. } => "reset".to_string(),
                 StreamMessage::Unsynced { .. } => "unsynced".to_string(),
                 StreamMessage::CommandFailed { .. } => "command-failed".to_string(),
                 StreamMessage::SubscribeFailed { .. } => "subscribe-failed".to_string(),

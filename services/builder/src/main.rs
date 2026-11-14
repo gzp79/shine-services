@@ -49,10 +49,11 @@ impl WebApplication for Application {
         context.add_health_provider(HubStatus::new(state.hub_service().clone()));
 
         let hub_service = state.hub_service().clone();
-        context.add_shutdown_hook(move || {
+        context.add_shutdown_hook(move || async move {
             if let Err(err) = hub_service.request_shutdown() {
                 tracing::warn!("Failed to send hub shutdown command from shutdown hook: {err:#?}");
             }
+            hub_service.wait_shutdown_complete().await;
         });
 
         *router = router.clone().nest(&format!("/{}", Self::AppConfig::NAME), ws_routes());

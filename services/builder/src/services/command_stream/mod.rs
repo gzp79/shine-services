@@ -1,7 +1,3 @@
-// Not called by anything outside this module's own tests yet: the stream worker that drives the
-// service is a later round.
-#![allow(dead_code, unused_imports)]
-
 mod stream_config;
 mod stream_egress;
 mod stream_kinds;

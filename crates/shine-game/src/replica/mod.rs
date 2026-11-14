@@ -1,4 +1,5 @@
 //! Deterministic command replay shared by the servers and the client.
+#![allow(clippy::module_inception)]
 
 mod chat;
 mod client_stream;

@@ -422,14 +422,12 @@ impl HubService {
     }
 
     /// Sends an egress message to a user's active connection.
-    #[allow(dead_code)] // part of the hub egress API; not yet wired to a caller
     #[tracing::instrument(level = "debug", skip_all, fields(enduser.id = %user_id))]
     pub async fn send_to_user(&self, user_id: Uuid, message: HubMessage) -> Result<(), HubError> {
         self.drop_dead(self.inner.connections.send_to_user(user_id, message).await.err())
     }
 
     /// Broadcasts an egress message to every connection subscribed to its topic.
-    #[allow(dead_code)] // part of the hub egress API; not yet wired to a caller
     #[tracing::instrument(level = "debug", skip_all)]
     pub async fn broadcast(&self, message: HubMessage) -> Result<(), HubError> {
         self.drop_dead(

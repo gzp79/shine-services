@@ -103,8 +103,10 @@ async fn the_hub_sends_stream_messages_to_a_connection_by_its_id() {
     let mut test = TestHub::default_from_env().await;
     let (connection, mut socket) = test.connect_ping(Uuid::new_v4(), 8);
     test.wait_all_commands().await;
-    let message = Arc::new(StreamMessage::Reset {
+    let message = Arc::new(StreamMessage::Checkpoint {
         stream_id: TestStreamId::new_chat_with("s1"),
+        version: 1,
+        state_hash: 0xAB,
     });
 
     let queued = test.hub.send(connection, message.clone()).await;

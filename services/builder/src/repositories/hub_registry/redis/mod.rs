@@ -5,5 +5,8 @@ mod redis_hub_registry;
 pub use self::{
     redis_hub_connection_db::{RedisHubConnectionDb, RedisHubConnectionDbContext},
     redis_hub_error::RedisHubRegistryBuildError,
-    redis_hub_registry::{hub_connection_key, HUB_REGISTRY_CHANGED_CHANNEL},
+    redis_hub_registry::HUB_REGISTRY_CHANGED_CHANNEL,
 };
+
+#[cfg(test)]
+pub use self::redis_hub_registry::hub_connection_key;

@@ -17,7 +17,13 @@ use axum::{
 };
 use axum_server::Handle;
 use serde::de::DeserializeOwned;
-use std::{env, fmt::Debug, fs, future::Future, net::SocketAddr, time::Duration as StdDuration};
+use std::{
+    env, fmt::Debug, fs,
+    future::Future,
+    net::SocketAddr,
+    pin::Pin,
+    time::Duration as StdDuration,
+};
 use tokio::{net::TcpListener, runtime::Runtime, signal, time::sleep};
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tracing::{instrument, level_filters::LevelFilter};
@@ -32,7 +38,7 @@ use utoipa_swagger_ui::{Config as SwaggerConfig, SwaggerUi};
 
 use std::sync::Arc;
 
-type ShutdownHook = Box<dyn FnOnce() + Send + 'static>;
+type ShutdownHook = Box<dyn FnOnce() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static>;
 
 #[derive(OpenApi)]
 #[openapi(paths(), components(), tags())]
@@ -41,7 +47,6 @@ struct ApiDoc;
 impl ApiDoc {
     pub fn with_default_components() -> OpenApiDoc {
         #[derive(ToResponse)]
-        #[allow(dead_code)]
         struct Problem {
             r#type: String,
             detail: Option<serde_json::Value>,
@@ -85,15 +90,15 @@ async fn shutdown_signal() {
     }
 }
 
-fn run_shutdown_hooks(shutdown_hooks: Vec<ShutdownHook>) {
+async fn run_shutdown_hooks(shutdown_hooks: Vec<ShutdownHook>) {
     for hook in shutdown_hooks {
-        hook();
+        hook().await;
     }
 }
 
 async fn graceful_shutdown(handle: Handle<SocketAddr>, shutdown_hooks: Vec<ShutdownHook>) {
     shutdown_signal().await;
-    run_shutdown_hooks(shutdown_hooks);
+    run_shutdown_hooks(shutdown_hooks).await;
     handle.graceful_shutdown(Some(StdDuration::from_secs(10)));
 
     loop {
@@ -150,11 +155,12 @@ impl<'a> AppBuildContext<'a> {
         self.health_service.add_provider(provider);
     }
 
-    pub fn add_shutdown_hook<F>(&mut self, hook: F)
+    pub fn add_shutdown_hook<F, Fut>(&mut self, hook: F)
     where
-        F: FnOnce() + Send + 'static,
+        F: FnOnce() -> Fut + Send + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
     {
-        self.shutdown_hooks.push(Box::new(hook));
+        self.shutdown_hooks.push(Box::new(move || Box::pin(hook())));
     }
 }
 
@@ -322,7 +328,7 @@ async fn start_web_app<A: WebApplication>(app: A) -> Result<(), AnyError> {
         let listener = TcpListener::bind(&addr).await.unwrap();
         let shutdown = async move {
             shutdown_signal().await;
-            run_shutdown_hooks(shutdown_hooks);
+            run_shutdown_hooks(shutdown_hooks).await;
         };
         axum::serve(listener, router)
             .with_graceful_shutdown(shutdown)
