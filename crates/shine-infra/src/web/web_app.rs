@@ -17,13 +17,10 @@ use axum::{
 };
 use axum_server::Handle;
 use serde::de::DeserializeOwned;
-use std::{env, fmt::Debug, fs, future::Future, net::SocketAddr, time::Duration as StdDuration};
+use std::{env, fmt::Debug, fs, future::Future, net::SocketAddr, pin::Pin, time::Duration as StdDuration};
 use tokio::{net::TcpListener, runtime::Runtime, signal, time::sleep};
-use tower_http::{
-    cors::{AllowOrigin, CorsLayer},
-    trace::{DefaultOnResponse, TraceLayer},
-};
-use tracing::{instrument, level_filters::LevelFilter, Level};
+use tower_http::cors::{AllowOrigin, CorsLayer};
+use tracing::{instrument, level_filters::LevelFilter};
 use tracing_log::LogTracer;
 use tracing_subscriber::EnvFilter;
 use utoipa::{
@@ -35,7 +32,7 @@ use utoipa_swagger_ui::{Config as SwaggerConfig, SwaggerUi};
 
 use std::sync::Arc;
 
-type ShutdownHook = Box<dyn FnOnce() + Send + 'static>;
+type ShutdownHook = Box<dyn FnOnce() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static>;
 
 #[derive(OpenApi)]
 #[openapi(paths(), components(), tags())]
@@ -44,7 +41,6 @@ struct ApiDoc;
 impl ApiDoc {
     pub fn with_default_components() -> OpenApiDoc {
         #[derive(ToResponse)]
-        #[allow(dead_code)]
         struct Problem {
             r#type: String,
             detail: Option<serde_json::Value>,
@@ -88,15 +84,15 @@ async fn shutdown_signal() {
     }
 }
 
-fn run_shutdown_hooks(shutdown_hooks: Vec<ShutdownHook>) {
+async fn run_shutdown_hooks(shutdown_hooks: Vec<ShutdownHook>) {
     for hook in shutdown_hooks {
-        hook();
+        hook().await;
     }
 }
 
 async fn graceful_shutdown(handle: Handle<SocketAddr>, shutdown_hooks: Vec<ShutdownHook>) {
     shutdown_signal().await;
-    run_shutdown_hooks(shutdown_hooks);
+    run_shutdown_hooks(shutdown_hooks).await;
     handle.graceful_shutdown(Some(StdDuration::from_secs(10)));
 
     loop {
@@ -153,11 +149,12 @@ impl<'a> AppBuildContext<'a> {
         self.health_service.add_provider(provider);
     }
 
-    pub fn add_shutdown_hook<F>(&mut self, hook: F)
+    pub fn add_shutdown_hook<F, Fut>(&mut self, hook: F)
     where
-        F: FnOnce() + Send + 'static,
+        F: FnOnce() -> Fut + Send + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
     {
-        self.shutdown_hooks.push(Box::new(hook));
+        self.shutdown_hooks.push(Box::new(move || Box::pin(hook())));
     }
 }
 
@@ -212,6 +209,7 @@ async fn load_app_config<A: WebApplication>() -> Result<WebAppConfig<A::AppConfi
     tracing::error!("init-error - tracing: ok");
 
     let config = WebAppConfig::<A::AppConfig>::load(&stage, None).await?;
+    config.feature.validate()?;
     tracing::info!("pre-init completed");
 
     Ok(config)
@@ -244,15 +242,9 @@ async fn create_web_app<A: WebApplication>(
         None
     };
 
-    // Each request has 2 spans:
-    // - a trace-backend-only span (OpenTelemetry attributes)
-    // - a console-only span (method, uri, access log)
-    // Keeping them apart lets each output have its own fields and filters.
+    // The request span carries backend attributes and correlates handler and completion events.
+    // Console logging suppresses the span prefix while retaining events emitted inside it.
     let trace_layer = telemetry_service.create_layer();
-    let console_layer = TraceLayer::new_for_http()
-        .make_span_with(crate::telemetry::make_console_span)
-        .on_response(DefaultOnResponse::new().level(Level::INFO));
-
     // Register built-in status providers
     health_service.add_provider(crate::health::UptimeStatus::new());
     health_service.add_provider(in_flight_service.clone());
@@ -294,9 +286,7 @@ async fn create_web_app<A: WebApplication>(
             .layer(tower::util::option_layer(powered_by_layer))
             .layer(SecurityHeaders::default())
             .layer(cors_layer)
-            // trace_layer must be inside console_layer: the trace span is the current span in the handlers
             .layer(trace_layer)
-            .layer(console_layer)
             .with_state(app_state),
         shutdown_hooks,
     ))
@@ -332,7 +322,7 @@ async fn start_web_app<A: WebApplication>(app: A) -> Result<(), AnyError> {
         let listener = TcpListener::bind(&addr).await.unwrap();
         let shutdown = async move {
             shutdown_signal().await;
-            run_shutdown_hooks(shutdown_hooks);
+            run_shutdown_hooks(shutdown_hooks).await;
         };
         axum::serve(listener, router)
             .with_graceful_shutdown(shutdown)

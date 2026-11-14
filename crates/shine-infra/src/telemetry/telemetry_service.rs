@@ -1,14 +1,17 @@
 use crate::telemetry::log_metrics::LogMetricsLayer;
-use crate::telemetry::otel_http::{CONSOLE_TARGET, TRACING_TARGET};
-use crate::telemetry::{Metering, OtelLayer, TelemetryBuildError, TelemetryConfig, TelemetryError, Tracing};
+use crate::telemetry::otel_http::TRACING_TARGET;
+use crate::telemetry::{
+    ConsoleLogFormat, Logging, Metering, OtelLayer, RootSpanOriginLayer, TelemetryBuildError, TelemetryConfig,
+    TelemetryError, Tracing,
+};
 use opentelemetry::{
     global,
     metrics::{Meter, MeterProvider},
     trace::TracerProvider,
     InstrumentationScope,
 };
-use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{
+    logs::SdkLoggerProvider,
     metrics::SdkMeterProvider,
     trace::{Sampler, SdkTracerProvider},
     Resource,
@@ -22,6 +25,11 @@ use tracing_subscriber::{
     registry::LookupSpan,
     reload, Layer,
 };
+
+#[cfg(feature = "ot_otlp")]
+use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
+#[cfg(feature = "ot_otlp")]
+use opentelemetry_otlp::WithExportConfig;
 
 #[derive(Debug, Clone)]
 pub struct DynConfig {
@@ -77,9 +85,11 @@ struct Metrics {
 /// Logs
 ///  - The trace::trace,debug,info,warn,error! macros can be used
 ///  - For convenience, the log::trace,debug,info,warn,error! macros are also available and channelled to the tracing layer
+///  - Log records can be disabled, formatted for the console, or exported over OTLP independently from traces
 #[derive(Clone)]
 pub struct TelemetryService {
     tracer_provider: Option<SdkTracerProvider>,
+    logger_provider: Option<SdkLoggerProvider>,
     metrics: Option<Metrics>,
     reconfigure: Option<Arc<RwLock<dyn DynHandle>>>,
 }
@@ -88,6 +98,7 @@ impl TelemetryService {
     pub async fn new(service_name: &'static str, config: &TelemetryConfig) -> Result<Self, TelemetryBuildError> {
         let mut service = TelemetryService {
             tracer_provider: None,
+            logger_provider: None,
             metrics: None,
             reconfigure: None,
         };
@@ -146,18 +157,54 @@ impl TelemetryService {
         Ok(reload_env_filter)
     }
 
-    fn tracing_console_log<S>(&mut self, _config: &TelemetryConfig) -> Result<impl Layer<S>, TelemetryBuildError>
+    fn logging_layer<S>(
+        &mut self,
+        config: &TelemetryConfig,
+        resource: &Resource,
+    ) -> Result<Option<Box<dyn Layer<S> + Send + Sync>>, TelemetryBuildError>
     where
         S: Subscriber + for<'a> LookupSpan<'a> + Send + Sync + 'static,
     {
-        tracing::debug!("Registering console log tracing layer...");
+        match &config.logging {
+            Logging::None => {
+                tracing::warn!("Logging is disabled");
+                Ok(None)
+            }
+            Logging::Console { format } => {
+                tracing::debug!("Registering console log layer...");
 
-        // The HTTP request span carries many attributes meant for the trace backend; keep them out of the console prefix.
-        let console_layer = tracing_subscriber::fmt::Layer::new()
-            .compact()
-            .with_filter(filter_fn(|meta| !(meta.is_span() && meta.target() == TRACING_TARGET)));
-
-        Ok(console_layer)
+                // The HTTP request span carries many attributes meant for the trace backend; keep them out of console logs.
+                match format {
+                    ConsoleLogFormat::Compact => Ok(Some(
+                        tracing_subscriber::fmt::Layer::new()
+                            .compact()
+                            .with_filter(filter_fn(|meta| !(meta.is_span() && meta.target() == TRACING_TARGET)))
+                            .boxed(),
+                    )),
+                    ConsoleLogFormat::Json => Ok(Some(
+                        tracing_subscriber::fmt::Layer::new()
+                            .json()
+                            .with_filter(filter_fn(|meta| !(meta.is_span() && meta.target() == TRACING_TARGET)))
+                            .boxed(),
+                    )),
+                }
+            }
+            #[cfg(feature = "ot_otlp")]
+            Logging::OpenTelemetryProtocol { endpoint } => {
+                tracing::info!("Registering OpenTelemetryProtocol log exporter...");
+                let exporter = opentelemetry_otlp::LogExporter::builder()
+                    .with_tonic()
+                    .with_endpoint(endpoint)
+                    .build()?;
+                let provider = SdkLoggerProvider::builder()
+                    .with_resource(resource.clone())
+                    .with_batch_exporter(exporter)
+                    .build();
+                let layer = OpenTelemetryTracingBridge::new(&provider);
+                self.logger_provider = Some(provider);
+                Ok(Some(layer.boxed()))
+            }
+        }
     }
 
     fn tracing_ot<S>(
@@ -172,11 +219,6 @@ impl TelemetryService {
         let mut builder = SdkTracerProvider::builder();
 
         builder = match &config.tracing {
-            Tracing::StdOut => {
-                tracing::info!("Registering StdOut tracing exporter...");
-                let exporter = opentelemetry_stdout::SpanExporter::default();
-                builder.with_simple_exporter(exporter)
-            }
             #[cfg(feature = "ot_otlp")]
             Tracing::OpenTelemetryProtocol { endpoint } => {
                 tracing::info!("Registering OpenTelemetryProtocol tracing exporter...");
@@ -206,10 +248,7 @@ impl TelemetryService {
         let tracer = provider.tracer_with_scope(scope.clone());
         self.tracer_provider = Some(provider);
 
-        Ok(OpenTelemetryLayer::new(tracer)
-            .with_tracked_inactivity(true)
-            // Filter out console-only spans from the OpenTelemetry layer
-            .with_filter(filter_fn(|meta| !(meta.is_span() && meta.target() == CONSOLE_TARGET))))
+        Ok(OpenTelemetryLayer::new(tracer).with_tracked_inactivity(true))
     }
 
     fn install_trace(
@@ -226,68 +265,29 @@ impl TelemetryService {
             .as_ref()
             .map(|m| LogMetricsLayer::new(&m.meter).with_filter(LevelFilter::WARN));
 
-        if matches!(config.tracing, Tracing::None) {
-            tracing::warn!("Trace is disabled");
-
-            if config.enable_console_log {
-                if config.allow_reconfigure {
-                    Self::set_global_tracing_pipeline(
-                        registry().with(log_metrics).with(
-                            self.tracing_console_log(config)?
-                                .with_filter(self.tracing_dyn_filter(config)?),
-                        ),
-                    )?;
-                } else {
-                    Self::set_global_tracing_pipeline(
-                        registry().with(log_metrics).with(
-                            self.tracing_console_log(config)?
-                                .with_filter(self.tracing_fixed_filter(config)?),
-                        ),
-                    )?;
-                }
-            } else {
-                tracing::warn!("Service is configured for silent mode");
-                if log_metrics.is_some() {
-                    Self::set_global_tracing_pipeline(registry().with(log_metrics))?;
-                }
-            }
+        let logging_layer = self.logging_layer(config, resource)?;
+        let tracing_layer = if matches!(config.tracing, Tracing::None) {
+            tracing::warn!("Tracing is disabled");
+            None
         } else {
-            match (config.enable_console_log, config.allow_reconfigure) {
-                (true, true) => {
-                    Self::set_global_tracing_pipeline(
-                        registry().with(log_metrics).with(
-                            self.tracing_console_log(config)?
-                                .and_then(self.tracing_ot(config, resource, scope)?)
-                                .with_filter(self.tracing_dyn_filter(config)?),
-                        ),
-                    )?;
-                }
-                (true, false) => {
-                    Self::set_global_tracing_pipeline(
-                        registry().with(log_metrics).with(
-                            self.tracing_console_log(config)?
-                                .and_then(self.tracing_ot(config, resource, scope)?)
-                                .with_filter(self.tracing_fixed_filter(config)?),
-                        ),
-                    )?;
-                }
-                (false, true) => {
-                    Self::set_global_tracing_pipeline(
-                        registry().with(log_metrics).with(
-                            self.tracing_ot(config, resource, scope)?
-                                .with_filter(self.tracing_dyn_filter(config)?),
-                        ),
-                    )?;
-                }
-                (false, false) => {
-                    Self::set_global_tracing_pipeline(
-                        registry().with(log_metrics).with(
-                            self.tracing_ot(config, resource, scope)?
-                                .with_filter(self.tracing_fixed_filter(config)?),
-                        ),
-                    )?;
-                }
-            }
+            Some(self.tracing_ot(config, resource, scope)?.boxed())
+        };
+        let sinks = Layer::and_then(logging_layer, tracing_layer);
+        let root_origin = config.root_span_origin.then(RootSpanOriginLayer::new);
+        let sinks = Layer::and_then(sinks, root_origin);
+
+        if config.allow_reconfigure {
+            Self::set_global_tracing_pipeline(
+                registry()
+                    .with(log_metrics)
+                    .with(sinks.with_filter(self.tracing_dyn_filter(config)?)),
+            )?;
+        } else {
+            Self::set_global_tracing_pipeline(
+                registry()
+                    .with(log_metrics)
+                    .with(sinks.with_filter(self.tracing_fixed_filter(config)?)),
+            )?;
         }
 
         Ok(())
@@ -378,7 +378,6 @@ impl TelemetryService {
     }
 
     pub fn create_layer(&self) -> OtelLayer {
-        //todo: read route filtering from config
         let mut layer = OtelLayer::default();
         if let Some(metrics) = &self.metrics {
             layer = layer.meter(metrics.meter.clone())

@@ -7,13 +7,14 @@ description: Starting development sessions, running tests after code changes, de
 
 ## Quick Start
 
-**Start service** (choose one):
+**Start services for API tests** (after starting the databases):
 
 ```bash
-# Recommended: Use startup script (from repo root)
-cd services/identity && powershell.exe -ExecutionPolicy Bypass -File run_identity_local.ps1
+# In separate terminals, from the repo root:
+cd services/identity && cargo run -p shine-identity --release -- test
+cd services/builder && cargo run -p shine-builder --release -- test
 
-# Alternative: VSCode task "identity: local" (auto-configures env vars)
+# Alternative: VSCode tasks "run identity" / "run builder", selecting stage "test"
 ```
 
 **Start Docker dev environment** (databases — required before service):
@@ -24,6 +25,13 @@ docker compose -f services/docker-compose.yml -p shine up -d
 ```
 
 **Run tests:**
+
+API projects (`identity`, `builder`, and `shared`) depend on preflight tests that require
+`/info/version` to report `environment: "test"`. Start services with the `test`
+configuration, not `local`, before running API tests. 
+Outside CI, Playwright connects directly over HTTPS to identity on port 8443 and builder
+on port 8444, matching their `server_config.test.json` files. In CI it uses the Docker
+HTTPS proxy on port 8443.
 
 ```bash
 # Full suite

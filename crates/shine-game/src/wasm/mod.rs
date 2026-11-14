@@ -2,6 +2,7 @@ mod experiments;
 mod heap;
 mod math;
 mod mesh;
+mod replica;
 mod world;
 
 use tracing_subscriber::layer::SubscriberExt;

@@ -10,34 +10,23 @@ use shine_infra::{
     session::SessionKey,
     web::extracts::{ClientFingerprint, SiteInfo},
 };
+use shine_infra_testing::db::redis::get_redis_cns;
 use shine_test::test;
-use std::env;
 use uuid::Uuid;
 
-async fn create_db(scope: &str) -> Option<impl SessionDb> {
-    match env::var("SHINE_TEST_REDIS_CNS") {
-        Ok(cns) => {
-            let redis = db::redis::create_redis_pool(cns.as_str()).await.unwrap();
-            let db = RedisSessionDb::new(&redis, format!("{scope}_"), Duration::seconds(1000))
-                .await
-                .unwrap();
-            Some(db)
-        }
-        _ => {
-            tracing::warn!("Missing SHINE_TEST_REDIS_CNS, skipping test");
-            None
-        }
-    }
+async fn create_db(scope: &str) -> impl SessionDb {
+    let cns = get_redis_cns();
+    let redis = db::redis::create_redis_pool(cns.as_str()).await.unwrap();
+    RedisSessionDb::new(&redis, format!("{scope}_"), Duration::seconds(1000))
+        .await
+        .unwrap()
 }
 
 #[test]
 async fn create_get_remove() {
     let scope = &Uuid::new_v4().to_string()[..5];
     tracing::debug!("test scope: {scope}");
-    let session_manager = match create_db(scope).await {
-        Some(db) => SessionService::new(db),
-        None => return,
-    };
+    let session_manager = SessionService::new(create_db(scope).await);
 
     let identity = Identity {
         id: Uuid::new_v4(),
@@ -101,10 +90,7 @@ async fn create_get_remove() {
 async fn update_invalid_key() {
     let scope = &Uuid::new_v4().to_string()[..5];
     tracing::debug!("test scope: {scope}");
-    let session_manager = match create_db(scope).await {
-        Some(db) => SessionService::new(db),
-        None => return,
-    };
+    let session_manager = SessionService::new(create_db(scope).await);
 
     let random = SystemRandom::new();
 
@@ -129,10 +115,7 @@ async fn update_invalid_key() {
 async fn create_update() {
     let scope = &Uuid::new_v4().to_string()[..5];
     tracing::debug!("test scope: {scope}");
-    let session_manager = match create_db(scope).await {
-        Some(db) => SessionService::new(db),
-        None => return,
-    };
+    let session_manager = SessionService::new(create_db(scope).await);
 
     let identity1 = Identity {
         id: Uuid::new_v4(),
@@ -195,10 +178,7 @@ async fn create_update() {
 async fn create_many_remove_all() {
     let scope = &Uuid::new_v4().to_string()[..5];
     tracing::debug!("test scope: {scope}");
-    let session_manager = match create_db(scope).await {
-        Some(db) => SessionService::new(db),
-        None => return,
-    };
+    let session_manager = SessionService::new(create_db(scope).await);
 
     let identity = Identity {
         id: Uuid::new_v4(),

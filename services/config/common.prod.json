@@ -1,0 +1,28 @@
+{
+  "service": {
+    "allowedOrigins": [
+      "^https:\\/\\/cloud\\.scytta\\.com$",
+      "^https:\\/\\/dev\\.scytta\\.com$",
+      "^https:\\/\\/www\\.scytta\\.com$",
+      "^https:\\/\\/ws\\.scytta\\.com$",
+      "^https:\\/\\/scytta\\.com$"
+    ],
+    "fullProblemResponse": false,
+    "sessionTtl": 1800
+  },
+  "telemetry": {
+    "allowReconfigure": true,
+    "defaultLevel": "info",
+    "logging": {
+      "type": "console",
+      "format": "compact"
+    },
+    "metrics": {
+      "type": "otlp",
+      "endpoint": "grpc://localhost:4317"
+    },
+    "tracing": {
+      "type": "none"
+    }
+  }
+}

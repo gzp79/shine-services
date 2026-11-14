@@ -12,7 +12,8 @@
         "paths": {
             "$fixtures/*": ["./fixtures/*"],
             "$lib": ["./src"],
-            "$lib/*": ["./src/*"]
+            "$lib/*": ["./src/*"],
+            "#game-bindings": ["../client/game-bindings/index.ts"]
         }
     },
     "exclude": ["node_modules", "build"]

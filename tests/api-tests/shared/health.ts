@@ -4,6 +4,16 @@ import { joinURL, sharedServices } from '$lib/utils';
 
 type StatusJson = Record<string, unknown>;
 
+for (const envName of ['test', 'local', 'prod']) {
+    for (const serviceName of sharedServices) {
+        test(`Service environment check - ${serviceName} requires ${envName}`, async ({ serviceTestInfo }) => {
+            const env = serviceTestInfo(serviceName);
+            await env.runIf([envName]);
+            expect(env.current()).toBe(envName);
+        });
+    }
+}
+
 const optionalProviderValidators: Record<string, (value: unknown) => void> = {
     postgres: (value) => {
         expect(value).toEqual(
@@ -26,6 +36,7 @@ const optionalProviderValidators: Record<string, (value: unknown) => void> = {
 function expectStatusPayload(status: unknown): void {
     expect(status).toEqual(
         expect.objectContaining({
+            environment: expect.stringMatching(/^(test|local|prod)$/),
             uptime: expect.objectContaining({
                 startTime: expect.any(String),
                 uptimeSeconds: expect.any(Number)

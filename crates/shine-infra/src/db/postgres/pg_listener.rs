@@ -3,10 +3,14 @@ use crate::{
     sync::{ExponentialBackoff, KeepAlive},
 };
 use futures::{stream, StreamExt};
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    future::Future,
+    sync::{Arc, Weak},
+};
 use tokio::{
-    sync::{RwLock, Semaphore},
-    time::{Duration, Instant},
+    sync::{Notify, RwLock, Semaphore},
+    time::{interval_at, Duration, Instant, Interval, MissedTickBehavior},
 };
 use tokio_postgres::{AsyncMessage, Notification};
 use tokio_postgres_rustls::MakeRustlsConnect;
@@ -44,15 +48,21 @@ impl ListenState {
         self.client = None;
     }
 
-    fn handle(&self, channel: &str, payload: Option<&str>) {
-        if let Some(handler) = self.handlers.get(channel) {
-            Self::invoke(channel, handler, payload);
+    /// Like [`disconnect`](Self::disconnect), but only if `client` is still the published client.
+    /// A finished streaming task must not clear a newer connection that replaced its own.
+    fn disconnect_if_current(&mut self, client: &Weak<PgRawClient>) -> bool {
+        match &self.client {
+            Some(current) if Weak::ptr_eq(&Arc::downgrade(current), client) => {
+                self.disconnect();
+                true
+            }
+            _ => false,
         }
     }
 
-    fn handle_reconnect(&self) {
-        for (channel, handler) in &self.handlers {
-            Self::invoke(channel, handler, None);
+    fn handle(&self, channel: &str, payload: Option<&str>) {
+        if let Some(handler) = self.handlers.get(channel) {
+            Self::invoke(channel, handler, payload);
         }
     }
 
@@ -70,6 +80,8 @@ struct Inner {
     config: PgConfig,
     tls: MakeRustlsConnect,
     connect_timeout: Duration,
+    /// Period of the streaming task's handler nudge; `None` disables the periodic wake.
+    wake_interval: Option<Duration>,
     keep_alive: Arc<KeepAlive>,
     /// Serializes every subscription/lifecycle change; see the design doc, "Concurrency model".
     op_lock: Arc<Semaphore>,
@@ -100,6 +112,7 @@ impl PgListener {
         config: PgConfig,
         tls: MakeRustlsConnect,
         connect_timeout: Duration,
+        wake_interval: Option<Duration>,
         op_lock: Arc<Semaphore>,
         state: Arc<RwLock<ListenState>>,
         keep_alive: Arc<KeepAlive>,
@@ -121,7 +134,8 @@ impl PgListener {
                     if !keep_alive.is_running() {
                         break;
                     }
-                    Self::connect_and_subscribe(&config, &tls, connect_timeout, &state, &keep_alive).await
+                    Self::connect_and_subscribe(&config, &tls, connect_timeout, wake_interval, &state, &keep_alive)
+                        .await
                 };
 
                 match established {
@@ -153,12 +167,13 @@ impl PgListener {
     }
 
     /// Opens the shared connection if absent, spawns its streaming task, re-subscribes every
-    /// registered channel, and nudges their handlers. Returns whether a new connection was opened.
+    /// registered channel, and triggers the streaming task to nudge their handlers. Returns whether a new connection was opened.
     /// Caller must hold the op permit.
     async fn connect_and_subscribe(
         config: &PgConfig,
         tls: &MakeRustlsConnect,
         connect_timeout: Duration,
+        wake_interval: Option<Duration>,
         state: &Arc<RwLock<ListenState>>,
         keep_alive: &Arc<KeepAlive>,
     ) -> Result<bool, PgError> {
@@ -182,12 +197,21 @@ impl PgListener {
             state.set_client(client.clone());
             state.handlers.keys().cloned().collect::<Vec<_>>()
         };
-        Self::start_streaming_task(state.clone(), connection, keep_alive.clone());
+        let wake = Arc::new(Notify::new());
+        Self::start_streaming_task(
+            state.clone(),
+            connection,
+            Arc::downgrade(&client),
+            keep_alive.clone(),
+            wake.clone(),
+            wake_interval,
+        );
 
         for channel in &channels {
-            Self::pg_listen(&client, channel).await?;
+            Self::pg_listen(&client, channel, connect_timeout).await?;
         }
-        state.read().await.handle_reconnect();
+        // Stored as a permit, so the task picks it up even if it is busy dispatching.
+        wake.notify_one();
 
         Ok(true)
     }
@@ -195,7 +219,11 @@ impl PgListener {
     fn start_streaming_task(
         state: Arc<RwLock<ListenState>>,
         mut connection: PgRawSocketConnection,
+        // Weak so the task does not keep the client (and so the driver) alive.
+        client: Weak<PgRawClient>,
         keep_alive: Arc<KeepAlive>,
+        wake: Arc<Notify>,
+        wake_interval: Option<Duration>,
     ) {
         // Raw poll result so the loop can tell a notification (dispatch) from a non-notification
         // async message such as a server NOTICE (skip, keep polling) from an error (stop, reconnect).
@@ -203,28 +231,46 @@ impl PgListener {
 
         tokio::spawn(async move {
             let mut stream = Box::pin(messages);
-            while let Some(msg) = stream.next().await {
-                match msg {
-                    Ok(AsyncMessage::Notification(notification)) => {
-                        state
-                            .read()
-                            .await
-                            .handle(notification.channel(), Some(notification.payload()));
-                    }
-                    Ok(_) => {}
-                    Err(e) => {
-                        tracing::error!("PGListener notification error: {e:#?}");
-                        break;
+            let mut ticker = wake_interval.filter(|d| !d.is_zero()).map(|period| {
+                let mut ticker = interval_at(Instant::now() + period, period);
+                ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
+                ticker
+            });
+
+            loop {
+                tokio::select! {
+                    msg = stream.next() => match msg {
+                        Some(Ok(AsyncMessage::Notification(notification))) => {
+                            state
+                                .read()
+                                .await
+                                .handle(notification.channel(), Some(notification.payload()));
+                        }
+                        Some(Ok(_)) => {}
+                        Some(Err(e)) => {
+                            tracing::error!("PGListener notification error: {e:#?}");
+                            break;
+                        }
+                        None => break,
+                    },
+
+                    // Woken by a (re)connect or the periodic tick: nudge every handler without a payload.
+                    _ = wake_or_tick(&wake, &mut ticker) => {
+                        let state = state.read().await;
+                        for channel in state.handlers.keys() {
+                            state.handle(channel, None);
+                        }
                     }
                 }
             }
 
-            // End the driver before clearing the client. This runs before the reconnect notify, so
-            // the keep-alive task cannot have opened a replacement yet.
+            // End the driver before clearing the client. Only a still-current client is cleared and
+            // triggers a reconnect: otherwise the keep-alive task already dropped it (and is retrying)
+            // or a newer connection replaced it, which this task must not tear down.
             drop(stream);
-            state.write().await.disconnect();
+            let was_current = state.write().await.disconnect_if_current(&client);
 
-            if keep_alive.is_running() {
+            if was_current && keep_alive.is_running() {
                 tracing::info!("PGListener triggering a reconnection for connection lost...");
                 keep_alive.wake();
             }
@@ -235,6 +281,7 @@ impl PgListener {
         config: PgConfig,
         tls: MakeRustlsConnect,
         connect_timeout: Duration,
+        wake_interval: Option<Duration>,
         max_reconnect_backoff: Duration,
     ) -> Self {
         let keep_alive = Arc::new(KeepAlive::new());
@@ -244,6 +291,7 @@ impl PgListener {
             config.clone(),
             tls.clone(),
             connect_timeout,
+            wake_interval,
             op_lock.clone(),
             state.clone(),
             keep_alive.clone(),
@@ -255,6 +303,7 @@ impl PgListener {
                 config,
                 tls,
                 connect_timeout,
+                wake_interval,
                 keep_alive,
                 op_lock,
                 state,
@@ -293,27 +342,25 @@ impl PgListener {
             &self.inner.config,
             &self.inner.tls,
             self.inner.connect_timeout,
+            self.inner.wake_interval,
             &self.inner.state,
             &self.inner.keep_alive,
         )
         .await?;
 
-        // Register the handler before returning so the reconnect always re-subscribes it. The LISTEN
-        // itself is best-effort: `connect_and_subscribe` reports a client as live via `is_some()`,
-        // but the streaming task drops a dead client only just before signalling reconnect, so the
-        // snapshot here can be a client whose connection has already died. A failed LISTEN in that
-        // window is not the caller's error — the keep-alive reconnect re-subscribes the handler.
-        if let Some(client) = self.inner.state.read().await.client.clone() {
-            if let Err(e) = Self::pg_listen(&client, &channel).await {
-                tracing::warn!("PGListener LISTEN {channel:?} failed ({e:#?}); reconnect will re-subscribe it");
-            }
-        }
         self.inner
             .state
             .write()
             .await
             .handlers
-            .insert(channel, Box::new(handler));
+            .insert(channel.clone(), Box::new(handler));
+        let client = self.inner.state.read().await.client.clone();
+        if let Some(client) = client {
+            if let Err(e) = Self::pg_listen(&client, &channel, self.inner.connect_timeout).await {
+                self.inner.state.write().await.handlers.remove(&channel);
+                return Err(e);
+            }
+        }
         Ok(())
     }
 
@@ -330,7 +377,7 @@ impl PgListener {
             state.client.clone()
         };
         if let Some(client) = client {
-            Self::pg_unlisten(&client, &channel).await?;
+            Self::pg_unlisten(&client, &channel, self.inner.connect_timeout).await?;
         }
         Ok(())
     }
@@ -345,34 +392,64 @@ impl PgListener {
         };
         if let Some(client) = client {
             tracing::info!("PGListener stop listening to all channels...");
-            client.execute("UNLISTEN *", &[]).await?;
+            with_timeout(self.inner.connect_timeout, client.execute("UNLISTEN *", &[])).await?;
         }
         Ok(())
     }
 
     pub async fn backend_pid(&self) -> Option<i32> {
         let client = self.inner.state.read().await.client.clone()?;
-        client
-            .query_one("SELECT pg_backend_pid()::int4", &[])
-            .await
-            .ok()
-            .map(|row| row.get(0))
+        with_timeout(
+            self.inner.connect_timeout,
+            client.query_one("SELECT pg_backend_pid()::int4", &[]),
+        )
+        .await
+        .ok()
+        .map(|row| row.get(0))
     }
 
-    async fn pg_listen(client: &PgRawClient, channel: &str) -> Result<(), PgError> {
+    async fn pg_listen(client: &PgRawClient, channel: &str, timeout: Duration) -> Result<(), PgError> {
         tracing::info!("PGListener start listening to channel {channel:?}...");
-        client
-            .execute(&format!(r#"LISTEN "{}""#, quote_ident(channel)), &[])
-            .await?;
+        with_timeout(
+            timeout,
+            client.execute(&format!(r#"LISTEN "{}""#, quote_ident(channel)), &[]),
+        )
+        .await?;
         Ok(())
     }
 
-    async fn pg_unlisten(client: &PgRawClient, channel: &str) -> Result<(), PgError> {
+    async fn pg_unlisten(client: &PgRawClient, channel: &str, timeout: Duration) -> Result<(), PgError> {
         tracing::info!("PGListener stop listening to channel {channel:?}...");
-        client
-            .execute(&format!(r#"UNLISTEN "{}""#, quote_ident(channel)), &[])
-            .await?;
+        with_timeout(
+            timeout,
+            client.execute(&format!(r#"UNLISTEN "{}""#, quote_ident(channel)), &[]),
+        )
+        .await?;
         Ok(())
+    }
+}
+
+/// Bounds a command on the listener connection. A stalled socket would otherwise hold the op permit
+/// and block `listen`/`unlisten`/`close` and the reconnect; a timeout is reported like a failed connect.
+async fn with_timeout<F, T, E>(timeout: Duration, fut: F) -> Result<T, PgError>
+where
+    F: Future<Output = Result<T, E>>,
+    PgError: From<E>,
+{
+    match tokio::time::timeout(timeout, fut).await {
+        Ok(result) => Ok(result?),
+        Err(_) => Err(PgError::ListenerConnectTimeout),
+    }
+}
+
+/// Resolves on an explicit wake or the next periodic tick (if enabled).
+async fn wake_or_tick(wake: &Notify, ticker: &mut Option<Interval>) {
+    match ticker {
+        Some(ticker) => tokio::select! {
+            _ = wake.notified() => {}
+            _ = ticker.tick() => {}
+        },
+        None => wake.notified().await,
     }
 }
 

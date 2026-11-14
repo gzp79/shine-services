@@ -4,6 +4,7 @@ import { Cdt } from './experiments/cdt/index';
 import { HexMesh } from './experiments/hex-mesh/index';
 import { InputControl } from './experiments/input-control/index';
 import { InstancedColorMeshExp } from './experiments/instanced-color-mesh/index';
+import { PixelMapExperiment } from './experiments/pixel-map/index';
 import { TileChunk } from './experiments/tile-chunk/index';
 import { Trilinear } from './experiments/trilinear/index';
 import { WorldNeighbors } from './experiments/world-neighbors/index';
@@ -29,7 +30,8 @@ export const scenes: SceneEntry[] = [
         title: 'Instanced Color Mesh',
         create: (context) => new InstancedColorMeshExp(context)
     },
-    { id: 'asset-viewer', title: 'Asset Viewer', create: (context) => new AssetViewer(context) }
+    { id: 'asset-viewer', title: 'Asset Viewer', create: (context) => new AssetViewer(context) },
+    { id: 'pixel-map', title: 'Pixel Map', create: (context) => new PixelMapExperiment(context) }
 ];
 
 const sceneById = new Map(scenes.map((s) => [s.id, s]));

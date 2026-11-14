@@ -1,66 +1,46 @@
 # syntax=docker/dockerfile:1-labs
 
-FROM rust:bookworm AS build
+FROM rust:bookworm AS build_base
 
 RUN USER=root
 
 RUN rustup component add rustfmt
+RUN cargo install cargo-chef
 
 RUN rustc --version \
     && cargo --version
 
-# Create a dummy project to cache dependencies as a separate layer
+#######################################################
+FROM build_base AS planner
+
 WORKDIR /shine
-
-ENV ALL_BINS="services/identity services/builder"
-ENV ALL_LIBS="crates/shine-test-macros crates/shine-test crates/shine-core crates/shine-infra-macros crates/shine-infra crates/shine-game"
-ENV SERVICE_PROJECTS="shine-test-macros shine-test shine-core shine-infra-macros shine-infra shine-identity shine-builder"
-
-# copy all cargo.toml files
-COPY --parents ./**/Cargo.toml ./
-# create empty main projects
-RUN for bin in $ALL_BINS; do \
-        mkdir -p ./$bin/src; \
-        echo "fn main() {}" > ./$bin/src/main.rs; \
-    done
-# create empty lib projects
-RUN for lib in $ALL_LIBS; do \
-        mkdir -p ./$lib/src; \
-        touch ./$lib/src/lib.rs; \
-    done
-
-COPY ./rustfmt.toml ./
-COPY ./clippy.toml ./
-COPY ./Cargo.toml ./
-COPY ./Cargo.lock ./
-
-RUN for proj in $SERVICE_PROJECTS; do PROJECTS="$PROJECTS -p $proj"; done \
-    && cargo build --release $PROJECTS
-
-RUN rm -rf ./crates \
-    && rm -rf ./services \
-    && rm -rf ./target/release/deps/libshine* \
-    && rm -rf ./target/release/deps/shine*
-
-# Copy the actual source code
-COPY ./crates ./crates
-COPY ./services ./services
+COPY . .
 
 RUN cargo fmt --check
+RUN cargo chef prepare --recipe-path recipe.json
+
+#######################################################
+FROM build_base AS build
+
+# Dependency layer
+WORKDIR /shine
+COPY --from=planner /shine/recipe.json recipe.json
+RUN cargo chef cook --recipe-path recipe.json
+RUN cargo chef cook --release --recipe-path recipe.json
+
+# Build layer
+COPY . .
+RUN cargo build --release $PROJECTS --workspace --locked
 
 ENV RUST_BACKTRACE=1
-ENV RUST_LOG="debug"
-ENV SHINE_TEST_REDIS_CNS="redis://redis.mockbox.foo:6379"
-ENV SHINE_TEST_PG_CNS="postgres://username:password@postgres.mockbox.foo:5432/database-test?sslmode=disable"
-# Fault-injection tests: the toxiproxy API, its proxies listen on the same host
+ENV RUST_LOG="none"
 ENV SHINE_TEST_TOXIPROXY_URL="http://toxiproxy.mockbox.foo:8474"
+ENV SHINE_TEST_REDIS_CNS="redis://redis.mockbox.foo:6379"
+ENV SHINE_TEST_REDIS_CNS_DIRECT="redis://redis-direct.mockbox.foo:6379"
+ENV SHINE_TEST_PG_CNS="postgres://username:password@postgres.mockbox.foo:5432/database-test?sslmode=disable"
+ENV SHINE_TEST_PG_CNS_DIRECT="postgres://username:password@postgres-direct.mockbox.foo:5432/database-test?sslmode=disable"
 
-# build the final project  
-RUN for proj in $SERVICE_PROJECTS; do PROJECTS="$PROJECTS -p $proj"; done \
-  && cargo build --release $PROJECTS
-# running tests
-RUN for proj in $SERVICE_PROJECTS; do PROJECTS="$PROJECTS -p $proj"; done \
-  && cargo test --release $PROJECTS 
+RUN cargo test --workspace --locked -- --test-threads=1
 
 #######################################################
 FROM nginx:bookworm AS base
@@ -116,13 +96,13 @@ COPY ./certificates/scytta.key ./certificates/scytta.key
 COPY ./services/docker/nginx.test.conf /etc/nginx/nginx-shine-server.conf
 
 WORKDIR /app/services
-COPY ./services/server_config_test.json ./
-
-WORKDIR /app/services/identity
-COPY ./services/identity/server_config.test.json ./
-
-WORKDIR /app/services/builder
-COPY ./services/builder/server_config.test.json ./
+COPY ./services/config/common.mock.json ./services/config/common.test.json ./config/
+COPY ./services/identity/config/mock.json ./identity/config/
+COPY ./services/identity/server_config.test.json ./identity/server_config.test.base.json
+COPY ./services/identity/server_config.test.nginx.json ./identity/server_config.test.json
+COPY ./services/builder/config/mock.json ./builder/config/
+COPY ./services/builder/server_config.test.json ./builder/server_config.test.base.json
+COPY ./services/builder/server_config.test.nginx.json ./builder/server_config.test.json
 
 # Some build time validation 
 RUN nginx -t -c /etc/nginx/nginx.conf
@@ -137,13 +117,9 @@ WORKDIR /app
 COPY ./services/docker/nginx.prod.conf /etc/nginx/nginx-shine-server.conf
 
 WORKDIR /app/services
-COPY ./services/server_config.json ./
-
-WORKDIR /app/services/identity
-COPY ./services/identity/server_config.prod.json ./
-
-WORKDIR /app/services/builder
-COPY ./services/builder/server_config.prod.json ./
+COPY ./services/config/common.prod.json ./config/
+COPY ./services/identity/server_config.prod.json ./identity
+COPY ./services/builder/server_config.prod.json ./builder
 
 # Some build time validation 
 RUN nginx -t -c /etc/nginx/nginx.conf

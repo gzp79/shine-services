@@ -1,0 +1,13 @@
+[package]
+name = "shine-infra-testing"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tracing = { workspace = true }
+tokio = { workspace = true, features = ["sync", "time"] }
+redis = { workspace = true }
+
+shine-infra = { workspace = true }
+shine-test = { workspace = true, features = [ "toxiproxy" ] }
+

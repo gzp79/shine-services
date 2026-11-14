@@ -7,35 +7,45 @@
       "label": "format",
       "type": "shell",
       "command": "cargo fmt",
-      "problemMatcher": ["$rustc"],
+      "problemMatcher": [
+        "$rustc"
+      ],
       "group": "build"
     },
     {
       "label": "clippy",
       "type": "shell",
       "command": "cargo clippy ${input:projects} --all-targets",
-      "problemMatcher": ["$rustc"],
+      "problemMatcher": [
+        "$rustc"
+      ],
       "group": "build"
     },
     {
       "label": "clippy wasm",
       "type": "shell",
       "command": "cargo clippy --target wasm32-unknown-unknown ${input:wasm-projects} --all-targets",
-      "problemMatcher": ["$rustc"],
+      "problemMatcher": [
+        "$rustc"
+      ],
       "group": "build"
     },
     {
       "label": "build",
       "type": "shell",
       "command": "cargo build --release ${input:projects} --all-targets",
-      "problemMatcher": ["$rustc"],
+      "problemMatcher": [
+        "$rustc"
+      ],
       "group": "build"
     },
     {
       "label": "build wasm",
       "type": "shell",
       "command": "cargo build --target wasm32-unknown-unknown --release ${input:wasm-projects} --all-targets",
-      "problemMatcher": ["$rustc"],
+      "problemMatcher": [
+        "$rustc"
+      ],
       "group": "build"
     },
     {
@@ -44,11 +54,18 @@
       "command": "cargo test ${input:projects}",
       "options": {
         "env": {
-          "_RUST_LOG": "debug",
-          "RUST_BACKTRACE": "full"
+          "RUST_LOG": "warn",
+          "RUST_BACKTRACE": "full",
+          "SHINE_TEST_TOXIPROXY_URL": "http://localhost:8474",
+          "SHINE_TEST_PG_CNS": "postgres://username:password@localhost:5432/database-test?sslmode=disable",
+          "SHINE_TEST_PG_CNS_DIRECT": "postgres://username:password@localhost:25432/database-test?sslmode=disable",
+          "SHINE_TEST_REDIS_CNS": "redis://localhost:6379",
+          "SHINE_TEST_REDIS_CNS_DIRECT": "redis://localhost:26379"
         }
       },
-      "problemMatcher": ["$rustc"],
+      "problemMatcher": [
+        "$rustc"
+      ],
       "group": "build"
     },
     {
@@ -63,7 +80,9 @@
           "_GECKODRIVER": "${workspaceFolder}\\target\\browser-drivers\\geckodriver.exe"
         }
       },
-      "problemMatcher": ["$rustc"],
+      "problemMatcher": [
+        "$rustc"
+      ],
       "group": "build"
     },
     {
@@ -76,7 +95,9 @@
           "RUST_BACKTRACE": "full"
         }
       },
-      "problemMatcher": ["$rustc"],
+      "problemMatcher": [
+        "$rustc"
+      ],
       "group": "build"
     },
     {
@@ -97,97 +118,96 @@
       "isBackground": true
     },
     {
-      "label": "identity: cloud",
+      "label": "run identity",
       "type": "shell",
-      "command": "cargo run -p shine-identity --release -- prod",
+      "command": "cargo run -p shine-identity --release -- ${input:config-stage}",
       "options": {
         "cwd": "services/identity",
         "env": {
-          "RUST_BACKTRACE": "full",
-          "SHINE--SERVICE--TLS--CERT": "../../certificates/scytta.crt2",
-          "SHINE--SERVICE--TLS--KEY": "../../certificates/scytta.key",
-          "SHINE--SERVICE--PORT": "8443",
-          "SHINE--SERVICE--SESSION_REDIS_CNS": "${env:SHINE_REDIS_CNS}",
-          "SHINE--IDENTITY--AUTH--AUTH_BASE_URL": "https://local-cloud.scytta.com:8443/identity/auth/",
-          "SHINE--IDENTITY--DB--REDIS_CNS": "${env:SHINE_REDIS_CNS}"
+          "RUST_BACKTRACE": "full"
         }
       },
-      "problemMatcher": ["$rustc"],
+      "problemMatcher": [
+        "$rustc"
+      ],
       "group": "build"
     },
     {
-      "label": "identity: local",
+      "label": "run builder",
       "type": "shell",
-      "command": "cargo run -p shine-identity --release -- test",
-      "options": {
-        "cwd": "services/identity",
-        "env": {
-          "RUST_BACKTRACE": "full",
-          "SHINE--SERVICE--TLS--CERT": "../../certificates/scytta.crt",
-          "SHINE--SERVICE--TLS--KEY": "../../certificates/scytta.key",
-          "SHINE--SERVICE--PORT": "8443",
-          "SHINE--TELEMETRY--METRICS--TYPE": "otlp",
-          "SHINE--TELEMETRY--METRICS--ENDPOINT": "http://localhost:4317",
-          "SHINE--TELEMETRY--TRACING--TYPE": "otlp",
-          "SHINE--TELEMETRY--TRACING--ENDPOINT": "http://localhost:4317",
-          "SHINE--TELEMETRY--DEFAULT_LEVEL": "INFO,shine=DEBUG"
-        }
-      },
-      "problemMatcher": ["$rustc"],
-      "group": "build"
-    },
-    {
-      "label": "builder: cloud",
-      "type": "shell",
-      "command": "cargo run -p shine-builder --release -- prod",
+      "command": "cargo run -p shine-builder --release -- ${input:config-stage}",
       "options": {
         "cwd": "services/builder",
         "env": {
-          "SHINE--SERVICE--TLS--CERT": "../../certificates/scytta.crt",
-          "SHINE--SERVICE--TLS--KEY": "../../certificates/scytta.key",
-          "SHINE--SERVICE--POSRT": "8443"
+          "RUST_BACKTRACE": "full"
         }
       },
-      "problemMatcher": ["$rustc"],
-      "group": "build"
-    },
-    {
-      "label": "builder: local",
-      "type": "shell",
-      "command": "cargo run -p shine-builder --release -- test",
-      "options": {
-        "cwd": "services/builder",
-        "env": {
-          "RUST_BACKTRACE": "full",
-          "SHINE--SERVICE--TLS--CERT": "../../certificates/scytta.crt",
-          "SHINE--SERVICE--TLS--KEY": "../../certificates/scytta.key",
-          "SHINE--SERVICE--PORT": "8444",
-          "SHINE--TELEMETRY--METRICS--TYPE": "otlp",
-          "SHINE--TELEMETRY--METRICS--ENDPOINT": "http://localhost:4317",
-          "SHINE--TELEMETRY--TRACING--TYPE": "otlp",
-          "SHINE--TELEMETRY--TRACING--ENDPOINT": "http://localhost:4317",
-          "SHINE--TELEMETRY--DEFAULT_LEVEL": "INFO,shine=DEBUG"
-        }
-      },
-      "problemMatcher": ["$rustc"],
+      "problemMatcher": [
+        "$rustc"
+      ],
       "group": "build"
     }
   ],
   "inputs": [
     {
       "type": "pickString",
+      "id": "config-stage",
+      "description": "Select config (local: dev overrides on top of test; test: as used by CI)",
+      "options": [
+        "local",
+        "test"
+      ],
+      "default": "local"
+    },
+    {
+      "type": "pickString",
       "id": "projects",
       "description": "Select project",
       "options": [
-        { "label": "all", "value": "" },
-        { "label": "shine-builder", "value": "-p shine-builder" },
-        { "label": "shine-identity", "value": "-p shine-identity" },
-        { "label": "shine-infra", "value": "-p shine-infra" },
-        { "label": "shine-infra-macros", "value": "-p shine-infra-macros" },
-        { "label": "shine-core", "value": "-p shine-core" },
-        { "label": "shine-game", "value": "-p shine-game" },
-        { "label": "shine-test", "value": "-p shine-test" },
-        { "label": "shine-test-macros", "value": "-p shine-test-macros" }
+        {
+          "label": "all",
+          "value": ""
+        },
+        {
+          "label": "shine-builder",
+          "value": "-p shine-builder"
+        },
+        {
+          "label": "shine-identity",
+          "value": "-p shine-identity"
+        },
+        {
+          "label": "shine-infra",
+          "value": "-p shine-infra"
+        },
+        {
+          "label": "shine-infra-macros",
+          "value": "-p shine-infra-macros"
+        },
+        {
+          "label": "shine-infra-testing",
+          "value": "-p shine-infra-testing"
+        },
+        {
+          "label": "shine-core",
+          "value": "-p shine-core --features tokio,validator"
+        },
+        {
+          "label": "shine-game",
+          "value": "-p shine-game"
+        },
+        {
+          "label": "shine-game-tools",
+          "value": "-p shine-game-tools"
+        },
+        {
+          "label": "shine-test",
+          "value": "-p shine-test"
+        },
+        {
+          "label": "shine-test-macros",
+          "value": "-p shine-test-macros"
+        }
       ],
       "default": "asset-service"
     },
@@ -200,9 +220,18 @@
           "label": "all",
           "value": "-p shine-core -p shine-game -p shine-test"
         },
-        { "label": "shine-core", "value": "-p shine-core" },
-        { "label": "shine-game", "value": "-p shine-game" },
-        { "label": "shine-test", "value": "-p shine-test" }
+        {
+          "label": "shine-core",
+          "value": "-p shine-core"
+        },
+        {
+          "label": "shine-game",
+          "value": "-p shine-game"
+        },
+        {
+          "label": "shine-test",
+          "value": "-p shine-test"
+        }
       ],
       "default": "asset-service"
     },
@@ -211,11 +240,26 @@
       "id": "env-task",
       "description": "Select env task",
       "options": [
-        { "label": "start (rebuild)", "value": "up --build" },
-        { "label": "start", "value": "up" },
-        { "label": "start (with trace dashboard)", "value": "--profile observe up" },
-        { "label": "stop", "value": "down" },
-        { "label": "status", "value": "ps" }
+        {
+          "label": "start (rebuild)",
+          "value": "up --build"
+        },
+        {
+          "label": "start",
+          "value": "up"
+        },
+        {
+          "label": "start (with trace dashboard)",
+          "value": "--profile observe up"
+        },
+        {
+          "label": "stop",
+          "value": "--profile \"*\" down"
+        },
+        {
+          "label": "status",
+          "value": "ps"
+        }
       ],
       "default": "asset-service"
     }
