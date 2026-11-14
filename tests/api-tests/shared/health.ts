@@ -26,6 +26,7 @@ const optionalProviderValidators: Record<string, (value: unknown) => void> = {
 function expectStatusPayload(status: unknown): void {
     expect(status).toEqual(
         expect.objectContaining({
+            environment: 'test',
             uptime: expect.objectContaining({
                 startTime: expect.any(String),
                 uptimeSeconds: expect.any(Number)
