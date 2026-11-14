@@ -99,10 +99,8 @@ WORKDIR /app/services
 COPY ./services/config/common.mock.json ./services/config/common.test.json ./config/
 COPY ./services/identity/config/mock.json ./identity/config/
 COPY ./services/identity/server_config.test.json ./identity/server_config.test.base.json
-COPY ./services/identity/server_config.test.nginx.json ./identity/server_config.test.json
 COPY ./services/builder/config/mock.json ./builder/config/
 COPY ./services/builder/server_config.test.json ./builder/server_config.test.base.json
-COPY ./services/builder/server_config.test.nginx.json ./builder/server_config.test.json
 
 # Some build time validation 
 RUN nginx -t -c /etc/nginx/nginx.conf
