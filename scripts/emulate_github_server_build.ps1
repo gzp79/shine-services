@@ -53,7 +53,7 @@ try {
     docker compose -f services/docker-compose.yml -p shine --profile test up -d --no-recreate
 
     Write-Host "Run tests"    
-    # pnpm --dir tests run test:local
+    pnpm --dir tests run test:local
 }
 finally {
     if ($null -eq $prevCI) { Remove-Item Env:CI -ErrorAction SilentlyContinue } else { $env:CI = $prevCI }

@@ -96,10 +96,10 @@ COPY ./certificates/scytta.key ./certificates/scytta.key
 COPY ./services/docker/nginx.test.conf /etc/nginx/nginx-shine-server.conf
 
 WORKDIR /app/services
-COPY ./services/config/common.mock.json ./services/config/common.test.json ./config
-COPY ./services/identity/config/mock.json ./identity/config
+COPY ./services/config/common.mock.json ./services/config/common.test.json ./config/
+COPY ./services/identity/config/mock.json ./identity/config/
 COPY ./services/identity/server_config.test.json ./identity
-COPY ./services/builder/config/mock.json ./builder/config
+COPY ./services/builder/config/mock.json ./builder/config/
 COPY ./services/builder/server_config.test.json ./builder
 
 # Some build time validation 
@@ -115,7 +115,7 @@ WORKDIR /app
 COPY ./services/docker/nginx.prod.conf /etc/nginx/nginx-shine-server.conf
 
 WORKDIR /app/services
-COPY ./services/config/common.prod.json ./config
+COPY ./services/config/common.prod.json ./config/
 COPY ./services/identity/server_config.prod.json ./identity
 COPY ./services/builder/server_config.prod.json ./builder
 
