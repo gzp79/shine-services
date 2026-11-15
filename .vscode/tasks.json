@@ -125,7 +125,9 @@
         "cwd": "services/identity",
         "env": {
           "RUST_BACKTRACE": "full",
-          "SHINE--SERVICE--PORT": "8443"
+          "SHINE--SERVICE--PORT": "8443",
+          "SHINE--SERVICE--TLS__CERT": "../../certificates/scytta.crt",
+          "SHINE--SERVICE--TLS__KEY": "../../certificates/scytta.key"
         }
       },
       "problemMatcher": [
@@ -141,7 +143,9 @@
         "cwd": "services/builder",
         "env": {
           "RUST_BACKTRACE": "full",
-          "SHINE--SERVICE--PORT": "8444"
+          "SHINE--SERVICE--PORT": "8444",
+          "SHINE--SERVICE--TLS__CERT": "../../certificates/scytta.crt",
+          "SHINE--SERVICE--TLS__KEY": "../../certificates/scytta.key"
         }
       },
       "problemMatcher": [

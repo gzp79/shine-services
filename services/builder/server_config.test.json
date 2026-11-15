@@ -7,11 +7,7 @@
   "afterLayers": ["environment", "file?://../../temp/server_config.json"],
 
   "service": {
-    "port": 7001,
-    "tls": {
-      "cert": "../../certificates/scytta.crt",
-      "key": "../../certificates/scytta.key"
-    }
+    "port": 7001
   },
 
   "builder": {

@@ -24,7 +24,7 @@ docker compose -f services/docker-compose.yml -p shine up -d
 # Stop: docker compose -f services/docker-compose.yml -p shine down
 ```
 
-**Configuration details:** See [Service Configuration Strategy](../../../docs/services/configuration.md) for port mappings, environment overrides (using `SHINE--SERVICE--PORT` format), and mock setup.
+**Configuration details:** See [Service Configuration Strategy](../../../docs/services/configuration.md) for port mappings, environment overrides (using `SHINE--SERVICE--*` format), TLS setup, and mock configuration.
 
 **Run tests:**
 
@@ -75,7 +75,7 @@ cargo test -p shine-builder    # or -p shine-identity, or the whole workspace
 **Verify service is ready:**
 
 ```bash
-curl -k https://localhost:8443/identity/info/ready  # Should return "Ok"
+curl http://localhost:8443/identity/info/ready  # Should return "Ok" (HTTP, no HTTPS)
 ```
 
 ## Development Cycle
