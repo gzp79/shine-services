@@ -7,7 +7,7 @@
   "afterLayers": ["environment"],
 
   "service": {
-    "port": 8443,
+    "port": 7000,
     "tls": {
       "cert": "../../certificates/scytta.crt",
       "key": "../../certificates/scytta.key"

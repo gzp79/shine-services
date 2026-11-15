@@ -124,7 +124,8 @@
       "options": {
         "cwd": "services/identity",
         "env": {
-          "RUST_BACKTRACE": "full"
+          "RUST_BACKTRACE": "full",
+          "SHINE--SERVICE--PORT": "8443"
         }
       },
       "problemMatcher": [
@@ -139,7 +140,8 @@
       "options": {
         "cwd": "services/builder",
         "env": {
-          "RUST_BACKTRACE": "full"
+          "RUST_BACKTRACE": "full",
+          "SHINE--SERVICE--PORT": "8444"
         }
       },
       "problemMatcher": [

@@ -24,14 +24,11 @@ docker compose -f services/docker-compose.yml -p shine up -d
 # Stop: docker compose -f services/docker-compose.yml -p shine down
 ```
 
+**Configuration details:** See [Service Configuration Strategy](../../../docs/services/configuration.md) for port mappings, environment overrides (using `SHINE--SERVICE--PORT` format), and mock setup.
+
 **Run tests:**
 
-API projects (`identity`, `builder`, and `shared`) depend on preflight tests that require
-`/info/version` to report `environment: "test"`. Start services with the `test`
-configuration, not `local`, before running API tests. 
-Outside CI, Playwright connects directly over HTTPS to identity on port 8443 and builder
-on port 8444, matching their `server_config.test.json` files. In CI it uses the Docker
-HTTPS proxy on port 8443.
+Start services with the `test` configuration before running API tests — they check `/info/version` returns `environment: "test"`. Playwright connects directly to identity on port 8443 and builder on port 8444 (local dev) or through the Docker HTTPS proxy (CI).
 
 ```bash
 # Full suite
@@ -52,14 +49,10 @@ cd tests && ENABLE_REQUEST_LOGGING=1 pnpm test:local --grep "test name"
 
 **Run Rust crate tests** (unit/integration tests inside the workspace):
 
-Tests that touch Redis/Postgres **skip themselves** unless the `SHINE_TEST_*_CNS`
-env vars are set (you'll see `Missing SHINE_TEST_REDIS_CNS/SHINE_REDIS_CNS, skipping test`
-warnings). This mirrors the Docker build (`services/Dockerfile`). To run them locally,
-start the Docker dev environment (above) and point the CNS vars at the toxiproxy ports
-it exposes on the host:
+Tests that touch Redis/Postgres **skip themselves** unless the `SHINE_TEST_*_CNS` env vars are set (you'll see `Missing SHINE_TEST_REDIS_CNS/SHINE_REDIS_CNS, skipping test` warnings). This mirrors the Docker build. To run them locally, start the Docker dev environment (above) and point the CNS vars at the toxiproxy ports it exposes on the host:
 
 ```bash
-# toxiproxy exposes redis on host :6379 and postgres on host :5432 (see services/docker-compose.yml)
+# toxiproxy exposes redis on host :6379 and postgres on host :5432
 export SHINE_TEST_REDIS_CNS="redis://localhost:6379"
 export SHINE_TEST_PG_CNS="postgres://username:password@localhost:5432/database-test?sslmode=disable"
 # fault-injection tests (toxiproxy API); they skip without it
@@ -69,8 +62,7 @@ cargo test -p shine-builder    # or -p shine-identity, or the whole workspace
 ```
 
 - Direct (un-proxied) DBs are also available: redis `:26379`, postgres `:25432`.
-- Without these vars the tests still "pass" but only because they skip — always set them
-  when validating DB-backed code, otherwise you're testing nothing.
+- Without these vars the tests still "pass" but only because they skip — always set them when validating DB-backed code.
 
 **Agent test guidelines:**
 
@@ -78,30 +70,13 @@ cargo test -p shine-builder    # or -p shine-identity, or the whole workspace
 - Use `--grep` to scope runs to relevant tests when possible
 - Set `ENABLE_REQUEST_LOGGING=1` when debugging failures to see HTTP request/response details
 - Read full output directly; the `list` reporter shows pass/fail per test
-- **Writing a new test or mock?** Use the `api-test-writing` skill first — covers folder layout, available mocks, session minting vs a real user, and service isolation rules.
+- **Writing a new test or mock?** Use the `api-test-writing` skill first — covers folder layout, available mocks, and service isolation rules.
 
 **Verify service is ready:**
 
 ```bash
 curl -k https://localhost:8443/identity/info/ready  # Should return "Ok"
 ```
-
-## Configuration
-
-**Service requirements:**
-
-- Port 8443 (HTTPS), config `server_config.test.json`, certificates at `../../certificates/scytta.{crt,key}`
-- URL: `https://cloud.local.scytta.com:8443/identity`
-
-**Test requirements:**
-
-- Service running at above URL
-- Mock services (SMTP:2525, OAuth2:8090, OIDC:8091) auto-start with tests
-
-**Test outputs:**
-
-- Report: `tests/reports/index.html`
-- Status: `tests/test-results/.last-run.json` (compare for regressions)
 
 ## Development Cycle
 
@@ -116,24 +91,16 @@ curl -k https://localhost:8443/identity/info/ready  # Should return "Ok"
 
 **Service won't start:**
 
-- Wrong directory? `pwd` must show `services/identity` (config file location)
-- Missing certificates? Check `ls ../../certificates/scytta.{crt,key}` from services/identity
+- Wrong directory? `pwd` must show `services/identity` or `services/builder`
+- Missing certificates? Check `ls ../../certificates/scytta.{crt,key}` from services directory
 - Port conflict? `netstat -ano | findstr :8443` (Windows) or `lsof -ti:8443` (Linux/Mac)
+- Wrong port? VSCode tasks and local dev default to 8443/8444. See [Service Configuration](../../../docs/services/configuration.md) if you need different ports.
 
 **Tests failing:**
 
 1. Service running? `curl -k https://localhost:8443/identity/info/ready`
 2. Correct port? Logs should show "Starting service on https://0.0.0.0:8443"
 3. New failures? Compare `tests/test-results/.last-run.json` vs current run
-
-**Windows env var errors:**
-Bash doesn't support `--` in variable names. Use PowerShell:
-
-```powershell
-${env:SHINE--SERVICE--PORT} = "8443"
-```
-
-Or use VSCode task (handles env vars automatically).
 
 **Manual service start** (if scripts fail):
 
@@ -142,4 +109,4 @@ cd services/identity
 cargo run -p shine-identity --release -- test
 ```
 
-Requires env vars set in shell (use PowerShell on Windows).
+Requires env vars set in shell (use PowerShell on Windows, or VSCode task which handles it automatically).
