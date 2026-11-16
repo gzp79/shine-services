@@ -1,4 +1,5 @@
 use crate::{
+    db::redis::RedisPoolStatus,
     health::HealthService,
     session::CurrentUserService,
     telemetry::TelemetryService,
@@ -248,6 +249,10 @@ async fn create_web_app<A: WebApplication>(
     // Register built-in status providers
     health_service.add_provider(crate::health::UptimeStatus::new());
     health_service.add_provider(in_flight_service.clone());
+    health_service.add_provider(RedisPoolStatus::with_name(
+        "sessionRedis",
+        current_user_service.redis_pool().clone(),
+    ));
 
     tracing::trace!("Creating common routes...");
     let mut router = OpenApiRouter::new();

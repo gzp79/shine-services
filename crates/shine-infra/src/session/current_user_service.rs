@@ -59,6 +59,10 @@ impl CurrentUserService {
         &self.cookie_secret
     }
 
+    pub fn redis_pool(&self) -> &RedisConnectionPool {
+        &self.redis
+    }
+
     pub async fn from_config(config: &ServiceConfig) -> Result<Self, UserSessionError> {
         let redis = crate::db::redis::create_redis_pool(config.session_redis_cns.as_str())
             .await

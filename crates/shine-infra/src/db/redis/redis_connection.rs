@@ -212,19 +212,25 @@ pub type RedisPooledConnection<'a> = PooledConnection<'a, RedisConnectionManager
 pub type RedisRawError = redis::RedisError;
 
 pub struct RedisPoolStatus {
+    name: &'static str,
     pool: RedisConnectionPool,
 }
 
 impl RedisPoolStatus {
     pub fn new(pool: RedisConnectionPool) -> Self {
-        Self { pool }
+        Self::with_name("redis", pool)
+    }
+
+    /// Status of an additional pool; the name keys its entry in the status report.
+    pub fn with_name(name: &'static str, pool: RedisConnectionPool) -> Self {
+        Self { name, pool }
     }
 }
 
 #[async_trait]
 impl StatusProvider for RedisPoolStatus {
     fn name(&self) -> &'static str {
-        "redis"
+        self.name
     }
 
     async fn status(&self) -> serde_json::Value {

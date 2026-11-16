@@ -33,6 +33,9 @@ const optionalProviderValidators: Record<string, (value: unknown) => void> = {
     }
 };
 
+// Reported by every service: the pool of the shared current-user (session) check.
+const sessionRedisValidator = optionalProviderValidators.redis;
+
 function expectStatusPayload(status: unknown): void {
     expect(status).toEqual(
         expect.objectContaining({
@@ -48,6 +51,8 @@ function expectStatusPayload(status: unknown): void {
     );
 
     const statusObj = status as StatusJson;
+    expect(statusObj).toHaveProperty('sessionRedis');
+    sessionRedisValidator(statusObj.sessionRedis);
     for (const [providerName, validator] of Object.entries(optionalProviderValidators)) {
         if (providerName in statusObj) {
             validator(statusObj[providerName]);
