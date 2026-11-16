@@ -1,12 +1,7 @@
-import { AuthAPI, DefaultRedirects } from '$lib/api/auth_api';
-import { StreamSession, wsConnectUrl, wsHeaders } from '$lib/api/builder_ws';
+import { ApiClient } from '$lib/api/api';
 import { SessionMint } from '$lib/mocks/session_mint';
-import { waitForCondition } from '$lib/utils';
-import { randomUUID } from 'node:crypto';
+import { joinURL, waitForCondition } from '$lib/utils';
 import { Toxiproxy } from 'toxiproxy-node-client';
-
-/** The services a test relies on to work again after an outage. */
-export type OutageService = 'identity' | 'builder';
 
 type Target = 'postgres' | 'redis';
 
@@ -14,53 +9,80 @@ type ProxyState = { enabled: boolean; toxics: unknown[] };
 
 export type OutageContext = {
     toxiproxyUrl: string;
-    homeUrl: string;
-    identityUrl: string;
-    builderWSUrl: string;
-    defaultRedirects: DefaultRedirects;
-    enableRequestLogging: boolean;
+    /** Base urls of the services that may be running. Those not running are left out of the checks. */
+    serviceUrls: string[];
+    client: ApiClient;
 };
 
-/** A request that reaches the database and the cache of a service. */
-type ServiceProbe = { service: OutageService; check: () => Promise<void> };
+/** The test timeout leaves no room for more. */
+const RECOVERY_TIMEOUT_MS = 15_000;
 
-function serviceProbe(service: OutageService, context: OutageContext): ServiceProbe {
-    switch (service) {
-        case 'identity':
-            return {
-                service,
-                check: async () => {
-                    const auth = new AuthAPI(
-                        context.identityUrl,
-                        context.defaultRedirects,
-                        context.enableRequestLogging
-                    );
-                    await auth.loginAsGuestUser();
-                }
-            };
-        case 'builder':
-            return {
-                service,
-                // A stream subscription reaches the session cache, the stream cache and the database.
-                check: async () => {
-                    const mint = await SessionMint.fromServerConfig();
-                    try {
-                        const user = await mint.createUserSession({ userId: randomUUID() });
-                        const session = await StreamSession.open(wsConnectUrl(context.builderWSUrl), {
-                            sid: user.sessionCookie,
-                            ...wsHeaders(context.homeUrl, context.builderWSUrl)
-                        });
-                        try {
-                            await session.subscribe(`chat:probe-${randomUUID().replace(/-/g, '')}`);
-                        } finally {
-                            session.close();
-                        }
-                    } finally {
-                        await mint.teardownCreatedSessions();
-                    }
-                }
-            };
+/** The connection is refused or the host is unknown, so nothing is listening there. */
+const NOT_LISTENING = /ECONNREFUSED|ENOTFOUND|EHOSTUNREACH/;
+
+type PoolStatus = {
+    connections: number;
+    healthy: boolean;
+    listener: { connected: boolean; channels: number };
+};
+
+function isPoolStatus(value: unknown): value is PoolStatus {
+    const pool = value as Partial<PoolStatus> | null;
+    return (
+        typeof pool?.connections === 'number' &&
+        typeof pool.healthy === 'boolean' &&
+        typeof pool.listener?.connected === 'boolean'
+    );
+}
+
+type ServiceCheck = {
+    /** What stops the service from working with its database and cache. */
+    problems: string[];
+    /** The largest pool of the service. */
+    connections: number;
+};
+
+/**
+ * Asks a service how it works with its database and cache. A service that is not running has no problems, as
+ * that is not caused by the infra.
+ *
+ * A pool is a problem when the round trip on one of its connections fails; the pool drops that connection, so
+ * asking again tries the next one. A listener is a problem when it has channels but no connection.
+ */
+async function checkService(url: string, client: ApiClient, sessionCookie: string): Promise<ServiceCheck> {
+    const fine: ServiceCheck = { problems: [], connections: 0 };
+
+    try {
+        // Answers without touching the database. Anything but a 200 is a proxy in front of a stopped service.
+        const ready = await client.get(joinURL(url, '/info/ready'));
+        if (ready.status() !== 200) {
+            return fine;
+        }
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        return NOT_LISTENING.test(reason) ? fine : { ...fine, problems: [`${url} is not reachable: ${reason}`] };
     }
+
+    // The request itself reads the session through the service's session pool.
+    const response = await client.get(joinURL(url, '/info/status')).withCookies({ sid: sessionCookie });
+    if (response.status() !== 200) {
+        return { ...fine, problems: [`${url}: status answered ${response.status()}`] };
+    }
+
+    const check: ServiceCheck = { problems: [], connections: 0 };
+    for (const [name, value] of Object.entries((await response.json()) as Record<string, unknown>)) {
+        if (!isPoolStatus(value)) {
+            continue;
+        }
+        check.connections = Math.max(check.connections, value.connections);
+        if (!value.healthy) {
+            check.problems.push(`${url}: the ${name} pool is not healthy`);
+        }
+        if (value.listener.channels > 0 && !value.listener.connected) {
+            check.problems.push(`${url}: the ${name} listener is not connected`);
+        }
+    }
+    return check;
 }
 
 async function injectedFaults(toxiproxyUrl: string): Promise<string[]> {
@@ -79,25 +101,20 @@ export async function resetToxiproxy(toxiproxyUrl: string): Promise<void> {
 /**
  * Breaks the database or the cache the services reach through toxiproxy, for one test.
  *
- * The services named at creation have to work again once the test is over: the outage is cleared, then each
- * of them is asked for something that needs its database and its cache until it answers. Cutting the proxied
- * connections leaves dead sockets in the pools of the services, evicted only once a request stumbles on them,
- * so this is what stops the outage from spilling into the next test.
+ * The proxies are shared, so every running service is hit, not only the one the test talks to. Once the test is
+ * over the outage is cleared, then each running service is asked until all of its pools and listeners work
+ * again. Cutting the proxied connections leaves dead sockets in the pools, evicted only once something
+ * stumbles on them, so this is what stops the outage from spilling into the next test.
  *
  * Only one outage can be active at a time, as two of them would break the test for sure.
  */
 export class InfraOutage {
     private readonly toxiproxy: Toxiproxy;
-    private readonly probes: ServiceProbe[];
     private readonly active = new Map<Target, string>();
     private injected = false;
 
-    constructor(
-        private readonly context: OutageContext,
-        services: OutageService[]
-    ) {
+    constructor(private readonly context: OutageContext) {
         this.toxiproxy = new Toxiproxy(context.toxiproxyUrl);
-        this.probes = services.map((service) => serviceProbe(service, context));
     }
 
     async stopPostgres(): Promise<void> {
@@ -134,26 +151,11 @@ export class InfraOutage {
         await this.toxiproxy.reset();
         this.active.clear();
 
-        for (const { service, check } of this.probes) {
-            // waitForCondition retries until the answer is not undefined.
-            let lastError: unknown;
-            try {
-                await waitForCondition(
-                    async () => {
-                        try {
-                            await check();
-                            return true;
-                        } catch (error) {
-                            lastError = error;
-                            throw error;
-                        }
-                    },
-                    { timeout: 15000 }
-                );
-            } catch {
-                const reason = lastError instanceof Error ? lastError.message : String(lastError);
-                throw new Error(`${service} did not recover from the infra outage: ${reason}`);
-            }
+        try {
+            await this.waitForServices();
+        } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error);
+            throw new Error(`The services did not recover from the infra outage: ${reason}`);
         }
     }
 
@@ -184,6 +186,38 @@ export class InfraOutage {
         });
     }
 
+    /**
+     * Waits until every running service is free of problems. A check goes through a single pooled connection, so
+     * the services have to be clean for as many checks in a row as their pool has connections, to be sure none
+     * of the connections cut by the outage is left.
+     */
+    private async waitForServices(): Promise<void> {
+        const { serviceUrls, client } = this.context;
+        const mint = await SessionMint.fromServerConfig();
+        try {
+            const admin = await mint.createUserSession({ roles: ['SuperAdmin'] });
+            let clean = 0;
+            await waitForCondition(
+                async () => {
+                    const checks = await Promise.all(
+                        serviceUrls.map((url) => checkService(url, client, admin.sessionCookie))
+                    );
+                    const problems = checks.flatMap((check) => check.problems);
+                    if (problems.length > 0) {
+                        clean = 0;
+                        throw new Error(problems.join('; '));
+                    }
+                    clean += 1;
+                    const needed = Math.max(...checks.map((check) => check.connections), 0) + 1;
+                    return clean >= needed ? true : undefined;
+                },
+                { timeout: RECOVERY_TIMEOUT_MS, interval: 200 }
+            );
+        } finally {
+            await mint.teardownCreatedSessions();
+        }
+    }
+
     /** Checks that nothing else is broken and the services are fine, then marks the target as broken. */
     private async begin(target: Target, mode: string): Promise<void> {
         if (this.active.size > 0) {
@@ -198,13 +232,11 @@ export class InfraOutage {
                         'left by another test or run'
                 );
             }
-            for (const { service, check } of this.probes) {
-                try {
-                    await check();
-                } catch (error) {
-                    const reason = error instanceof Error ? error.message : String(error);
-                    throw new Error(`The ${service} service is not working, an outage cannot start: ${reason}`);
-                }
+            try {
+                await this.waitForServices();
+            } catch (error) {
+                const reason = error instanceof Error ? error.message : String(error);
+                throw new Error(`The services are not working, an outage cannot start: ${reason}`);
             }
         }
         // Set before the proxy is touched: whatever a half done injection leaves behind has to be cleared.

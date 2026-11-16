@@ -22,8 +22,7 @@ impl From<RedisCommandInboxError> for CommandStreamError {
         match err {
             // Unreadable store content is a stream-level fact the model acts on.
             RedisCommandInboxError::Malformed(reason) => CommandStreamError::Corrupt(reason),
-            // A pool that cannot hand out a connection is a transient outage, not a bug.
-            RedisCommandInboxError::Redis(err @ RedisError::PoolError(_)) => {
+            RedisCommandInboxError::Redis(err) if err.is_unavailable() => {
                 CommandStreamError::service_unavailable("Redis", err)
             }
             err => CommandStreamError::internal(err),

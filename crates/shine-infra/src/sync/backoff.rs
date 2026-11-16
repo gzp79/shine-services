@@ -1,4 +1,5 @@
 use rand::{rngs::SysRng, TryRng};
+use std::future::Future;
 use tokio::time::{sleep, Duration};
 
 /// "Equal jitter": delay drawn from `[base/2, base]`.
@@ -56,6 +57,45 @@ impl ExponentialBackoff {
     /// same resource don't reconnect in lockstep.
     pub async fn delay(&mut self) {
         sleep(self.next_delay()).await;
+    }
+
+    /// Runs a task until it succeeds: an `Err` is followed by a delay and another run, at most `max_retries`
+    /// times. The last result is returned as it is, `Ok` or the `Err` that outlasted the retries.
+    ///
+    /// The task gets the number of retries so far, `0` for the first run. To retry on a narrower set of
+    /// errors, or on something that is not a `Result`, see [`retry_if`](Self::retry_if).
+    pub async fn retry<T, E, Fut>(self, max_retries: u32, task: impl FnMut(u32) -> Fut) -> Result<T, E>
+    where
+        Fut: Future<Output = Result<T, E>>,
+    {
+        self.retry_if(max_retries, |result: &Result<T, E>| result.is_err(), task)
+            .await
+    }
+
+    /// Runs a task until `retry_if` accepts its outcome as it is: an outcome it rejects is followed by a
+    /// delay and another run, at most `max_retries` times. The last outcome is returned whatever it is, the
+    /// one that was accepted or the one that outlasted the retries.
+    ///
+    /// The outcome can be anything (a `Result` whose errors may or may not pass, an `Option`, a status).
+    /// The task gets the number of retries so far, `0` for the first run.
+    pub async fn retry_if<T, Fut>(
+        mut self,
+        max_retries: u32,
+        retry_if: impl Fn(&T) -> bool,
+        mut task: impl FnMut(u32) -> Fut,
+    ) -> T
+    where
+        Fut: Future<Output = T>,
+    {
+        let mut retries = 0;
+        loop {
+            let outcome = task(retries).await;
+            if retries >= max_retries || !retry_if(&outcome) {
+                return outcome;
+            }
+            retries += 1;
+            self.delay().await;
+        }
     }
 
     fn next_delay(&mut self) -> Duration {
@@ -131,5 +171,129 @@ mod test {
             ExponentialBackoff::new(Duration::from_millis(500), Duration::from_millis(100)).with_jitter(0.0);
         assert_eq!(backoff.next_delay(), Duration::from_millis(500));
         assert_eq!(backoff.next_delay(), Duration::from_millis(500));
+    }
+    mod loops {
+        use super::*;
+        use std::cell::{Cell, RefCell};
+
+        fn quick() -> ExponentialBackoff {
+            ExponentialBackoff::new(Duration::from_micros(10), Duration::from_micros(100))
+        }
+
+        #[tokio::test]
+        async fn retry_returns_a_success_at_once() {
+            let runs = Cell::new(0);
+            let result: Result<u32, &str> = quick()
+                .retry(3, |_| {
+                    let runs = &runs;
+                    async move {
+                        runs.set(runs.get() + 1);
+                        Ok(7)
+                    }
+                })
+                .await;
+            assert_eq!(result, Ok(7));
+            assert_eq!(runs.get(), 1);
+        }
+
+        #[tokio::test]
+        async fn retry_runs_again_after_an_error() {
+            let seen = RefCell::new(Vec::new());
+            let result: Result<&str, &str> = quick()
+                .retry(5, |retries| {
+                    let seen = &seen;
+                    async move {
+                        seen.borrow_mut().push(retries);
+                        if retries < 2 {
+                            Err("again")
+                        } else {
+                            Ok("done")
+                        }
+                    }
+                })
+                .await;
+            assert_eq!(result, Ok("done"));
+            assert_eq!(*seen.borrow(), vec![0, 1, 2]);
+        }
+
+        #[tokio::test]
+        async fn retry_returns_the_last_error_once_the_retries_are_spent() {
+            let runs = Cell::new(0);
+            let result: Result<(), u32> = quick()
+                .retry(3, |_| {
+                    let runs = &runs;
+                    async move {
+                        runs.set(runs.get() + 1);
+                        Err(runs.get())
+                    }
+                })
+                .await;
+            assert_eq!(result, Err(4), "the first run and the three retries");
+            assert_eq!(runs.get(), 4);
+        }
+
+        #[tokio::test]
+        async fn retry_if_returns_an_outcome_it_accepts_at_once() {
+            let runs = Cell::new(0);
+            let result: Result<(), &str> = quick()
+                .retry_if(
+                    5,
+                    |result: &Result<(), &str>| matches!(result, Err("again")),
+                    |_| {
+                        let runs = &runs;
+                        async move {
+                            runs.set(runs.get() + 1);
+                            Err("fatal")
+                        }
+                    },
+                )
+                .await;
+            assert_eq!(result, Err("fatal"), "an error the predicate does not ask to retry");
+            assert_eq!(runs.get(), 1);
+        }
+
+        #[tokio::test]
+        async fn retry_if_works_on_an_outcome_that_is_not_a_result() {
+            let found = quick()
+                .retry_if(
+                    5,
+                    |outcome: &Option<u32>| outcome.is_none(),
+                    |retries| async move { (retries >= 2).then_some(retries) },
+                )
+                .await;
+            assert_eq!(found, Some(2));
+
+            let never = quick()
+                .retry_if(2, |outcome: &Option<u32>| outcome.is_none(), |_| async { None })
+                .await;
+            assert_eq!(never, None, "the last outcome once the retries are spent");
+        }
+
+        /// The loops run inside spawned tasks, which need a `Send` future.
+        #[tokio::test]
+        async fn the_loops_can_run_in_a_spawned_task() {
+            let retried = tokio::spawn(async {
+                quick()
+                    .retry(2, |retries| async move {
+                        if retries < 2 {
+                            Err(retries)
+                        } else {
+                            Ok(retries)
+                        }
+                    })
+                    .await
+            });
+            let retried_if = tokio::spawn(async {
+                quick()
+                    .retry_if(
+                        2,
+                        |outcome: &Option<u32>| outcome.is_none(),
+                        |retries| async move { (retries >= 2).then_some(retries) },
+                    )
+                    .await
+            });
+            assert_eq!(retried.await.unwrap(), Ok(2));
+            assert_eq!(retried_if.await.unwrap(), Some(2));
+        }
     }
 }

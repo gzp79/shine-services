@@ -270,6 +270,19 @@ impl PgConnectionPool {
     pub async fn listener_status(&self) -> ListenerStatus {
         self.listener.status().await
     }
+
+    /// A round trip on one pooled connection, as any request would do. A connection found dead is
+    /// dropped by the pool, so a repeated call tries the next one. Bounded, to answer even if the
+    /// database does not.
+    pub async fn check(&self) -> bool {
+        const TIMEOUT: Duration = Duration::from_secs(2);
+
+        let round_trip = async {
+            let conn = self.pool.get().await.ok()?;
+            conn.execute("SELECT 1", &[]).await.ok()
+        };
+        matches!(tokio::time::timeout(TIMEOUT, round_trip).await, Ok(Some(_)))
+    }
 }
 
 impl Deref for PgConnectionPool {
@@ -334,6 +347,7 @@ impl StatusProvider for PostgresPoolStatus {
         serde_json::json!({
             "connections": state.connections,
             "idleConnections": state.idle_connections,
+            "healthy": self.pool.check().await,
             "listener": self.pool.listener_status().await
         })
     }

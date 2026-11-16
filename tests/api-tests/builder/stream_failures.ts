@@ -46,17 +46,16 @@ test.describe('Builder stream failure tests', { tag: '@infrastructure' }, () => 
         builderWSUrl,
         infraOutage
     }) => {
-        const outage = infraOutage('builder');
         const a = await connect(homeUrl, builderWSUrl);
         const streamId = newStreamId('room');
 
-        await outage.stopPostgres();
+        await infraOutage.stopPostgres();
 
         // The stream cannot be loaded, so the worker gives up and tells the subscriber who was waiting for it.
         a.send({ type: 'streamSubscribe', streamId });
         await a.waitFrame('streamUnsynced', (f) => f.streamId === streamId, 20_000);
 
-        await outage.startPostgres();
+        await infraOutage.startPostgres();
 
         // The next subscribe starts the stream again; the pools of the builder may need a try to drop the
         // connections that were cut.
@@ -75,12 +74,11 @@ test.describe('Builder stream failure tests', { tag: '@infrastructure' }, () => 
         builderWSUrl,
         infraOutage
     }) => {
-        const outage = infraOutage('builder');
         const a = await connect(homeUrl, builderWSUrl);
         const streamId = newStreamId('room');
         await a.subscribe(streamId);
 
-        await outage.stopRedis();
+        await infraOutage.stopRedis();
 
         // The commands wait in Redis; that they cannot be queued is the sender's to know, it may send again.
         const refused = randomUUID();
@@ -90,7 +88,7 @@ test.describe('Builder stream failure tests', { tag: '@infrastructure' }, () => 
             reason: 'failed'
         });
 
-        await outage.startRedis();
+        await infraOutage.startRedis();
 
         // A refused command may or may not have been queued, so the later ones are matched by their ids. The
         // worker looks at the inbox again at the latest on its backstop tick.

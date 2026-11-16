@@ -54,6 +54,12 @@ impl CommandStreamError {
         }
     }
 
+    /// Whether it may pass by itself: a store out of reach for a moment, as opposed to a verdict about the
+    /// stored data or a bug.
+    pub fn is_transient(&self) -> bool {
+        matches!(self, Self::ServiceUnavailable { .. })
+    }
+
     /// What a client is told when this is why it cannot subscribe.
     pub fn subscribe_failure(&self) -> SubscribeFailure {
         SubscribeFailure::Failed

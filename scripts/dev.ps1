@@ -9,11 +9,16 @@
                              reachable; up-observe adds the trace dashboard (http://localhost:18888, OTLP :4317)
       down                   stop everything incl. dashboard and the CI 'shine' container
       status                 what is running (infra, services + stage, mocks) and whether the tests can run
-      run <identity|builder> [-Stage test|local]
-                             run the service in the foreground on the host, with TLS (identity 8443, builder 8444).
+      start <identity|builder|all> [-Stage test|local]
+                             start a service on the host, with TLS (identity 8443, builder 8444). One service runs in
+                             the foreground. 'all' builds once, starts the services that are not running in the
+                             background (logs: temp/dev-<service>.log) and waits until they listen.
                              Stage 'test' (as CI: compact console logs) is what Playwright needs; 'local' logs to
                              OTLP only (needs up-observe).
-                             Exit 0: ran, or already running in that stage. Exit 1: cannot start, message says why.
+                             Exit 0: started, or already running in that stage. Exit 1: cannot start, message says why.
+      stop <identity|builder|all>
+                             stop the services running on the host, infra stays up. Only a process answering as the
+                             service is stopped, anything else holding the port is left.
       env <rust|api>         check that the environment is ready for the tests and set their variables. Variables
                              only stay when the script is dot-sourced, in the same call as the test command:
                                pwsh -NoProfile -Command ". scripts/dev.ps1 env rust; cargo test -p shine-builder"
@@ -22,7 +27,8 @@
                              api:  rust checks + identity and builder running in stage 'test', no mocks running.
                                    Sets CI=false (standalone layout, readable reporter).
 
-    Problems are printed with the command that fixes them; nothing running is ever killed automatically.
+    Problems are printed with the command that fixes them; nothing running is ever killed automatically
+    (only 'stop' stops services, on request).
     Standalone services are the default target; the nginx/CI docker container is only for reproducing CI on request:
     scripts/emulate_github_server_build.ps1.
 #>
@@ -84,13 +90,13 @@ function Get-MockState {
 # Describes how a service state relates to the wanted stage; $null when it is fine.
 function Get-ServiceProblem($State, [string]$WantedStage) {
     if (-not $State.Listening) {
-        return "$($State.Name) is not running. Start it (background): pwsh scripts/dev.ps1 run $($State.Name) -Stage $WantedStage"
+        return "$($State.Name) is not running. Start it (background): pwsh scripts/dev.ps1 start $($State.Name) -Stage $WantedStage"
     }
     if ($State.App -ne $State.Name) {
         return "Port $($State.Port) is held by something that is not $($State.Name) (pid $($State.Pid))."
     }
     if ($State.Stage -ne $WantedStage) {
-        return "$($State.Name) runs in stage '$($State.Stage)' (pid $($State.Pid)) but '$WantedStage' is needed. Stop it ($(Get-StopHint $State.Pid)) and run: pwsh scripts/dev.ps1 run $($State.Name) -Stage $WantedStage"
+        return "$($State.Name) runs in stage '$($State.Stage)' (pid $($State.Pid)) but '$WantedStage' is needed. Stop it ($(Get-StopHint $State.Pid), or dev.ps1 stop $($State.Name)) and start: pwsh scripts/dev.ps1 start $($State.Name) -Stage $WantedStage"
     }
     return $null
 }
@@ -122,14 +128,78 @@ function Fail([string[]]$Lines) {
     exit 1
 }
 
-function Invoke-Run([string[]]$RunArgs) {
-    $service = if ($RunArgs.Count -gt 0) { $RunArgs[0] } else { '' }
-    if ($service -notin $servicePorts.Keys) { Fail 'Usage: dev.ps1 run <identity|builder> [-Stage test|local]' }
+function Write-StageHint([string]$Stage) {
+    if ($Stage -eq 'local' -and -not (Test-Port 4317)) {
+        Write-Warning "Stage 'local' logs to OTLP (localhost:4317) and nothing listens there, so the console stays empty. Use -Stage test or dev.ps1 up-observe."
+    }
+}
+
+# Reports a service that is already up; fails if it runs in another stage. True when there is nothing to start.
+function Test-AlreadyRunning([string]$Service, [string]$Stage) {
+    $state = Get-ServiceState $Service
+    if (-not $state.Listening) { return $false }
+    $problem = Get-ServiceProblem $state $Stage
+    if ($problem) { Fail $problem }
+    Write-Host "$Service is already running in stage '$Stage' on port $($state.Port) (pid $($state.Pid)). Nothing to do."
+    return $true
+}
+
+function Start-InForeground([string]$Service, [string]$Stage) {
+    if (Test-AlreadyRunning $Service $Stage) { return }
+    Write-StageHint $Stage
+
+    Set-Location (Join-Path $repoRoot "services/$Service")
+    $env:RUST_BACKTRACE = 'full'
+    ${env:SHINE--SERVICE--PORT} = "$($servicePorts[$Service])"
+    ${env:SHINE--SERVICE--TLS--CERT} = '../../certificates/scytta.crt'
+    ${env:SHINE--SERVICE--TLS--KEY} = '../../certificates/scytta.key'
+    cargo run -p "shine-$Service" --release -- $Stage
+    exit $LASTEXITCODE
+}
+
+function Start-AllInBackground([string]$Stage) {
+    $pending = @($servicePorts.Keys | Where-Object { -not (Test-AlreadyRunning $_ $Stage) })
+    if ($pending.Count -eq 0) { return }
+    Write-StageHint $Stage
+
+    # Built once up front: started side by side, the services would wait on each other for the cargo locks.
+    $buildArgs = @('build', '--release') + @($pending | ForEach-Object { '-p'; "shine-$_" })
+    cargo @buildArgs
+    if ($LASTEXITCODE -ne 0) { Fail 'cargo build failed.' }
+
+    $logDir = Join-Path $repoRoot 'temp'
+    New-Item -ItemType Directory -Force $logDir | Out-Null
+    # The output goes to the log through the shell, not through Start-Process' redirection: that would hand the
+    # caller's output pipe down to the service, and whoever reads it (a tool, CI) would wait for the service to end.
+    $started = foreach ($name in $pending) {
+        $log = Join-Path $logDir "dev-$name.log"
+        $command = "pwsh -NoProfile -File `"$PSCommandPath`" start $name -Stage $Stage"
+        $process = if ($isWindowsHost) {
+            Start-Process cmd.exe -ArgumentList '/d', '/s', '/c', "`"$command > `"$log`" 2>&1`"" -WindowStyle Hidden -PassThru
+        }
+        else {
+            Start-Process sh -ArgumentList '-c', "exec $command > '$log' 2>&1" -PassThru
+        }
+        [pscustomobject]@{ Name = $name; Log = $log; Process = $process }
+    }
+
+    $deadline = (Get-Date).AddSeconds(120)
+    foreach ($service in $started) {
+        $port = $servicePorts[$service.Name]
+        while (-not (Test-Port $port) -and -not $service.Process.HasExited -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 1 }
+        if (-not (Test-Port $port)) { Fail "$($service.Name) did not start. See $($service.Log)" }
+        Write-Host "$($service.Name) started in stage '$Stage' on port $port (pid $(Get-PortOwnerPid $port)). Log: $($service.Log)"
+    }
+}
+
+function Invoke-Start([string[]]$StartArgs) {
+    $target = if ($StartArgs.Count -gt 0) { $StartArgs[0] } else { '' }
+    if ($target -ne 'all' -and $target -notin $servicePorts.Keys) { Fail 'Usage: dev.ps1 start <identity|builder|all> [-Stage test|local]' }
     $stage = 'local'
-    for ($i = 1; $i -lt $RunArgs.Count; $i++) {
-        switch -Regex ($RunArgs[$i]) {
-            '^--?stage$' { $stage = $RunArgs[++$i] }
-            default { Fail "Unknown option: $($RunArgs[$i])" }
+    for ($i = 1; $i -lt $StartArgs.Count; $i++) {
+        switch -Regex ($StartArgs[$i]) {
+            '^--?stage$' { $stage = $StartArgs[++$i] }
+            default { Fail "Unknown option: $($StartArgs[$i])" }
         }
     }
     if ($stage -notin 'local', 'test') { Fail "Stage must be local or test, got '$stage'." }
@@ -137,25 +207,29 @@ function Invoke-Run([string[]]$RunArgs) {
     $missing = Get-MissingInfra
     if ($missing.Count -gt 0) { Fail "Dev infra not reachable: $($missing -join ', '). Run: pwsh scripts/dev.ps1 up" }
 
-    $state = Get-ServiceState $service
-    if ($state.Listening) {
-        $problem = Get-ServiceProblem $state $stage
-        if ($problem) { Fail $problem }
-        Write-Host "$service is already running in stage '$stage' on port $($state.Port) (pid $($state.Pid)). Nothing to do."
-        return
-    }
+    if ($target -eq 'all') { Start-AllInBackground $stage } else { Start-InForeground $target $stage }
+}
 
-    if ($stage -eq 'local' -and -not (Test-Port 4317)) {
-        Write-Warning "Stage 'local' logs to OTLP (localhost:4317) and nothing listens there, so the console stays empty. Use -Stage test or dev.ps1 up-observe."
-    }
+function Invoke-Stop([string[]]$StopArgs) {
+    $target = if ($StopArgs.Count -gt 0) { $StopArgs[0] } else { '' }
+    if ($StopArgs.Count -ne 1 -or ($target -ne 'all' -and $target -notin $servicePorts.Keys)) { Fail 'Usage: dev.ps1 stop <identity|builder|all>' }
+    $names = if ($target -eq 'all') { $servicePorts.Keys } else { @($target) }
 
-    Set-Location (Join-Path $repoRoot "services/$service")
-    $env:RUST_BACKTRACE = 'full'
-    ${env:SHINE--SERVICE--PORT} = "$($servicePorts[$service])"
-    ${env:SHINE--SERVICE--TLS--CERT} = '../../certificates/scytta.crt'
-    ${env:SHINE--SERVICE--TLS--KEY} = '../../certificates/scytta.key'
-    cargo run -p "shine-$service" --release -- $stage
-    exit $LASTEXITCODE
+    foreach ($name in $names) {
+        $state = Get-ServiceState $name
+        if (-not $state.Listening) {
+            Write-Host "$name is not running."
+        }
+        elseif ($state.App -ne $name -or -not $state.Pid) {
+            Write-Warning "Port $($state.Port) is held by something that is not $name (pid $($state.Pid)): left alone."
+        }
+        else {
+            if ($isWindowsHost) { Stop-Process -Id $state.Pid } else { & kill $state.Pid }
+            for ($i = 0; $i -lt 20 -and (Test-Port $state.Port); $i++) { Start-Sleep -Milliseconds 500 }
+            if (Test-Port $state.Port) { Write-Warning "$name (pid $($state.Pid)) is still listening on port $($state.Port)." }
+            else { Write-Host "$name stopped (pid $($state.Pid))." }
+        }
+    }
 }
 
 function Invoke-Env([string]$Target) {
@@ -195,6 +269,7 @@ switch ($command) {
         Write-Host 'Infra is ready.'
     }
     'down' { docker @compose --profile '*' down }
+    'stop' { Invoke-Stop $commandArgs }
     'status' {
         $missing = Get-MissingInfra
         Write-Host ('Infra     : ' + $(if ($missing.Count -eq 0) { 'ok' } else { "MISSING $($missing -join ', ') -> pwsh scripts/dev.ps1 up" }))
@@ -214,7 +289,7 @@ switch ($command) {
             else { Write-Host ('{0,-10}: NOT ready' -f $t[0]); $t[1] | ForEach-Object { Write-Host "    - $_" } }
         }
     }
-    'run' { Invoke-Run $commandArgs }
+    'start' { Invoke-Start $commandArgs }
     'env' { Invoke-Env ($commandArgs | Select-Object -First 1) }
     default {
         Get-Help $PSCommandPath | Out-String | Write-Host

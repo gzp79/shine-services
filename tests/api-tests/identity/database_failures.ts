@@ -9,15 +9,14 @@ test.describe('Database failure tests', { tag: '@infrastructure' }, () => {
         const user = await api.testUsers.createGuest();
 
         // Take PostgreSQL down
-        const outage = infraOutage('identity');
-        await outage.stopPostgres();
+        await infraOutage.stopPostgres();
 
         // Should fail with 503
         const failResponse = await api.token.getTokensRequest(user.sid);
         expect(failResponse).toHaveStatus(503);
 
         // Restore
-        await outage.startPostgres();
+        await infraOutage.startPostgres();
 
         // Should recover
         const recovery = await waitForCondition(async () => await api.token.getTokensRequest(user.sid), {
@@ -31,7 +30,7 @@ test.describe('Database failure tests', { tag: '@infrastructure' }, () => {
         const user = await api.testUsers.createGuest();
 
         // Inject 10-second latency
-        await infraOutage('identity').slowPostgres(10000);
+        await infraOutage.slowPostgres(10000);
 
         // Should timeout before hanging (< 10s)
         const start = Date.now();

@@ -422,11 +422,13 @@ async fn a_stream_that_cannot_be_loaded_tells_the_waiting_subscribers_and_ends()
     assert!(!worker.subscribe(Uuid::new_v4()));
 }
 
-/// An inbox that fails the next reads when told to: `fail` is how many.
+/// An inbox that fails the next reads when told to: `fail` is how many. The failure is one that may pass
+/// (an outage) if `transient`, a verdict about the data otherwise.
 #[derive(Clone)]
 struct FlakyInbox {
     inner: RedisCommandInboxDb,
     fail: Arc<AtomicUsize>,
+    transient: bool,
 }
 
 impl CommandInboxDb for FlakyInbox {
@@ -451,7 +453,11 @@ impl CommandInboxDb for FlakyInbox {
             .try_update(Ordering::Relaxed, Ordering::Relaxed, |left| left.checked_sub(1))
             .is_ok();
         if failing {
-            return Err(CommandStreamError::Corrupt("injected failure".to_string()));
+            return Err(if self.transient {
+                CommandStreamError::service_unavailable("Redis", std::io::Error::other("injected failure"))
+            } else {
+                CommandStreamError::Corrupt("injected failure".to_string())
+            });
         }
         self.inner.poll(stream_id, after, limit).await
     }
@@ -488,6 +494,7 @@ async fn a_stream_that_fails_is_given_up_and_its_subscribers_are_told() {
     let flaky = FlakyInbox {
         inner: h.inbox.db.clone(),
         fail: fail.clone(),
+        transient: false,
     };
     let config = StreamConfig {
         inbox_recovery_poll_interval: Duration::from_millis(30),
@@ -514,6 +521,7 @@ async fn a_subscriber_is_told_to_retry_without_a_sync_when_the_inbox_read_fails(
     let flaky = FlakyInbox {
         inner: h.inbox.db.clone(),
         fail: fail.clone(),
+        transient: false,
     };
     let config = StreamConfig::quiet();
     let service = StreamLogService::new(flaky.clone(), h.log.db.clone(), config.clone());
@@ -528,6 +536,82 @@ async fn a_subscriber_is_told_to_retry_without_a_sync_when_the_inbox_read_fails(
         .wait(connection, |m| TestEgress::kinds(m) == ["unsynced"])
         .await;
     wait_finished(&worker).await;
+}
+
+#[test]
+async fn an_inbox_that_fails_for_a_moment_does_not_end_the_stream() {
+    let h = harness().await;
+    let id = TestStreamId::new_chat();
+    let fail = Arc::new(AtomicUsize::new(0));
+    let flaky = FlakyInbox {
+        inner: h.inbox.db.clone(),
+        fail: fail.clone(),
+        transient: true,
+    };
+    let config = StreamConfig::quiet();
+    let service = StreamLogService::new(flaky.clone(), h.log.db.clone(), config.clone());
+    let worker = StreamWorker::start::<ChatState, _, _, _>(service, flaky, h.egress.clone(), id.clone(), config);
+    let connection = h.subscribe(&worker).await;
+
+    fail.store(3, Ordering::Relaxed);
+    h.send(&id, "a").await;
+    worker.wake();
+
+    h.egress.wait(connection, |m| TestEgress::versions(m, &id) == [1]).await;
+    assert_eq!(fail.load(Ordering::Relaxed), 0, "the failing reads were all spent");
+    assert!(!worker.is_finished());
+    assert!(
+        !h.egress
+            .messages(connection)
+            .iter()
+            .any(|m| matches!(**m, StreamMessage::Unsynced { .. })),
+        "the subscriber was not dropped"
+    );
+}
+
+/// How many times the inbox is read until a worker over an inbox that always fails (an outage) gives up.
+async fn reads_until_given_up(h: &Harness, max_retries: u32) -> usize {
+    let id = TestStreamId::new_chat();
+    let fail = Arc::new(AtomicUsize::new(0));
+    let flaky = FlakyInbox {
+        inner: h.inbox.db.clone(),
+        fail: fail.clone(),
+        transient: true,
+    };
+    let config = StreamConfig {
+        inbox_max_retries: max_retries,
+        ..StreamConfig::quiet()
+    };
+    let service = StreamLogService::new(flaky.clone(), h.log.db.clone(), config.clone());
+    let worker = StreamWorker::start::<ChatState, _, _, _>(service, flaky, h.egress.clone(), id.clone(), config);
+    h.subscribe(&worker).await;
+    fail.store(usize::MAX, Ordering::Relaxed);
+    let connection = Uuid::new_v4();
+
+    assert!(worker.subscribe(connection));
+
+    h.egress
+        .wait(connection, |m| TestEgress::kinds(m) == ["unsynced"])
+        .await;
+    wait_finished(&worker).await;
+    usize::MAX - fail.load(Ordering::Relaxed)
+}
+
+#[test]
+async fn an_inbox_that_keeps_failing_ends_the_stream_once_the_retries_are_spent() {
+    let h = harness().await;
+    let retries = StreamConfig::quiet().inbox_max_retries;
+
+    let reads = reads_until_given_up(&h, retries).await;
+
+    assert_eq!(reads, retries as usize + 1, "the first read and every retry");
+}
+
+#[test]
+async fn a_stream_without_retries_gives_up_at_the_first_failed_read() {
+    let h = harness().await;
+
+    assert_eq!(reads_until_given_up(&h, 0).await, 1);
 }
 
 /// The worker that ends while the log holds a history of its own leaves the commands it could not store

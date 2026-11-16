@@ -4,7 +4,7 @@ use crate::{
         CommandStreamError,
     },
     repositories::{
-        command_inbox::{CommandInboxDb, InboxId},
+        command_inbox::{CommandInboxDb, InboxBatch, InboxId},
         command_log::{StoredCommand, StoredSnapshot},
     },
     services::command_stream::{
@@ -15,7 +15,7 @@ use crate::{
 };
 use opentelemetry::KeyValue;
 use shine_game::replica::{decode_command, fold_chain_hash, Checkpoint, Command, ReplayState, StreamId};
-use shine_infra::telemetry::label;
+use shine_infra::{sync::ExponentialBackoff, telemetry::label};
 use std::{collections::HashMap, marker::PhantomData, sync::Arc, time::Instant};
 use uuid::Uuid;
 
@@ -167,6 +167,34 @@ where
         Ok(())
     }
 
+    /// One read of the inbox from the read position. A failure that may pass, like Redis being out for a
+    /// moment, is tried again with growing waits, at most `inbox_max_retries` times, so the subscribers are
+    /// not dropped for it. The read changes nothing here until it succeeds, so repeating it is safe.
+    async fn poll_inbox(&self, limit: usize) -> Result<InboxBatch, CommandStreamError> {
+        ExponentialBackoff::new(self.config.inbox_retry_min_delay, self.config.inbox_retry_max_delay)
+            .retry_if(
+                self.config.inbox_max_retries,
+                |result: &Result<InboxBatch, CommandStreamError>| result.as_ref().is_err_and(|err| err.is_transient()),
+                |retries| async move {
+                    let result = self.inbox.poll(&self.stream_id, &self.read_index, limit).await;
+                    match &result {
+                        Err(err) if retries == 0 && err.is_transient() => {
+                            tracing::warn!("[{}] Failed to read the inbox, trying again: {err:#?}", self.stream_id);
+                        }
+                        Ok(_) if retries > 0 => {
+                            tracing::info!(
+                                "[{}] The inbox is readable again after {retries} retries",
+                                self.stream_id
+                            );
+                        }
+                        _ => {}
+                    }
+                    result
+                },
+            )
+            .await
+    }
+
     /// Reads a page of the inbox, gives each command in it a version right away and stores them
     /// optimistically in the local state. Returns whether the inbox may hold more than the page, and
     /// there is room to read it.
@@ -180,7 +208,7 @@ where
         }
         let limit = self.config.inbox_poll_limit.min(room);
         let started = Instant::now();
-        let batch = self.inbox.poll(&self.stream_id, &self.read_index, limit).await?;
+        let batch = self.poll_inbox(limit).await?;
         let metrics = stream_metrics();
         let kind = self.kind_label();
         // Passes that found nothing are the idle polling, they would only dilute the measures.

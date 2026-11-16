@@ -15,35 +15,36 @@ One PowerShell 7 script, `scripts/dev.ps1` (`pwsh` works on Windows, Linux and m
 |---|---|
 | See what is running and what is ready | `pwsh scripts/dev.ps1 status` |
 | Start DB/Redis/toxiproxy | `pwsh scripts/dev.ps1 up` (`up-observe` adds the trace dashboard) |
-| Run a service | `pwsh scripts/dev.ps1 run identity -Stage test` (or `builder`) |
+| Start the services | `pwsh scripts/dev.ps1 start all -Stage test`: builds once, starts what is not running in the background (logs: `temp/dev-<service>.log`) and waits until they listen. `start identity` / `start builder` run one service in the foreground |
 | Mocked externals for manual poking (email, OAuth/OIDC, web client) | `pnpm --dir tests mock:services` (VSCode task "start mocked services") |
 | Rust tests | `pwsh -NoProfile -Command ". scripts/dev.ps1 env rust; cargo test -p shine-builder"` |
 | Playwright API tests | `pwsh -NoProfile -Command ". scripts/dev.ps1 env api; pnpm --dir tests test:local --grep 'Purge guests'"` |
-| Stop infra | `pwsh scripts/dev.ps1 down` |
+| Stop the services (infra stays up) | `pwsh scripts/dev.ps1 stop all` (or `identity` / `builder`) |
+| Stop infra | `pwsh scripts/dev.ps1 down` (does not touch the services) |
 
 ## Script feedback
 
-Every command checks its preconditions and, when something is off, prints each problem with the command that fixes it, exit code 1. Act on that text. Nothing running is ever killed for you: stopping a service that runs in the wrong stage is your call (the message includes the pid and stop command; ask the user if it is not yours).
-`dev.ps1 run` exits 0 with "already running in stage ... Nothing to do" when the wanted service is up; reuse it.
+Every command checks its preconditions and, when something is off, prints each problem with the command that fixes it, exit code 1. Act on that text. Nothing running is ever killed for you: stopping a service that runs in the wrong stage is your call, with `dev.ps1 stop <service>` (the message also names the pid; ask the user if it is not yours). `stop` only stops a process that answers as that service and leaves anything else holding the port alone.
+`dev.ps1 start` exits 0 with "already running in stage ... Nothing to do" when the wanted service is up; reuse it.
 
 ## Rules
 
 - **Playwright (`dev.ps1 env api`) needs both services in stage `test`, and no mocks running.** Playwright starts the mocks it needs itself (see Mocks). `dev.ps1 env api` checks both; on a problem it prints the fixes and the chained `pnpm` does not run.
-- **Agents pass `-Stage test`.** Stage `local` replaces console logging with OTLP (trace dashboard on `:4317`); without `up-observe` the console stays empty.
+- **Agents pass `-Stage test`.** Stage `local` replaces console logging with OTLP (trace dashboard on `:18888`); without `up-observe` the console stays empty.
 - **Rust DB tests skip silently without the env vars.** Dot-source `dev.ps1 env rust` before `cargo test`; it sets all five `SHINE_TEST_*` vars and `RUST_TEST_THREADS=1` (tests share one database, same as the docker build). Dot-source in the same `pwsh` call as the test command: variables do not survive into a separate call.
 - **Never truncate test output** (`tail`, `head`): read it whole. `ENABLE_REQUEST_LOGGING=1` adds HTTP request/response logs.
 - Writing a new test or mock → `api-test-writing` skill first.
-- Run services in a background process; Ctrl+C / kill stops them. A rebuilt binary needs a restart.
+- `start all` already runs the services in the background. A single `start <service>` blocks, so run it as a background process; Ctrl+C or `dev.ps1 stop` ends it. A rebuilt binary needs a restart (`stop`, then `start`).
 
 ## Typical agent session
 
 ```powershell
 pwsh scripts/dev.ps1 status                          # what is missing?
 pwsh scripts/dev.ps1 up
-pwsh scripts/dev.ps1 run identity -Stage test    # run in background; wait for "Starting service on https://..."
-pwsh scripts/dev.ps1 run builder  -Stage test    # run in background
+pwsh scripts/dev.ps1 start all -Stage test       # builds, starts both in the background, returns when they listen
 pwsh -NoProfile -Command ". scripts/dev.ps1 env api; pnpm --dir tests test:local"
 pwsh -NoProfile -Command ". scripts/dev.ps1 env rust; cargo test -p shine-identity"
+pwsh scripts/dev.ps1 stop all                    # when done, if you started them
 ```
 
 Compare `tests/test-results/.last-run.json` between runs to spot new failures.

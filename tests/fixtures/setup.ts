@@ -6,12 +6,12 @@ import { TestUser, TestUserHelper } from '$lib/api/test_user';
 import { TokenAPI } from '$lib/api/token_api';
 import { UserAPI } from '$lib/api/user_api';
 import OAuth2MockServer from '$lib/mocks/oauth2';
-import { SharedServiceName } from '$lib/utils';
+import { SharedServiceName, sharedServices } from '$lib/utils';
 import { expect as authExpect } from './expect/auth_exts';
 import { expect as commonExpect } from './expect/common';
 import { expect as mailExpect } from './expect/mail';
 import { expect as responseExpect } from './expect/response';
-import { InfraOutage, OutageService } from './infra_outage';
+import { InfraOutage } from './infra_outage';
 
 export const expect = mergeExpects(commonExpect, responseExpect, authExpect, mailExpect);
 
@@ -78,10 +78,10 @@ export type ServiceTestFixture = {
     serviceUrl: (serviceName: SharedServiceName) => string;
     serviceTestInfo: (serviceName: SharedServiceName) => ServiceEnvironment;
     /**
-     * Breaks the database or the cache of the given services for the test, see {@link InfraOutage}. The services
-     * have to work again by the end of the test.
+     * Breaks the database or the cache of all the services for the test, see {@link InfraOutage}. The running
+     * services have to work again by the end of the test.
      */
-    infraOutage: (...services: [OutageService, ...OutageService[]]) => InfraOutage;
+    infraOutage: InfraOutage;
 };
 
 export const test = base.extend<ServiceTestFixture, ServiceOptions>({
@@ -116,21 +116,16 @@ export const test = base.extend<ServiceTestFixture, ServiceOptions>({
     ],
 
     infraOutage: [
-        async ({ toxiproxyUrl, homeUrl, identityUrl, builderWSUrl, defaultRedirects, enableRequestLogging }, use) => {
-            const outages: InfraOutage[] = [];
-            await use((...services) => {
-                const outage = new InfraOutage(
-                    { toxiproxyUrl, homeUrl, identityUrl, builderWSUrl, defaultRedirects, enableRequestLogging },
-                    services
-                );
-                outages.push(outage);
-                return outage;
+        async ({ toxiproxyUrl, serviceUrl, api }, use) => {
+            const outage = new InfraOutage({
+                toxiproxyUrl,
+                serviceUrls: sharedServices.map(serviceUrl),
+                client: api.client
             });
+            await use(outage);
 
-            // Whatever happened in the test, the outage is cleared and the services have to work again.
-            for (const outage of outages) {
-                await outage.dispose();
-            }
+            // Whatever happened in the test, the outage is cleared and the running services have to work again.
+            await outage.dispose();
         },
         { scope: 'test' }
     ],

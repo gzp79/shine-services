@@ -40,8 +40,7 @@ impl From<PgCommandLogError> for CommandStreamError {
             PgCommandLogError::Contention => CommandStreamError::Contention,
             PgCommandLogError::LogDiverged { head } => CommandStreamError::LogDiverged { head },
             PgCommandLogError::SnapshotDiverged => CommandStreamError::SnapshotDiverged,
-            // A pool that cannot hand out a connection is a transient outage, not a bug.
-            PgCommandLogError::Pg(err @ (PgError::CreatePoolError(_) | PgError::PoolError(_))) => {
+            PgCommandLogError::Pg(err) if err.is_unavailable() => {
                 CommandStreamError::service_unavailable("PostgreSQL", err)
             }
             PgCommandLogError::Pg(err) => CommandStreamError::internal(err),

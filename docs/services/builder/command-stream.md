@@ -220,6 +220,7 @@ stateDiagram-v2
 
 - **Loading:** the relay starts empty and touches neither inbox nor subscribers until the persistence has reconciled it with the log (a `Reloaded` result).
 - **Draining:** a final inbox pass, then the tail is persisted until nothing is waiting, then the request channel closes. Proposals that arrive later stay in Redis for the next worker. A returning subscriber cancels the grace countdown before it ends.
+- **Inbox read retried:** a read that fails because Redis is out of reach (`CommandStreamError::ServiceUnavailable`: no pooled connection, a refused, dropped or timed out connection, a server that is still loading) is tried again inside the pass, at most `inbox_max_retries` (default 8, `0` turns it off) times, with jittered waits doubling from `inbox_retry_min_delay` (100 ms) to `inbox_retry_max_delay` (1 s), about three to five seconds in all by default. Any other error is not retried. The read changes nothing until it succeeds, so repeating it is safe. The subscribers stay and are not told anything. The worker does nothing else meanwhile: subscribes and persistence answers wait for the pass. When the retries are spent, the failure ends the worker as below.
 - **Ended by failure:** queued and registered subscribers get `streamUnsynced` and subscribe again. Commands that were not made durable stay in the Redis inbox for whoever serves the stream next.
 
 A worker reconciles with Postgres at startup. After that a peer's advance is found by the next persistence, whose baseline no longer matches; a quiet worker is not checked periodically.
@@ -294,7 +295,7 @@ After advancing, the persistence trims the Redis inbox through the latest stored
 | Back-pressure | Write side: pushes wait above `inbox_backpressure_high`, then fail `busy`. Read side: `relay_max_pending` stops inbox reads. |
 | Duplicates | Stored inbox positions suppress durable proposals; client command ids are correlation values, not uniqueness constraints. |
 | Drift | Persistence reloads on a baseline, replay or canonical disagreement. |
-| Failure | A failed pass or persistence sends `streamUnsynced` and ends the worker. |
+| Failure | A failed pass or persistence sends `streamUnsynced` and ends the worker. An inbox read that fails because Redis is out of reach is tried again first (`ServiceUnavailable` only), see worker lifecycle. |
 | Redis loss | Unsequenced proposals may be lost; canonical Postgres history stays valid. |
 | Isolation | A slow or failing stream does not block another stream's tasks. |
 | Slow subscriber | `StreamEgress::send` never waits; when it cannot queue, the relay forgets the subscriber. |

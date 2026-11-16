@@ -129,9 +129,10 @@ Use the helper scripts (details in the [local-development skill](/.claude/skills
 
 ```powershell
 pwsh scripts/dev.ps1 up                                  # postgres, redis, toxiproxy
-pwsh scripts/dev.ps1 run identity -Stage test            # Local test
-pwsh scripts/dev.ps1 run builder  -Stage local           # Local (needs `dev.ps1 up-observe` to see logs)
+pwsh scripts/dev.ps1 start all -Stage test               # Local test: both services in the background
+pwsh scripts/dev.ps1 start builder -Stage local          # Local, one service in the foreground (needs `dev.ps1 up-observe` to see logs)
 pwsh scripts/dev.ps1 status                              # what runs in which stage
+pwsh scripts/dev.ps1 stop all                            # stop the services (identity | builder for one), infra stays up
 ```
 
 ### Reproducing CI (only on request)

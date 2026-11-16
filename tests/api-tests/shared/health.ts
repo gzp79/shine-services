@@ -17,6 +17,7 @@ for (const envName of ['test', 'local', 'prod']) {
 type PoolStatus = {
     connections: number;
     idleConnections: number;
+    healthy: boolean;
     listener: { connected: boolean; channels: number };
 };
 
@@ -25,6 +26,7 @@ const expectPoolStatus = (value: unknown): void => {
         expect.objectContaining({
             connections: expect.any(Number),
             idleConnections: expect.any(Number),
+            healthy: expect.any(Boolean),
             listener: { connected: expect.any(Boolean), channels: expect.any(Number) }
         })
     );

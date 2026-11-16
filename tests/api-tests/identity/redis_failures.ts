@@ -9,15 +9,14 @@ test.describe('Redis failure tests', { tag: '@infrastructure' }, () => {
         const user = await api.testUsers.createGuest();
 
         // Take Redis down
-        const outage = infraOutage('identity');
-        await outage.stopRedis();
+        await infraOutage.stopRedis();
 
         // Should fail with 503
         const failResponse = await api.user.getUserInfoRequest(user.sid, 'fast');
         expect(failResponse).toHaveStatus(503);
 
         // Restore
-        await outage.startRedis();
+        await infraOutage.startRedis();
 
         // Should recover
         await waitForCondition(
@@ -40,7 +39,7 @@ test.describe('Redis failure tests', { tag: '@infrastructure' }, () => {
         const user = await api.testUsers.createGuest();
 
         // Inject 10-second latency
-        await infraOutage('identity').slowRedis(10000);
+        await infraOutage.slowRedis(10000);
 
         // Should timeout before hanging (< 10s)
         const start = Date.now();

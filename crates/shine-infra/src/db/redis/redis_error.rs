@@ -2,6 +2,7 @@ use crate::{
     db::redis::redis_connection::{RedisConnectionError, RedisRawError},
     web::responses::Problem,
 };
+use redis::RetryMethod;
 use thiserror::Error as ThisError;
 
 #[derive(Debug, ThisError)]
@@ -14,6 +15,23 @@ pub enum RedisError {
     ListenerClosed,
     #[error("A handler is already registered for channel {0:?}")]
     AlreadyListening(String),
+}
+
+impl RedisError {
+    /// Returns if Redis was out of reach and the error is likely transient.
+    pub fn is_unavailable(&self) -> bool {
+        match self {
+            Self::PoolError(_) => true,
+            Self::RawError(err) => {
+                err.is_io_error()
+                    || err.is_connection_dropped()
+                    || err.is_connection_refusal()
+                    || err.is_timeout()
+                    || matches!(err.retry_method(), RetryMethod::WaitAndRetry)
+            }
+            Self::ListenerClosed | Self::AlreadyListening(_) => false,
+        }
+    }
 }
 
 /// Legacy conversion kept for backward compatibility.

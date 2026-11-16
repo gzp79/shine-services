@@ -7,7 +7,7 @@ use validator::{Validate, ValidationError};
 /// The settings of the streams of one kind, each prefixed with the part it applies to.
 #[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[serde(rename_all = "camelCase")]
-#[validate(schema(function = "validate_inbox_backpressure_watermarks"))]
+#[validate(schema(function = "validate_stream_config"))]
 pub struct StreamConfig {
     /// Most inbox entries read in one sync.
     #[serde(default = "consts::usize::<128>")]
@@ -18,6 +18,21 @@ pub struct StreamConfig {
     #[serde(default = "duration::seconds::<10>", with = "duration::seconds")]
     #[validate(custom(function = "non_zero_duration"))]
     pub inbox_recovery_poll_interval: Duration,
+    /// How many times a read of the inbox that fails because Redis is out of reach is tried again before the
+    /// stream is given up; `0` gives up at once. The worker does nothing else meanwhile. With the default
+    /// delays the retries last about three to five seconds, longer than a Redis restart or a failover
+    /// hiccup, short enough not to keep a stream stalled on a Redis that is gone.
+    #[serde(default = "consts::u32::<8>")]
+    pub inbox_max_retries: u32,
+    /// Milliseconds before the first retry of a failing inbox read. The waits double (and are jittered) up to
+    /// `inbox_retry_max_delay`.
+    #[serde(default = "duration::milliseconds::<100>", with = "duration::milliseconds")]
+    #[validate(custom(function = "non_zero_duration"))]
+    pub inbox_retry_min_delay: Duration,
+    /// Milliseconds the longest wait between the retries of a failing inbox read lasts.
+    #[serde(default = "duration::milliseconds::<1000>", with = "duration::milliseconds")]
+    #[validate(custom(function = "non_zero_duration"))]
+    pub inbox_retry_max_delay: Duration,
     /// Pushes wait once the inbox holds this many entries.
     #[serde(default = "consts::usize::<1024>")]
     pub inbox_backpressure_high: usize,
@@ -57,10 +72,14 @@ pub struct StreamConfig {
     pub worker_unload_grace: Duration,
 }
 
-fn validate_inbox_backpressure_watermarks(config: &StreamConfig) -> Result<(), ValidationError> {
+fn validate_stream_config(config: &StreamConfig) -> Result<(), ValidationError> {
     if config.inbox_backpressure_low >= config.inbox_backpressure_high {
         return Err(ValidationError::new("watermarks")
             .with_message("inboxBackpressureLow must be less than inboxBackpressureHigh".into()));
+    }
+    if config.inbox_retry_min_delay > config.inbox_retry_max_delay {
+        return Err(ValidationError::new("retryDelays")
+            .with_message("inboxRetryMinDelay must not be greater than inboxRetryMaxDelay".into()));
     }
     Ok(())
 }
@@ -72,10 +91,13 @@ impl Default for StreamConfig {
 }
 
 impl StreamConfig {
-    /// No periodic work: the recovery poll and the unload grace are an hour.
+    /// No periodic work: the recovery poll and the unload grace are an hour. The waits between the retries of
+    /// a failing inbox read are a few milliseconds, so a test does not wait for them.
     pub fn quiet() -> Self {
         StreamConfig {
             inbox_recovery_poll_interval: duration::seconds::<3600>(),
+            inbox_retry_min_delay: duration::milliseconds::<1>(),
+            inbox_retry_max_delay: duration::milliseconds::<5>(),
             worker_unload_grace: duration::seconds::<3600>(),
             ..Self::default()
         }
