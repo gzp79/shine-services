@@ -1,6 +1,6 @@
-mod chat_error;
+mod command_stream_error;
 mod hub_error;
+
 pub mod messages;
 
-pub use chat_error::ChatError;
-pub use hub_error::HubError;
+pub use self::{command_stream_error::CommandStreamError, hub_error::HubError};

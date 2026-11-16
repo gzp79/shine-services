@@ -1,0 +1,21 @@
+[package]
+name = "shine-game-tools"
+version.workspace = true
+edition.workspace = true
+description = "Developer tools of shine-game (code generators). Desktop only, not built for wasm."
+
+[[bin]]
+name = "shine-game-tools"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+serde = { workspace = true }
+postcard = { workspace = true }
+postcard-bindgen = { workspace = true }
+
+shine-game = { workspace = true }
+
+[dev-dependencies]
+uuid = { workspace = true }

@@ -11,6 +11,7 @@ use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use shine_infra_macros::RedisJsonValue;
 use std::sync::Arc;
+use tracing::instrument;
 use uuid::Uuid;
 
 /// Handle the user data query in the redis cache.
@@ -58,6 +59,10 @@ impl CurrentUserService {
         &self.cookie_secret
     }
 
+    pub fn redis_pool(&self) -> &RedisConnectionPool {
+        &self.redis
+    }
+
     pub async fn from_config(config: &ServiceConfig) -> Result<Self, UserSessionError> {
         let redis = crate::db::redis::create_redis_pool(config.session_redis_cns.as_str())
             .await
@@ -71,6 +76,12 @@ impl CurrentUserService {
 
     /// Refresh the session data in the cache. It should be in sync with the identity service
     /// and introduce any breaking change with great care as that can break authentication in all the service.
+    #[instrument(
+        name = "current_user_session",
+        level = "debug",
+        skip_all,
+        fields(user_id = %user_id, session_fp = ?session_key)
+    )]
     pub async fn get_current_user(
         &self,
         user_id: Uuid,

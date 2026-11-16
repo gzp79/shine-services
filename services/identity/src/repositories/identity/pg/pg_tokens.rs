@@ -263,16 +263,16 @@ impl Tokens for PgIdentityDbContext<'_> {
             .insert
             .query_one(
                 &self.client,
-                &user_id,
-                &token_hash,
-                &kind,
-                &fingerprint_to_bind_to.map(|f| f.as_str()),
-                &encrypted_email.as_deref(),
-                &time_to_live,
-                &site_info.agent.as_str(),
-                &site_info.country.as_deref(),
-                &site_info.region.as_deref(),
-                &site_info.city.as_deref(),
+                user_id,
+                token_hash,
+                kind,
+                fingerprint_to_bind_to.map(|f| f.as_str()),
+                encrypted_email.as_deref(),
+                time_to_live,
+                site_info.agent.as_str(),
+                site_info.country.as_deref(),
+                site_info.region.as_deref(),
+                site_info.city.as_deref(),
             )
             .await
         {
@@ -314,7 +314,7 @@ impl Tokens for PgIdentityDbContext<'_> {
     async fn find_by_hash(&mut self, token_hash: &str) -> Result<Option<TokenInfo>, IdentityError> {
         self.stmts_tokens
             .find_by_hash
-            .query_opt(&self.client, &token_hash)
+            .query_opt(&self.client, token_hash)
             .await
             .map_err(PgError::from)?
             .map(|row| {
@@ -353,7 +353,7 @@ impl Tokens for PgIdentityDbContext<'_> {
     async fn find_by_user(&mut self, user_id: &Uuid) -> Result<Vec<TokenInfo>, IdentityError> {
         self.stmts_tokens
             .list_by_user
-            .query(&self.client, user_id)
+            .query(&self.client, *user_id)
             .await
             .map_err(PgError::from)?
             .into_iter()
@@ -394,7 +394,7 @@ impl Tokens for PgIdentityDbContext<'_> {
         let count = self
             .stmts_tokens
             .delete
-            .execute(&self.client, &token_hash, &kind)
+            .execute(&self.client, token_hash, kind)
             .await
             .map_err(PgError::from)?;
         if count == 1 {
@@ -409,7 +409,7 @@ impl Tokens for PgIdentityDbContext<'_> {
         let count = self
             .stmts_tokens
             .delete_by_user
-            .execute(&self.client, &user_id, &token_hash)
+            .execute(&self.client, user_id, token_hash)
             .await
             .map_err(PgError::from)?;
         if count == 1 {
@@ -424,7 +424,7 @@ impl Tokens for PgIdentityDbContext<'_> {
         for kind in kinds {
             self.stmts_tokens
                 .delete_all_by_user
-                .execute(&self.client, &user_id, kind)
+                .execute(&self.client, user_id, *kind)
                 .await
                 .map_err(PgError::from)?;
         }
@@ -441,7 +441,7 @@ impl Tokens for PgIdentityDbContext<'_> {
         let row = self
             .stmts_tokens
             .test
-            .query_opt(&self.client, &token_hash, &allowed_kind)
+            .query_opt(&self.client, token_hash, allowed_kind)
             .await
             .map_err(PgError::from)?;
         row.map(|row| {
@@ -503,7 +503,7 @@ impl Tokens for PgIdentityDbContext<'_> {
         let row = self
             .stmts_tokens
             .take
-            .query_opt(&self.client, &token_hash, &allowed_kind)
+            .query_opt(&self.client, token_hash, allowed_kind)
             .await
             .map_err(PgError::from)?;
         row.map(|row| {

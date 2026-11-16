@@ -12,6 +12,7 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 pub struct ServiceVersion {
     pub app_name: String,
     pub version: String,
+    pub environment: String,
 }
 
 #[utoipa::path(
@@ -31,7 +32,7 @@ pub async fn get_ready() -> String {
     get,
     path = "/info/version",
     tag = "health",
-    description = "Get the version of the service.",
+    description = "Get the version and active configuration environment of the service.",
     responses(
         (status = OK, body = ServiceVersion)
     )
@@ -44,7 +45,7 @@ pub async fn get_version(Extension(version): Extension<ServiceVersion>) -> Json<
     get,
     path = "/info/status",
     tag = "health",
-    description = "Get the operational status of the service.",
+    description = "Get the operational status and active configuration environment of the service.",
     responses(
         (status = OK, description = "Service status")
     )
@@ -52,6 +53,7 @@ pub async fn get_version(Extension(version): Extension<ServiceVersion>) -> Json<
 pub async fn get_status(
     Extension(problem_config): Extension<ProblemConfig>,
     Extension(providers): Extension<StatusProviders>,
+    Extension(version): Extension<ServiceVersion>,
     user: CheckedCurrentUser,
 ) -> Result<Json<serde_json::Value>, ProblemResponse> {
     user.core_permissions()
@@ -63,6 +65,10 @@ pub async fn get_status(
     for provider in providers.iter() {
         status.insert(provider.name().to_string(), provider.status().await);
     }
+    status.insert(
+        "environment".to_string(),
+        serde_json::Value::String(version.environment),
+    );
 
     Ok(Json(serde_json::Value::Object(status)))
 }

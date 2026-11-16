@@ -14,6 +14,14 @@ interface World {
 
 
 
+export type PixelMapStreamStatus = "waiting" | "live" | "unsynced";
+
+interface PixelMapStream {
+    status(): PixelMapStreamStatus;
+}
+
+
+
 export class CdtMesh {
     private constructor();
     free(): void;
@@ -146,6 +154,50 @@ export class InnerCells {
 }
 
 /**
+ * The pixel map stream of one client. It moves no data: the caller sends the frames it returns and
+ * feeds it the frames of the server.
+ */
+export class PixelMapStream {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * The colors as the user sees them (confirmed and pending), row by row.
+     */
+    colors(): Uint8Array;
+    /**
+     * Reacts to a text frame of the server; returns the frames to send back.
+     */
+    handle_message(text: string): string[];
+    height(): number;
+    constructor(stream_id: string, user_id: string);
+    /**
+     * Paints a pixel: it shows at once and is pending until the server confirms it. Returns the frame
+     * to send. Throws when the stream is not live or the arguments are not valid.
+     */
+    paint(x: number, y: number, color: number, command_id: string): string;
+    palette_size(): number;
+    pending_count(): number;
+    /**
+     * One byte per pixel, 1 where a paint of this client is not confirmed yet.
+     */
+    pending_mask(): Uint8Array;
+    /**
+     * Starts over as after a connect; returns the subscribe frame to send.
+     */
+    resync(): string;
+    /**
+     * Changes whenever the colors or the pending mask change.
+     */
+    revision(): number;
+    subscribe_frame(): string;
+    /**
+     * The version of the confirmed state.
+     */
+    version(): number;
+    width(): number;
+}
+
+/**
  * Zero-copy WASM view over a TileGeometries snapshot.
  */
 export class TileGeometries {
@@ -267,6 +319,7 @@ export interface InitOutput {
     readonly __wbg_edgecells_free: (a: number, b: number) => void;
     readonly __wbg_hexmesh_free: (a: number, b: number) => void;
     readonly __wbg_innercells_free: (a: number, b: number) => void;
+    readonly __wbg_pixelmapstream_free: (a: number, b: number) => void;
     readonly __wbg_tilegeometries_free: (a: number, b: number) => void;
     readonly __wbg_wiredpolygonmeshhandle_free: (a: number, b: number) => void;
     readonly __wbg_world_free: (a: number, b: number) => void;
@@ -306,6 +359,20 @@ export interface InitOutput {
     readonly innercells_valid: (a: number) => number;
     readonly innercells_vertices: (a: number) => any;
     readonly memory_info: () => any;
+    readonly pixelmapstream_colors: (a: number) => [number, number];
+    readonly pixelmapstream_handle_message: (a: number, b: number, c: number) => [number, number];
+    readonly pixelmapstream_height: (a: number) => number;
+    readonly pixelmapstream_new: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly pixelmapstream_paint: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly pixelmapstream_palette_size: (a: number) => number;
+    readonly pixelmapstream_pending_count: (a: number) => number;
+    readonly pixelmapstream_pending_mask: (a: number) => [number, number];
+    readonly pixelmapstream_resync: (a: number) => [number, number];
+    readonly pixelmapstream_revision: (a: number) => number;
+    readonly pixelmapstream_status: (a: number) => [number, number];
+    readonly pixelmapstream_subscribe_frame: (a: number) => [number, number];
+    readonly pixelmapstream_version: (a: number) => number;
+    readonly pixelmapstream_width: (a: number) => number;
     readonly start: () => void;
     readonly tilegeometries_tile_count: (a: number) => number;
     readonly tilegeometries_tile_distortions: (a: number) => any;
@@ -336,6 +403,7 @@ export interface InitOutput {
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __externref_table_dealloc: (a: number) => void;
+    readonly __externref_drop_slice: (a: number, b: number) => void;
     readonly __wbindgen_start: () => void;
 }
 

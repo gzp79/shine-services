@@ -5,9 +5,10 @@ use crate::{
             redis_commands::{assert_not_blocking, redis_command_name},
             RedisError, RedisListener,
         },
-        time_db_operation, CnsParamError,
+        time_db_operation, CnsParamError, ListenerStatus,
     },
     health::StatusProvider,
+    telemetry::child_span,
 };
 use async_trait::async_trait;
 use bb8::{ManageConnection, Pool as BB8Pool, PooledConnection, RunError};
@@ -17,6 +18,10 @@ use redis::{
 };
 use std::{
     ops::{Deref, DerefMut},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     time::Duration,
 };
 
@@ -31,6 +36,9 @@ pub use shine_infra_macros::RedisJsonValue;
 pub struct RedisConnection {
     listener: RedisListener,
     client: MultiplexedConnection,
+    /// Set once a command sees a dropped connection or another unrecoverable error, so `has_broken`
+    /// can report it without an extra PING on every get from the pool.
+    broken: Arc<AtomicBool>,
 }
 
 impl RedisConnection {
@@ -53,23 +61,37 @@ impl RedisConnection {
     }
 }
 
+/// Marks `broken` when `result` shows the connection is no longer usable, so a later `has_broken`
+/// check can evict it without probing every checkout with a PING.
+fn mark_if_broken<T>(broken: &Arc<AtomicBool>, result: &Result<T, RedisRawError>) {
+    if let Err(err) = result {
+        if err.is_connection_dropped() || err.is_unrecoverable_error() {
+            broken.store(true, Ordering::Relaxed);
+        }
+    }
+}
+
 impl ConnectionLike for RedisConnection {
     fn req_packed_command<'a>(&'a mut self, cmd: &'a Cmd) -> RedisFuture<'a, Value> {
         let name = redis_command_name(cmd);
         assert_not_blocking(name);
-        let span = tracing::trace_span!(
-            "redis",
-            otel.name = name,
-            otel.kind = "client",
-            db.system = "redis",
-            db.operation.name = name,
-            db.query.text = name,
-        );
-        Box::pin(time_db_operation(
-            "redis",
-            name,
-            self.client.req_packed_command(cmd).instrument(span),
-        ))
+        let span = child_span(|| {
+            tracing::trace_span!(
+                "redis",
+                otel.name = name,
+                otel.kind = "client",
+                db.system = "redis",
+                db.operation.name = name,
+                db.query.text = name,
+            )
+        });
+        let broken = self.broken.clone();
+        let client = &mut self.client;
+        Box::pin(async move {
+            let result = time_db_operation("redis", name, client.req_packed_command(cmd).instrument(span)).await;
+            mark_if_broken(&broken, &result);
+            result
+        })
     }
 
     fn req_packed_commands<'a>(
@@ -78,15 +100,17 @@ impl ConnectionLike for RedisConnection {
         offset: usize,
         count: usize,
     ) -> RedisFuture<'a, Vec<Value>> {
-        let span = tracing::trace_span!(
-            "redis",
-            otel.name = "PIPELINE",
-            otel.kind = "client",
-            db.system = "redis",
-            db.operation.name = "PIPELINE",
-            db.operation.batch.size = tracing::field::Empty,
-            db.query.text = tracing::field::Empty,
-        );
+        let span = child_span(|| {
+            tracing::trace_span!(
+                "redis",
+                otel.name = "PIPELINE",
+                otel.kind = "client",
+                db.system = "redis",
+                db.operation.name = "PIPELINE",
+                db.operation.batch.size = tracing::field::Empty,
+                db.query.text = tracing::field::Empty,
+            )
+        });
         for name in cmd.cmd_iter().map(redis_command_name) {
             assert_not_blocking(name);
         }
@@ -96,11 +120,18 @@ impl ConnectionLike for RedisConnection {
             span.record("db.operation.batch.size", names.len());
             span.record("db.query.text", names.join("; "));
         }
-        Box::pin(time_db_operation(
-            "redis",
-            "PIPELINE",
-            self.client.req_packed_commands(cmd, offset, count).instrument(span),
-        ))
+        let broken = self.broken.clone();
+        let client = &mut self.client;
+        Box::pin(async move {
+            let result = time_db_operation(
+                "redis",
+                "PIPELINE",
+                client.req_packed_commands(cmd, offset, count).instrument(span),
+            )
+            .await;
+            mark_if_broken(&broken, &result);
+            result
+        })
     }
 
     fn get_db(&self) -> i64 {
@@ -137,10 +168,11 @@ impl RedisConnectionManager {
         raw_cns: &str,
         conn_config: AsyncConnectionConfig,
         connect_timeout: Duration,
+        wake_interval: Option<Duration>,
         max_reconnect_backoff: Duration,
     ) -> Result<Self, RedisRawError> {
         let client = Client::open(raw_cns)?;
-        let listener = RedisListener::new(client.clone(), connect_timeout, max_reconnect_backoff);
+        let listener = RedisListener::new(client.clone(), connect_timeout, wake_interval, max_reconnect_backoff);
         Ok(Self { client, conn_config, listener })
     }
 }
@@ -157,6 +189,7 @@ impl ManageConnection for RedisConnectionManager {
         Ok(RedisConnection {
             listener: self.listener.clone(),
             client,
+            broken: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -168,37 +201,89 @@ impl ManageConnection for RedisConnectionManager {
         }
     }
 
-    fn has_broken(&self, _: &mut Self::Connection) -> bool {
-        false
+    fn has_broken(&self, conn: &mut Self::Connection) -> bool {
+        conn.broken.load(Ordering::Relaxed)
     }
 }
 
 pub type RedisConnectionError = RunError<<RedisConnectionManager as ManageConnection>::Error>;
-pub type RedisConnectionPool = BB8Pool<RedisConnectionManager>;
+
+/// The connection pool together with the handle of the listener its manager owns, as bb8 gives no
+/// access to the manager. Derefs to the bb8 pool.
+#[derive(Clone)]
+pub struct RedisConnectionPool {
+    pool: BB8Pool<RedisConnectionManager>,
+    listener: RedisListener,
+}
+
+impl std::fmt::Debug for RedisConnectionPool {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RedisConnectionPool")
+            .field("pool", &self.pool)
+            .finish_non_exhaustive()
+    }
+}
+
+impl RedisConnectionPool {
+    pub async fn listener_status(&self) -> ListenerStatus {
+        self.listener.status().await
+    }
+
+    /// A round trip on one pooled connection, as any request would do. A connection found dead is
+    /// dropped by the pool, so a repeated call tries the next one. Bounded, to answer even if the
+    /// cache does not.
+    pub async fn check(&self) -> bool {
+        const TIMEOUT: Duration = Duration::from_secs(2);
+
+        let round_trip = async {
+            let mut conn = self.pool.get().await.ok()?;
+            redis::cmd("PING").query_async::<String>(&mut *conn).await.ok()
+        };
+        matches!(tokio::time::timeout(TIMEOUT, round_trip).await, Ok(Some(_)))
+    }
+}
+
+impl Deref for RedisConnectionPool {
+    type Target = BB8Pool<RedisConnectionManager>;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.pool
+    }
+}
+
 pub type RedisPooledConnection<'a> = PooledConnection<'a, RedisConnectionManager>;
 pub type RedisRawError = redis::RedisError;
 
 pub struct RedisPoolStatus {
+    name: &'static str,
     pool: RedisConnectionPool,
 }
 
 impl RedisPoolStatus {
     pub fn new(pool: RedisConnectionPool) -> Self {
-        Self { pool }
+        Self::with_name("redis", pool)
+    }
+
+    /// Status of an additional pool; the name keys its entry in the status report.
+    pub fn with_name(name: &'static str, pool: RedisConnectionPool) -> Self {
+        Self { name, pool }
     }
 }
 
 #[async_trait]
 impl StatusProvider for RedisPoolStatus {
     fn name(&self) -> &'static str {
-        "redis"
+        self.name
     }
 
     async fn status(&self) -> serde_json::Value {
         let state = self.pool.state();
         serde_json::json!({
             "connections": state.connections,
-            "idleConnections": state.idle_connections
+            "idleConnections": state.idle_connections,
+            "healthy": self.pool.check().await,
+            "listener": self.pool.listener_status().await
         })
     }
 }
@@ -260,18 +345,21 @@ pub async fn create_redis_pool(cns: &str) -> Result<RedisConnectionPool, RedisCo
         listener_connect_timeout = timeout;
     }
 
-    let redis_manager = RedisConnectionManager::new(&cns_clean, conn_config, listener_connect_timeout, pool_timeout)?;
-    let redis = bb8::Pool::builder()
+    let redis_manager =
+        RedisConnectionManager::new(&cns_clean, conn_config, listener_connect_timeout, None, pool_timeout)?;
+    let listener = redis_manager.listener.clone();
+    let pool = bb8::Pool::builder()
         .max_size(max_size)
         .connection_timeout(pool_timeout)
         .error_sink(Box::new(PoolErrorLogger("redis")))
+        .test_on_check_out(false) // replaced by `has_broken` (the `broken` flag), saving a PING on every checkout.
         .build(redis_manager)
         .await?;
 
     tracing::info!(
         "Redis pool created (max_size: {max_size}, pool_timeout: {pool_timeout:?}, timeout_ms: {timeout_ms:?})"
     );
-    Ok(redis)
+    Ok(RedisConnectionPool { pool, listener })
 }
 
 #[cfg(test)]

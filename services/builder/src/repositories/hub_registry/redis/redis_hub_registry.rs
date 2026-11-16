@@ -8,9 +8,14 @@ use uuid::Uuid;
 const HUB_CONNECTION_KEYSPACE: &str = "hub-connection:";
 pub const HUB_REGISTRY_CHANGED_CHANNEL: &str = "hub-registry-changed";
 
+/// Redis key of the connection registered for a user.
+pub fn hub_connection_key(user_id: Uuid) -> String {
+    format!("{HUB_CONNECTION_KEYSPACE}{}", user_id.as_simple())
+}
+
 impl RedisHubConnectionDbContext<'_> {
     fn to_redis_key(&self, user_id: Uuid) -> String {
-        format!("{HUB_CONNECTION_KEYSPACE}{}", user_id.as_simple())
+        hub_connection_key(user_id)
     }
 
     /// Wire payload for the `hub-registry-changed` channel.

@@ -1,6 +1,6 @@
 {
   "beforeLayers": [
-    "file://../server_config.json",
+    "file://../config/common.prod.json",
     "azk://shine-keyvault.vault.azure.net/"
   ],
   "afterLayers": ["environment"],
@@ -10,8 +10,11 @@
   },
 
   "builder": {
-    "hubHeartbeatSeconds": 300,
-    "authCheckInterval": 60,
+    "hub": {
+      "heartbeat": 300,
+      "sessionCheck": 900,
+      "pingEnabled": false
+    },
     "ws": {
       "allowedHosts": ["^ws\\.scytta\\.com(:443)?$"]
     }

@@ -72,7 +72,7 @@ impl Roles for PgIdentityDbContext<'_> {
     #[instrument(level = "info", skip_all, fields(user_id = %user_id))]
     async fn add_role(&mut self, user_id: Uuid, role: &str) -> Result<Option<Vec<String>>, IdentityError> {
         tracing::debug!("Adding role {role} to user {user_id}");
-        match self.stmts_roles.add.execute(&self.client, &user_id, &role).await {
+        match self.stmts_roles.add.execute(&self.client, user_id, role).await {
             Ok(_) => (),
             Err(err) if err.is_constraint("roles", "fkey_user_id") => {
                 // user not found, deleted meanwhile
@@ -88,7 +88,7 @@ impl Roles for PgIdentityDbContext<'_> {
         let row = self
             .stmts_roles
             .get
-            .query_opt(&self.client, &user_id)
+            .query_opt(&self.client, user_id)
             .await
             .map_err(PgError::from)?;
         if let Some(roles) = row {
@@ -102,7 +102,7 @@ impl Roles for PgIdentityDbContext<'_> {
     async fn delete_role(&mut self, user_id: Uuid, role: &str) -> Result<Option<Vec<String>>, IdentityError> {
         self.stmts_roles
             .delete
-            .execute(&self.client, &user_id, &role)
+            .execute(&self.client, user_id, role)
             .await
             .map_err(PgError::from)?;
 

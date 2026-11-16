@@ -1,30 +1,24 @@
 {
   "beforeLayers": [
-    "file://../server_config.json",
+    "file://../config/common.prod.json",
     "azk://shine-keyvault.vault.azure.net/"
   ],
-  "afterLayers": ["environment"],
-
-  "db": {
-    "emailProtection": {}
-  },
-
+  "afterLayers": [
+    "environment"
+  ],
   "service": {
     "port": 7000
   },
-
   "identity": {
     "name": {
       "baseName": "Freshman_",
       "idEncoder": "harsh"
     },
-
     "mailer": {
       "type": "smtp",
       "useTls": true,
       "emailDomain": "scytta.com"
     },
-
     "auth": {
       "appName": "Scytta",
       "homeUrl": "https://scytta.com/",
@@ -46,11 +40,19 @@
       "openid": {
         "google": {
           "discoveryUrl": "https://accounts.google.com",
-          "scopes": ["openid", "email", "profile"]
+          "scopes": [
+            "openid",
+            "email",
+            "profile"
+          ]
         },
         "gitlab": {
           "discoveryUrl": "https://gitlab.com",
-          "scopes": ["openid", "email", "profile"]
+          "scopes": [
+            "openid",
+            "email",
+            "profile"
+          ]
         }
       },
       "oauth2": {
@@ -62,7 +64,10 @@
             "name": "global_name"
           },
           "extensions": [],
-          "scopes": ["identify", "email"]
+          "scopes": [
+            "identify",
+            "email"
+          ]
         },
         "github": {
           "authorizationUrl": "https://github.com/login/oauth/authorize",
@@ -71,8 +76,12 @@
           "userInfoMapping": {
             "name": "login"
           },
-          "extensions": ["githubEmail"],
-          "scopes": ["user:email"]
+          "extensions": [
+            "githubEmail"
+          ],
+          "scopes": [
+            "user:email"
+          ]
         }
       }
     }

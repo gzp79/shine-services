@@ -96,8 +96,9 @@ where
             .and_then(|cookie| serde_json::from_str::<SessionCookie>(cookie.value()).ok())
             .ok_or_else(|| ErrorResponse::new(&problem_config, UserSessionError::Unauthenticated))?;
 
-        tracing::debug!("Checking fingerprint: {:?}", session_cookie.user_id);
+        tracing::debug!(user_id = %session_cookie.user_id, "Session cookie validated");
         if session_cookie.fingerprint != fingerprint.as_str() {
+            tracing::info!(user_id = %session_cookie.user_id, "Session fingerprint mismatch");
             return Err(ErrorResponse::new(
                 &problem_config,
                 UserSessionError::SessionCompromised,
@@ -112,6 +113,11 @@ where
         crate::telemetry::record_user_id(
             &crate::telemetry::RequestSpan::from_extensions(&parts.extensions),
             current_user.user_id,
+        );
+        tracing::info!(
+            user_id = %current_user.user_id,
+            role_count = current_user.roles.len(),
+            "Current user authenticated"
         );
         Ok(CheckedCurrentUser(current_user))
     }

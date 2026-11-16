@@ -177,6 +177,23 @@ where
         if let Ok(response) = &mut result {
             otel_http::add_trace_id_header(this.span, response);
         }
+        let latency = this.context.start.elapsed();
+        match &result {
+            Ok(response) => {
+                tracing::info!(
+                    status = response.status().as_u16(),
+                    latency = ?latency,
+                    "finished processing request"
+                );
+            }
+            Err(error) => {
+                tracing::error!(
+                    error = error as &dyn std::error::Error,
+                    latency = ?latency,
+                    "failed processing request"
+                );
+            }
+        }
         Poll::Ready(result)
     }
 }

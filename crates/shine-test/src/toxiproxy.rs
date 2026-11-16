@@ -9,9 +9,6 @@
 use serde_json::{json, Value};
 use std::env;
 
-/// Toxiproxy API endpoint, e.g. `http://localhost:8474`.
-pub const TOXIPROXY_URL_ENV: &str = "SHINE_TEST_TOXIPROXY_URL";
-
 pub struct Toxiproxy {
     client: reqwest::Client,
     url: String,
@@ -25,15 +22,10 @@ impl Toxiproxy {
         }
     }
 
-    /// The toxiproxy of [`TOXIPROXY_URL_ENV`], `None` (skip the test) when it is not set.
-    pub fn from_env() -> Option<Self> {
-        match env::var(TOXIPROXY_URL_ENV) {
-            Ok(url) => Some(Self::new(url)),
-            Err(_) => {
-                tracing::warn!("Missing {TOXIPROXY_URL_ENV}, skipping test");
-                None
-            }
-        }
+    /// The toxiproxy configured by `SHINE_TEST_TOXIPROXY_URL`.
+    pub fn from_env() -> Self {
+        let url = env::var("SHINE_TEST_TOXIPROXY_URL").expect("SHINE_TEST_TOXIPROXY_URL must be set");
+        Self::new(url)
     }
 
     /// Enables every proxy and removes every toxic.
@@ -57,10 +49,10 @@ impl Toxiproxy {
 
     pub async fn proxy(&self, name: &str) -> Proxy<'_> {
         let info = self.call(self.client.get(format!("{}/proxies/{name}", self.url))).await;
+        tracing::debug!("Proxy info: {}", info);
         Proxy {
             toxiproxy: self,
             name: name.to_string(),
-            listen: info["listen"].as_str().unwrap_or_default().to_string(),
         }
     }
 
@@ -80,7 +72,6 @@ pub struct ResetGuard {
 
 impl Drop for ResetGuard {
     fn drop(&mut self) {
-        // Drop cannot await, and may run on a runtime thread: reset from a thread with its own runtime.
         let url = self.url.clone();
         let reset = std::thread::spawn(move || {
             let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
@@ -102,24 +93,9 @@ impl Drop for ResetGuard {
 pub struct Proxy<'a> {
     toxiproxy: &'a Toxiproxy,
     name: String,
-    listen: String,
 }
 
 impl Proxy<'_> {
-    /// The listen address as reported by toxiproxy, e.g. `[::]:6379`.
-    pub fn listen(&self) -> &str {
-        &self.listen
-    }
-
-    /// The port clients connect to.
-    pub fn listen_port(&self) -> u16 {
-        self.listen
-            .rsplit(':')
-            .next()
-            .and_then(|port| port.parse().ok())
-            .unwrap_or_else(|| panic!("unexpected listen address of proxy {}: {}", self.name, self.listen))
-    }
-
     /// A disabled proxy refuses new connections and closes the open ones.
     pub async fn set_enabled(&self, enabled: bool) {
         let url = format!("{}/proxies/{}", self.toxiproxy.url, self.name);

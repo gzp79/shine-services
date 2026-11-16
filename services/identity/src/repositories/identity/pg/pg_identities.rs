@@ -213,12 +213,12 @@ impl Identities for PgIdentityDbContext<'_> {
             .insert_identity
             .query_one(
                 &self.client,
-                &user_id,
-                &IdentityKind::User,
-                &user_name,
-                &encrypted_email.as_deref(),
-                &encrypted_normalized_email.as_deref(),
-                &email_hash.as_deref(),
+                user_id,
+                IdentityKind::User,
+                user_name,
+                encrypted_email.as_deref(),
+                encrypted_normalized_email.as_deref(),
+                email_hash.as_deref(),
             )
             .await
         {
@@ -256,7 +256,7 @@ impl Identities for PgIdentityDbContext<'_> {
         let row = self
             .stmts_identities
             .find_by_id
-            .query_opt(&self.client, &id)
+            .query_opt(&self.client, id)
             .await
             .map_err(PgError::from)?;
 
@@ -269,7 +269,7 @@ impl Identities for PgIdentityDbContext<'_> {
         let row = self
             .stmts_identities
             .find_by_email_hash
-            .query_opt(&self.client, &email_hash.as_str())
+            .query_opt(&self.client, email_hash.as_str())
             .await
             .map_err(PgError::from)?;
 
@@ -303,12 +303,12 @@ impl Identities for PgIdentityDbContext<'_> {
             .update
             .query_opt(
                 &self.client,
-                &id,
-                &name,
-                &encrypted_email.as_deref(),
-                &encrypted_normalized_email.as_deref(),
-                &email_hash.as_deref(),
-                &email.map(|(_, confirmed)| confirmed),
+                id,
+                name,
+                encrypted_email.as_deref(),
+                encrypted_normalized_email.as_deref(),
+                email_hash.as_deref(),
+                email.map(|(_, confirmed)| confirmed),
             )
             .await
         {
@@ -333,7 +333,7 @@ impl Identities for PgIdentityDbContext<'_> {
     async fn cascaded_delete(&mut self, id: Uuid) -> Result<(), IdentityError> {
         self.stmts_identities
             .cascaded_delete
-            .execute(&self.client, &id)
+            .execute(&self.client, id)
             .await
             .map_err(PgError::from)?;
         Ok(())
@@ -344,7 +344,7 @@ impl Identities for PgIdentityDbContext<'_> {
         let rows = self
             .stmts_identities
             .delete_guests
-            .query(&self.client, &cutoff, &limit)
+            .query(&self.client, cutoff, limit)
             .await
             .map_err(PgError::from)?;
         Ok(rows.into_iter().map(|r| r.user_id).collect())

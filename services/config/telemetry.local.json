@@ -1,0 +1,17 @@
+{
+  "telemetry": {
+    "rootSpanOrigin": true,
+    "logging": {
+      "type": "otlp",
+      "endpoint": "http://localhost:4317"
+    },
+    "metrics": {
+      "type": "otlp",
+      "endpoint": "http://localhost:4317"
+    },
+    "tracing": {
+      "type": "otlp",
+      "endpoint": "http://localhost:4317"
+    }
+  }
+}

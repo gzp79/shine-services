@@ -47,17 +47,22 @@ stateDiagram-v2
     Streaming: Streaming<br/>reads notifications,<br/>dispatches to handlers
 
     Disconnected --> Connecting: first listen() call, or after a drop
-    Connecting --> Streaming: subscribe confirmed
+    Connecting --> Streaming: subscribe confirmed → streaming task woken, nudges every handler
     Streaming --> Connecting: stream ends (connection lost) → keep-alive task notified → reconnect
 ```
 
 Both listeners share this shape: a keep-alive task waits on a `Notify`, connects, and spawns a streaming task that reads notifications until the connection drops — at which point it notifies the keep-alive task to try again. Because every channel shares one connection, a drop pauses *all* subscriptions at once until reconnect completes and every channel is re-subscribed; this is the cost of sharing one socket, traded for not needing a socket per subscribed channel.
 
-The first connection is opened lazily by `listen()`, not by the keep-alive task — whichever of the two runs the connect re-subscribes every channel already in the handler map, so the map (not the socket) is the durable record of what is subscribed. On connect the order is fixed: publish the connection into `ListenState` and spawn the streaming task *before* issuing any subscribe, because a Postgres `LISTEN` only completes while the streaming task is polling the connection driver (see [Concurrency model](#concurrency-model)).
+The first connection is opened lazily by `listen()`, not by the keep-alive task — whichever of the two runs the connect re-subscribes every channel already in the handler map, so the map (not the socket) is the durable record of what is subscribed. After a successful connect the connecting side does not call any handler itself: it wakes the new streaming task, which nudges every handler (see [Dispatch](#dispatch)). On connect the order is fixed: publish the connection into `ListenState` and spawn the streaming task *before* issuing any subscribe, because a Postgres `LISTEN` only completes while the streaming task is polling the connection driver (see [Concurrency model](#concurrency-model)).
 
 ### Dispatch
 
 One streaming task reads the shared connection and routes each notification to the single handler registered for its channel. Handlers run synchronously on that task, so a slow handler stalls dispatch for every channel — an over-long one is logged, not queued.
+
+The streaming task is the *only* place handlers are invoked. Besides notifications it has two reasons to call every registered handler with a `None` payload ("resync, you may have missed something"):
+
+- **Reconnect:** `connect_and_subscribe` wakes the freshly spawned streaming task (a stored `Notify` permit, so it is not lost if the task is mid-dispatch) after every channel is re-subscribed. The nudge is unconditional: nobody knows what was missed, and a handler may also be nudged right after it is registered, so handlers must treat a `None` payload as "resync" and never as a message.
+- **Periodic wake:** each listener takes an optional `wake_interval`. When set, the streaming task also nudges every handler on that period (missed ticks are delayed, not burst). `None` (or zero) disables it; the connection managers currently pass `None`.
 
 ```mermaid
 flowchart TD
@@ -83,6 +88,8 @@ Shared by both backends:
 
 - **Serialize subscription changes with** a one-permit `Semaphore` (`ops`), held across the whole change.
 - **Close-vs-listen safety:** `listen()` and `close()` re-check the closed flag under the `ops` permit.
+- **Register before subscribing:** `listen()` inserts the handler *before* issuing the backend subscribe, so no message can arrive for a channel without a handler. A failed subscribe is returned to the caller and the handler is rolled back; if the connection was just lost (no client/sink) the handler stays and the reconnect subscribes it.
+- **Stale streaming task:** a finished Postgres streaming task clears the shared client only if it is still the one it served, so it cannot tear down a newer connection that replaced it.
 
 Where they differ:
 
@@ -99,7 +106,8 @@ Where they differ:
 | When does a command connection get created? | Lazily, on the first pool checkout that needs one, up to the pool's `max_size`. Idle ones are reused across checkouts. |
 | How many listener connections exist? | At most one per connection manager — shared by clone across every pooled connection — regardless of how many channels are subscribed. It opens on the first `listen()` and stays open until `close()` or the last handle drops, even if every channel is later unlistened. |
 | Can a channel be unsubscribed? | Yes — `unlisten(channel)` removes the handler and, if connected, issues the backend's unsubscribe on the shared connection. The connection itself stays open for the remaining (and any future) channels. |
-| What happens if the shared connection drops? | The streaming task ends, which notifies the keep-alive task; it reconnects and re-subscribes every channel still in the handler map. All subscriptions pause together during the gap. |
+| What happens if the shared connection drops? | The streaming task ends, which notifies the keep-alive task; it reconnects and re-subscribes every channel still in the handler map, then wakes the new streaming task, which calls every handler with `None`. All subscriptions pause together during the gap. |
+| When is a handler called with `None`? | After every (re)connect and, if `wake_interval` is set, on every interval tick — always from the streaming task, never from `listen`/the keep-alive task. |
 | Can subscriptions change while messages are being read? | Yes. Redis uses `PubSub::split()` — an independent `Sink` and `Stream` over the one connection — and issues the command on a cloned `PubSubSink`; Postgres issues it on a cloned `Arc<Client>`. Neither holds the state lock across the command, so the streaming task keeps dispatching (see [Concurrency model](#concurrency-model)). |
 | Regular commands on a pooled connection | Go through the backend's normal connection type (Postgres: `tokio_postgres::Client`/`Transaction` via `Deref`; Redis: `MultiplexedConnection` via `ConnectionLike`/`Deref`/`DerefMut`), entirely separate from the listener connection. |
 

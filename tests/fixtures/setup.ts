@@ -6,13 +6,46 @@ import { TestUser, TestUserHelper } from '$lib/api/test_user';
 import { TokenAPI } from '$lib/api/token_api';
 import { UserAPI } from '$lib/api/user_api';
 import OAuth2MockServer from '$lib/mocks/oauth2';
-import { SharedServiceName } from '$lib/utils';
+import { SharedServiceName, sharedServices } from '$lib/utils';
 import { expect as authExpect } from './expect/auth_exts';
 import { expect as commonExpect } from './expect/common';
 import { expect as mailExpect } from './expect/mail';
 import { expect as responseExpect } from './expect/response';
+import { InfraOutage } from './infra_outage';
 
 export const expect = mergeExpects(commonExpect, responseExpect, authExpect, mailExpect);
+
+type VersionInfo = {
+    environment: string;
+    version: string;
+    [key: string]: unknown;
+};
+
+export type ServiceEnvironment = {
+    /**
+     * Run the test only if the service is running in one of the specified environments.
+     * If not, the test is failed with a clear message.
+     * Must be called at test start, not mid-test.
+     * @param allowedEnvironments - List of environments (e.g., ['test', 'local']) to allow the test to run
+     * @throws Error if called mid-test (after first assertion/await)
+     */
+    runIf(allowedEnvironments: string[]): Promise<void>;
+
+    /**
+     * Skip the test if the service is running in any of the specified environments.
+     * If matched, the test is failed with a clear message.
+     * Must be called at test start, not mid-test.
+     * @param excludedEnvironments - List of environments to skip the test for
+     * @throws Error if called mid-test (after first assertion/await)
+     */
+    skipIf(excludedEnvironments: string[]): Promise<void>;
+
+    /**
+     * Get the current environment name for the service.
+     * Only available after calling runIf() or skipIf().
+     */
+    current(): string;
+};
 
 export type ServiceOptions = {
     enableRequestLogging: boolean;
@@ -21,6 +54,7 @@ export type ServiceOptions = {
     identityUrl: string;
     builderUrl: string;
     builderWSUrl: string;
+    toxiproxyUrl: string;
 
     skipMockService?: boolean;
 
@@ -42,6 +76,12 @@ export type Api = {
 export type ServiceTestFixture = {
     api: Api;
     serviceUrl: (serviceName: SharedServiceName) => string;
+    serviceTestInfo: (serviceName: SharedServiceName) => ServiceEnvironment;
+    /**
+     * Breaks the database or the cache of all the services for the test, see {@link InfraOutage}. The running
+     * services have to work again by the end of the test.
+     */
+    infraOutage: InfraOutage;
 };
 
 export const test = base.extend<ServiceTestFixture, ServiceOptions>({
@@ -49,6 +89,7 @@ export const test = base.extend<ServiceTestFixture, ServiceOptions>({
     identityUrl: [undefined!, { scope: 'worker', option: true }],
     builderUrl: [undefined!, { scope: 'worker', option: true }],
     builderWSUrl: [undefined!, { scope: 'worker', option: true }],
+    toxiproxyUrl: [undefined!, { scope: 'worker', option: true }],
     masterAdminKey: [undefined!, { scope: 'worker', option: true }],
     defaultRedirects: [undefined!, { scope: 'worker', option: true }],
     skipMockService: [false, { scope: 'worker', option: true }],
@@ -72,6 +113,21 @@ export const test = base.extend<ServiceTestFixture, ServiceOptions>({
             await use(admin!);
         },
         { scope: 'worker' }
+    ],
+
+    infraOutage: [
+        async ({ toxiproxyUrl, serviceUrl, api }, use) => {
+            const outage = new InfraOutage({
+                toxiproxyUrl,
+                serviceUrls: sharedServices.map(serviceUrl),
+                client: api.client
+            });
+            await use(outage);
+
+            // Whatever happened in the test, the outage is cleared and the running services have to work again.
+            await outage.dispose();
+        },
+        { scope: 'test' }
     ],
 
     api: [
@@ -103,6 +159,81 @@ export const test = base.extend<ServiceTestFixture, ServiceOptions>({
                     case 'builder':
                         return builderUrl;
                 }
+            });
+        },
+        { scope: 'test' }
+    ],
+
+    serviceTestInfo: [
+        async ({ api, serviceUrl }, use, testInfo) => {
+            const serviceEnvironments: Map<string, VersionInfo> = new Map();
+            const callCounts: Map<string, number> = new Map();
+
+            await use((serviceName: SharedServiceName): ServiceEnvironment => {
+                const fetchEnvironment = async (): Promise<VersionInfo> => {
+                    const count = (callCounts.get(serviceName) ?? 0) + 1;
+                    callCounts.set(serviceName, count);
+
+                    if (count > 1) {
+                        throw new Error(
+                            'Environment check methods (runIf/skipIf) must be called at test start, not mid-test. ' +
+                                'Call once in your test, before any assertions or other async operations.'
+                        );
+                    }
+
+                    if (!serviceEnvironments.has(serviceName)) {
+                        const url = `${serviceUrl(serviceName)}/info/version`;
+                        const response = await api.client.get(url);
+
+                        if (response.status() !== 200) {
+                            throw new Error(
+                                `Failed to fetch version info for ${serviceName} from ${url}: ${response.status()}`
+                            );
+                        }
+
+                        const versionInfo = (await response.json()) as VersionInfo;
+                        serviceEnvironments.set(serviceName, versionInfo);
+                    }
+
+                    return serviceEnvironments.get(serviceName)!;
+                };
+
+                return {
+                    async runIf(allowedEnvironments: string[]): Promise<void> {
+                        const versionInfo = await fetchEnvironment();
+                        const { environment } = versionInfo;
+
+                        if (!allowedEnvironments.includes(environment)) {
+                            const message =
+                                `Test skipped: ${serviceName} is running in '${environment}' environment, ` +
+                                `only [${allowedEnvironments.join(', ')}] allowed`;
+                            testInfo.skip();
+                            throw new Error(message);
+                        }
+                    },
+
+                    async skipIf(excludedEnvironments: string[]): Promise<void> {
+                        const versionInfo = await fetchEnvironment();
+                        const { environment } = versionInfo;
+
+                        if (excludedEnvironments.includes(environment)) {
+                            const message = `Test skipped: ${serviceName} is running in excluded environment '${environment}'`;
+                            console.log(`⊘ ${message}`);
+                            testInfo.skip();
+                            throw new Error(message);
+                        }
+                    },
+
+                    current(): string {
+                        const versionInfo = serviceEnvironments.get(serviceName);
+                        if (!versionInfo) {
+                            throw new Error(
+                                `Environment not fetched for ${serviceName}. Call runIf() or skipIf() first.`
+                            );
+                        }
+                        return versionInfo.environment;
+                    }
+                };
             });
         },
         { scope: 'test' }

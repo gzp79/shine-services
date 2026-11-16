@@ -13,10 +13,11 @@ export type ExperimentOption = {
 };
 
 export abstract class Experiment implements Scene {
+    readonly options: ExperimentOption;
     readonly renderContext: RenderContext;
     readonly camera: THREE.PerspectiveCamera;
     readonly controls?: OrbitControls;
-    readonly debugPanel: DebugPanel;
+    private _debugPanel?: DebugPanel;
     protected readonly assets: AssetStore;
 
     get scene(): THREE.Scene {
@@ -27,6 +28,13 @@ export abstract class Experiment implements Scene {
         return this.renderContext.renderer;
     }
 
+    protected get debugPanel() {
+        if (!this._debugPanel) {
+            this._debugPanel = new DebugPanel(this.context.container, this.options.title);
+        }
+        return this._debugPanel;
+    }
+
     private readonly _resizeObserver: ResizeObserver;
 
     constructor(
@@ -34,11 +42,10 @@ export abstract class Experiment implements Scene {
         options: ExperimentOption
     ) {
         const { container, renderer, catalogBuilder } = context;
-        const addOrbitCamera = options.addOrbitCamera ?? true;
 
+        this.options = options;
         this.assets = new AssetStore(catalogBuilder);
         this.renderContext = new RenderContext(container, renderer, { setupScene: false, showMetrics: true });
-        this.debugPanel = new DebugPanel(container, options.title);
 
         const scene = this.renderContext.scene;
         scene.background = new THREE.Color(0x1a1a2e);
@@ -54,7 +61,7 @@ export abstract class Experiment implements Scene {
         this.camera.position.set(0, -2.5, 4);
         this.camera.lookAt(0, 0, 0);
 
-        if (addOrbitCamera) {
+        if (this.options.addOrbitCamera) {
             this.controls = new OrbitControls(this.camera, renderer.domElement);
             this.controls.target.set(0, 0, 0);
             this.controls.enableDamping = true;
@@ -85,7 +92,7 @@ export abstract class Experiment implements Scene {
 
     dispose(): void {
         this._resizeObserver.disconnect();
-        this.debugPanel.dispose();
+        this.debugPanel?.dispose();
         this.controls?.dispose();
         this.renderContext.dispose();
         disposeObject3D(this.renderContext.scene);

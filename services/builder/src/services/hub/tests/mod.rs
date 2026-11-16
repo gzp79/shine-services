@@ -1,6 +1,6 @@
-mod chat;
+#![cfg(test)]
+
 mod contention;
 mod fault;
 mod lifecycle;
-
-pub mod test_utils;
+mod streams;

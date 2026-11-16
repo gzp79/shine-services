@@ -1,0 +1,20 @@
+{
+  "beforeLayers": [
+    "file://../config/common.mock.json",
+    "file://config/mock.json",
+    "file://../config/telemetry.local.json"
+  ],
+  "afterLayers": ["environment"],
+
+  "service": {
+    "port": 8443,
+    "tls": {
+      "cert": "../../certificates/scytta.crt",
+      "key": "../../certificates/scytta.key"
+    }
+  },
+
+  "telemetry": {
+    "defaultLevel": "info,shine_infra=trace,shine_identity=debug"
+  }
+}

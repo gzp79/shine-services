@@ -39,7 +39,6 @@ pub trait HubRegistry {
         connections: &[HubConnection],
     ) -> impl Future<Output = Result<Vec<HubConnection>, HubError>> + Send;
 
-    #[allow(dead_code)]
     /// Returns all currently connected users with their active connection ids.
     fn list_connections(&mut self) -> impl Future<Output = Result<Vec<HubConnection>, HubError>> + Send;
 

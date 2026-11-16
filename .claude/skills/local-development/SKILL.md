@@ -1,137 +1,62 @@
 ---
 name: local-development
-description: Starting development sessions, running tests after code changes, debugging service issues, or verifying implementations - handles service startup, test execution, and troubleshooting
+description: Use when starting identity or builder services locally, running Rust crate tests that need Redis/Postgres, running the Playwright API tests, or debugging a local service, test infra, or toxiproxy problem in shine-services
 ---
 
-# Local Development Workflow
+# Local Development
 
-## Quick Start
+One PowerShell 7 script, `scripts/dev.ps1` (`pwsh` works on Windows, Linux and macOS), prepares and checks the environment: infra, services, test variables. **It never runs tests**: you call `cargo` / `pnpm` yourself once it reports the environment ready. The VSCode tasks cover the same ground (their test tasks set the variables in `tasks.json` directly).
 
-**Start service** (choose one):
+**Default target: standalone services on the host with TLS** (identity `:8443`, builder `:8444`). The nginx/CI docker container is only for reproducing CI when the user asks (`scripts/emulate_github_server_build.ps1`, see [configuration.md](../../../docs/services/configuration.md)).
 
-```bash
-# Recommended: Use startup script (from repo root)
-cd services/identity && powershell.exe -ExecutionPolicy Bypass -File run_identity_local.ps1
+## What do you want to do?
 
-# Alternative: VSCode task "identity: local" (auto-configures env vars)
+| Goal | Command |
+|---|---|
+| See what is running and what is ready | `pwsh scripts/dev.ps1 status` |
+| Start DB/Redis/toxiproxy | `pwsh scripts/dev.ps1 up` (`up-observe` adds the trace dashboard) |
+| Start the services | `pwsh scripts/dev.ps1 start all -Stage test`: builds once, starts what is not running in the background (logs: `temp/dev-<service>.log`) and waits until they listen. `start identity` / `start builder` run one service in the foreground |
+| Mocked externals for manual poking (email, OAuth/OIDC, web client) | `pnpm --dir tests mock:services` (VSCode task "start mocked services") |
+| Rust tests | `pwsh -NoProfile -Command ". scripts/dev.ps1 env rust; cargo test -p shine-builder"` |
+| Playwright API tests | `pwsh -NoProfile -Command ". scripts/dev.ps1 env api; pnpm --dir tests test:local --grep 'Purge guests'"` |
+| Stop the services (infra stays up) | `pwsh scripts/dev.ps1 stop all` (or `identity` / `builder`) |
+| Stop infra | `pwsh scripts/dev.ps1 down` (does not touch the services) |
+
+## Script feedback
+
+Every command checks its preconditions and, when something is off, prints each problem with the command that fixes it, exit code 1. Act on that text. Nothing running is ever killed for you: stopping a service that runs in the wrong stage is your call, with `dev.ps1 stop <service>` (the message also names the pid; ask the user if it is not yours). `stop` only stops a process that answers as that service and leaves anything else holding the port alone.
+`dev.ps1 start` exits 0 with "already running in stage ... Nothing to do" when the wanted service is up; reuse it.
+
+## Rules
+
+- **Playwright (`dev.ps1 env api`) needs both services in stage `test`, and no mocks running.** Playwright starts the mocks it needs itself (see Mocks). `dev.ps1 env api` checks both; on a problem it prints the fixes and the chained `pnpm` does not run.
+- **Agents pass `-Stage test`.** Stage `local` replaces console logging with OTLP (trace dashboard on `:18888`); without `up-observe` the console stays empty.
+- **Rust DB tests skip silently without the env vars.** Dot-source `dev.ps1 env rust` before `cargo test`; it sets all five `SHINE_TEST_*` vars and `RUST_TEST_THREADS=1` (tests share one database, same as the docker build). Dot-source in the same `pwsh` call as the test command: variables do not survive into a separate call.
+- **Never truncate test output** (`tail`, `head`): read it whole. `ENABLE_REQUEST_LOGGING=1` adds HTTP request/response logs.
+- Writing a new test or mock → `api-test-writing` skill first.
+- `start all` already runs the services in the background. A single `start <service>` blocks, so run it as a background process; Ctrl+C or `dev.ps1 stop` ends it. A rebuilt binary needs a restart (`stop`, then `start`).
+
+## Typical agent session
+
+```powershell
+pwsh scripts/dev.ps1 status                          # what is missing?
+pwsh scripts/dev.ps1 up
+pwsh scripts/dev.ps1 start all -Stage test       # builds, starts both in the background, returns when they listen
+pwsh -NoProfile -Command ". scripts/dev.ps1 env api; pnpm --dir tests test:local"
+pwsh -NoProfile -Command ". scripts/dev.ps1 env rust; cargo test -p shine-identity"
+pwsh scripts/dev.ps1 stop all                    # when done, if you started them
 ```
 
-**Start Docker dev environment** (databases — required before service):
-
-```bash
-docker compose -f services/docker-compose.yml -p shine up -d
-# Stop: docker compose -f services/docker-compose.yml -p shine down
-```
-
-**Run tests:**
-
-```bash
-# Full suite
-cd tests && pnpm test:local
-
-# Filtered by test name
-cd tests && pnpm test:local --grep "Purge guests"
-
-# Single file
-cd tests && pnpm exec playwright test api-tests/identity/purge_guests.ts
-```
-
-**Enable request logging** (for debugging / agent analysis):
-
-```bash
-cd tests && ENABLE_REQUEST_LOGGING=1 pnpm test:local --grep "test name"
-```
-
-**Run Rust crate tests** (unit/integration tests inside the workspace):
-
-Tests that touch Redis/Postgres **skip themselves** unless the `SHINE_TEST_*_CNS`
-env vars are set (you'll see `Missing SHINE_TEST_REDIS_CNS/SHINE_REDIS_CNS, skipping test`
-warnings). This mirrors the Docker build (`services/Dockerfile`). To run them locally,
-start the Docker dev environment (above) and point the CNS vars at the toxiproxy ports
-it exposes on the host:
-
-```bash
-# toxiproxy exposes redis on host :6379 and postgres on host :5432 (see services/docker-compose.yml)
-export SHINE_TEST_REDIS_CNS="redis://localhost:6379"
-export SHINE_TEST_PG_CNS="postgres://username:password@localhost:5432/database-test?sslmode=disable"
-# fault-injection tests (toxiproxy API); they skip without it
-export SHINE_TEST_TOXIPROXY_URL="http://localhost:8474"
-
-cargo test -p shine-builder    # or -p shine-identity, or the whole workspace
-```
-
-- Direct (un-proxied) DBs are also available: redis `:26379`, postgres `:25432`.
-- Without these vars the tests still "pass" but only because they skip — always set them
-  when validating DB-backed code, otherwise you're testing nothing.
-
-**Agent test guidelines:**
-
-- NEVER pipe test output through `tail`, `head`, or other truncation — full output is needed for analysis
-- Use `--grep` to scope runs to relevant tests when possible
-- Set `ENABLE_REQUEST_LOGGING=1` when debugging failures to see HTTP request/response details
-- Read full output directly; the `list` reporter shows pass/fail per test
-- **Writing a new test or mock?** Use the `api-test-writing` skill first — covers folder layout, available mocks, session minting vs a real user, and service isolation rules.
-
-**Verify service is ready:**
-
-```bash
-curl -k https://localhost:8443/identity/info/ready  # Should return "Ok"
-```
-
-## Configuration
-
-**Service requirements:**
-
-- Port 8443 (HTTPS), config `server_config.test.json`, certificates at `../../certificates/scytta.{crt,key}`
-- URL: `https://cloud.local.scytta.com:8443/identity`
-
-**Test requirements:**
-
-- Service running at above URL
-- Mock services (SMTP:2525, OAuth2:8090, OIDC:8091) auto-start with tests
-
-**Test outputs:**
-
-- Report: `tests/reports/index.html`
-- Status: `tests/test-results/.last-run.json` (compare for regressions)
-
-## Development Cycle
-
-1. Start service (background terminal)
-2. Run tests → establish baseline
-3. Make changes
-4. `cd services/identity && cargo build -p shine-identity --release`
-5. Restart service (Ctrl+C, rerun script)
-6. Re-run tests → compare `.last-run.json` for new failures
+Compare `tests/test-results/.last-run.json` between runs to spot new failures.
 
 ## Troubleshooting
 
-**Service won't start:**
+| Symptom | Check |
+|---|---|
+| `Infra not reachable` | `dev.ps1 up`; is Docker running? |
+| Port 8443 held by "something else" | `dev.ps1 status`; stale process, or the CI docker container (`dev.ps1 down` stops it) |
+| TLS / DNS errors, `mockbox.foo` not found | One-time setup (hosts entries, `pnpm run mkcert`) in [configuration.md](../../../docs/services/configuration.md) |
+| Rust tests "pass" but log `Missing SHINE_TEST_...` | `dev.ps1 env rust` not dot-sourced in the same call as `cargo test` |
+| Fault-injection tests (`*_failures.ts`) fail after a crashed run | Left-over toxic: `curl -X POST localhost:8474/reset` |
 
-- Wrong directory? `pwd` must show `services/identity` (config file location)
-- Missing certificates? Check `ls ../../certificates/scytta.{crt,key}` from services/identity
-- Port conflict? `netstat -ano | findstr :8443` (Windows) or `lsof -ti:8443` (Linux/Mac)
-
-**Tests failing:**
-
-1. Service running? `curl -k https://localhost:8443/identity/info/ready`
-2. Correct port? Logs should show "Starting service on https://0.0.0.0:8443"
-3. New failures? Compare `tests/test-results/.last-run.json` vs current run
-
-**Windows env var errors:**
-Bash doesn't support `--` in variable names. Use PowerShell:
-
-```powershell
-${env:SHINE--SERVICE--PORT} = "8443"
-```
-
-Or use VSCode task (handles env vars automatically).
-
-**Manual service start** (if scripts fail):
-
-```bash
-cd services/identity
-cargo run -p shine-identity --release -- test
-```
-
-Requires env vars set in shell (use PowerShell on Windows).
+Scenarios (prod / CI test / local test / local), config layers, env overrides, infra ports (toxiproxy vs direct), mocks, one-time setup (hosts, certs), CI docker mode: [docs/services/configuration.md](../../../docs/services/configuration.md).

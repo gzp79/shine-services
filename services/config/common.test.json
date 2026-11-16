@@ -1,0 +1,18 @@
+{
+  "service": {
+    "port": 0
+  },
+  "telemetry": {
+    "defaultLevel": "info",
+    "logging": {
+      "type": "console",
+      "format": "compact"
+    },
+    "metrics": {
+      "type": "none"
+    },
+    "tracing": {
+      "type": "none"
+    }
+  }
+}

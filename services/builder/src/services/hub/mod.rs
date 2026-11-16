@@ -7,12 +7,8 @@ mod hub_subscribers;
 mod tasks;
 
 pub use self::{
-    hub_metrics::hub_metrics,
-    hub_service::{HubIntervals, HubService},
+    hub_service::{HubConfig, HubService},
     hub_status::HubStatus,
 };
 
-#[cfg(test)]
 mod tests;
-#[cfg(test)]
-pub use self::tests::test_utils as hub_test_utils;

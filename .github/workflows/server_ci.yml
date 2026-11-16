@@ -83,8 +83,10 @@ jobs:
           push: false
           load: true
           add-hosts: |
-            postgres.mockbox.foo:${{ steps.mockbox.outputs.pg_host }}
-            redis.mockbox.foo:${{ steps.mockbox.outputs.redis_host }}
+            postgres.mockbox.foo:${{ steps.mockbox.outputs.toxiproxy_host }}
+            redis.mockbox.foo:${{ steps.mockbox.outputs.toxiproxy_host }}
+            postgres-direct.mockbox.foo:${{ steps.mockbox.outputs.pg_host }}
+            redis-direct.mockbox.foo:${{ steps.mockbox.outputs.redis_host }}
             toxiproxy.mockbox.foo:${{ steps.mockbox.outputs.toxiproxy_host }}
           cache-to: type=gha,mode=max
           cache-from: type=gha
@@ -160,8 +162,10 @@ jobs:
           # these setting are added to allow the reuse of the layer from the build step
           # without host parameters it would trigger a new build
           add-hosts: |
-            postgres.mockbox.foo:${{ steps.mockbox.outputs.pg_host }}
-            redis.mockbox.foo:${{ steps.mockbox.outputs.redis_host }}
+            postgres.mockbox.foo:${{ steps.mockbox.outputs.toxiproxy_host }}
+            redis.mockbox.foo:${{ steps.mockbox.outputs.toxiproxy_host }}
+            postgres-direct.mockbox.foo:${{ steps.mockbox.outputs.pg_host }}
+            redis-direct.mockbox.foo:${{ steps.mockbox.outputs.redis_host }}
             toxiproxy.mockbox.foo:${{ steps.mockbox.outputs.toxiproxy_host }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

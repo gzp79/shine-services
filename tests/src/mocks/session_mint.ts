@@ -55,7 +55,7 @@ export class SessionMint {
     }
 
     public static async fromServerConfig(
-        configPath = path.join(__dirname, '../../../services/server_config_test.json')
+        configPath = path.join(__dirname, '../../../services/config/common.mock.json')
     ): Promise<SessionMint> {
         const content = await readFile(configPath, 'utf-8');
         const config = JSON.parse(content) as ServerTestConfig;

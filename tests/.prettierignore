@@ -6,3 +6,4 @@ yarn.lock
 node_modules
 reports
 todo
+src/api/builder_bindings

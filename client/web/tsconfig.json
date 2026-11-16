@@ -12,7 +12,8 @@
         "declaration": true,
         "sourceMap": true,
         "paths": {
-            "#wasm": ["./src/wasm-types/shine_game.d.ts"]
+            "#wasm": ["./src/wasm-types/shine_game.d.ts"],
+            "#game-bindings": ["../game-bindings/index.ts"]
         }
     },
     "include": ["src", "eslint.config.ts", "vite.config.ts", "vite-plugin-wasm-pack.ts"]

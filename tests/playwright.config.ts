@@ -2,7 +2,7 @@ import { PlaywrightTestConfig } from '@playwright/test';
 import { ServiceOptions } from '$fixtures/setup';
 import { suppress_tls_certificate_warning } from '$lib/suppress_tls_certificate_warning';
 
-const isCiPipeline: boolean = !!process.env.CI;
+const isCiPipeline: boolean = process.env.CI?.trim().toLowerCase() === 'true';
 const enableLogging: boolean = !!process.env.ENABLE_REQUEST_LOGGING;
 
 // Allow self-signed certificates
@@ -15,19 +15,13 @@ if (isCiPipeline) {
     console.log('Running in DEV mode');
 }
 
-const builderUrl = isCiPipeline
-    ? 'https://cloud.local.scytta.com:8443/builder'
-    : 'https://cloud.local.scytta.com:8444/builder';
-const builderWSUrl = isCiPipeline
-    ? 'https://ws.local.scytta.com:8443/builder'
-    : 'https://ws.local.scytta.com:8444/builder';
-
 if (enableLogging) {
     process.env.DEBUG = 'test:*';
 }
 
 const config: PlaywrightTestConfig<ServiceOptions> = {
     testDir: './',
+    globalSetup: './fixtures/global_setup.ts',
     fullyParallel: true,
     forbidOnly: isCiPipeline,
     retries: isCiPipeline ? 2 : 0,
@@ -38,33 +32,61 @@ const config: PlaywrightTestConfig<ServiceOptions> = {
     reporter: isCiPipeline ? [['github']] : [['list']],
 
     use: {
-        trace: 'on-first-retry'
+        trace: 'on-first-retry',
+        enableRequestLogging: enableLogging,
+
+        homeUrl: 'https://local.scytta.com:4443',
+        identityUrl: 'https://cloud.local.scytta.com:8443/identity',
+        builderUrl: isCiPipeline
+            ? 'https://cloud.local.scytta.com:8443/builder'
+            : 'https://cloud.local.scytta.com:8444/builder',
+        builderWSUrl: isCiPipeline
+            ? 'https://ws.local.scytta.com:8443/builder'
+            : 'https://ws.local.scytta.com:8444/builder',
+        toxiproxyUrl: 'http://localhost:8474',
+
+        // skipMockService: true, // to run mock services manually
+
+        defaultRedirects: {
+            redirectUrl: 'https://redirect.local.scytta.com/',
+            errorUrl: 'https://error.local.scytta.com/'
+        },
+
+        /* spell-checker: disable */
+        masterAdminKey: '2vazg4Rwe2uKkHABcbL8WdEAbqvPA49M'
+        // hash: '$2b$05$0OWeMQAQuh9kmD642a0ZHeVl6VNa2g.z1HTI2rrQ3RPkmxoCNUohG'
+        /* spell-checker: enable */
     },
 
     projects: [
         {
-            name: 'local',
-            testMatch: '{mock-tests,api-tests}/**/*.ts',
-            use: {
-                enableRequestLogging: enableLogging,
-
-                homeUrl: 'https://local.scytta.com:4443',
-                identityUrl: 'https://cloud.local.scytta.com:8443/identity',
-                builderUrl,
-                builderWSUrl,
-
-                // skipMockService: true, // to run mock services manually
-
-                defaultRedirects: {
-                    redirectUrl: 'https://redirect.local.scytta.com/',
-                    errorUrl: 'https://error.local.scytta.com/'
-                },
-
-                /* spell-checker: disable */
-                masterAdminKey: '2vazg4Rwe2uKkHABcbL8WdEAbqvPA49M'
-                // hash: '$2b$05$0OWeMQAQuh9kmD642a0ZHeVl6VNa2g.z1HTI2rrQ3RPkmxoCNUohG'
-                /* spell-checker: enable */
-            }
+            name: 'identity-preflight',
+            testMatch: 'preflight/**/*.ts',
+            grep: /\(identity\)/
+        },
+        {
+            name: 'builder-preflight',
+            testMatch: 'preflight/**/*.ts',
+            grep: /\(builder\)/
+        },
+        {
+            name: 'identity',
+            testMatch: 'api-tests/identity/**/*.ts',
+            dependencies: ['identity-preflight']
+        },
+        {
+            name: 'builder',
+            testMatch: 'api-tests/builder/**/*.ts',
+            dependencies: ['builder-preflight']
+        },
+        {
+            name: 'shared',
+            testMatch: 'api-tests/shared/**/*.ts',
+            dependencies: ['identity-preflight', 'builder-preflight']
+        },
+        {
+            name: 'mocks',
+            testMatch: 'mock-tests/**/*.ts'
         }
     ]
 };

@@ -16,6 +16,7 @@
         "dev": "vite",
         "build": "tsc && vite build",
         "build:wasm": "wasm-pack build ../../crates/shine-game --target web --out-dir ../../client/web/pkg && pnpm run post:wasm",
+        "gen:game-bindings": "cargo run --manifest-path ../../crates/shine-game/tools/Cargo.toml -- ts-bindings --out ../game-bindings/generated",
         "format": "prettier --write .",
         "test": "vitest run",
         "lint": "pnpm run lint:format && pnpm run lint:eslint && pnpm run lint:build",

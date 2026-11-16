@@ -30,6 +30,7 @@ impl HealthService {
             version: ServiceVersion {
                 app_name: feature_name.to_string(),
                 version: config.core.version.clone(),
+                environment: config.core.stage.clone(),
             },
             providers: Arc::new(RwLock::new(Vec::new())),
         })
