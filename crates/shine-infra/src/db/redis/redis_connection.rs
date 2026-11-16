@@ -5,7 +5,7 @@ use crate::{
             redis_commands::{assert_not_blocking, redis_command_name},
             RedisError, RedisListener,
         },
-        time_db_operation, CnsParamError,
+        time_db_operation, CnsParamError, ListenerStatus,
     },
     health::StatusProvider,
     telemetry::child_span,
@@ -207,7 +207,38 @@ impl ManageConnection for RedisConnectionManager {
 }
 
 pub type RedisConnectionError = RunError<<RedisConnectionManager as ManageConnection>::Error>;
-pub type RedisConnectionPool = BB8Pool<RedisConnectionManager>;
+
+/// The connection pool together with the handle of the listener its manager owns, as bb8 gives no
+/// access to the manager. Derefs to the bb8 pool.
+#[derive(Clone)]
+pub struct RedisConnectionPool {
+    pool: BB8Pool<RedisConnectionManager>,
+    listener: RedisListener,
+}
+
+impl std::fmt::Debug for RedisConnectionPool {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RedisConnectionPool")
+            .field("pool", &self.pool)
+            .finish_non_exhaustive()
+    }
+}
+
+impl RedisConnectionPool {
+    pub async fn listener_status(&self) -> ListenerStatus {
+        self.listener.status().await
+    }
+}
+
+impl Deref for RedisConnectionPool {
+    type Target = BB8Pool<RedisConnectionManager>;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.pool
+    }
+}
+
 pub type RedisPooledConnection<'a> = PooledConnection<'a, RedisConnectionManager>;
 pub type RedisRawError = redis::RedisError;
 
@@ -237,7 +268,8 @@ impl StatusProvider for RedisPoolStatus {
         let state = self.pool.state();
         serde_json::json!({
             "connections": state.connections,
-            "idleConnections": state.idle_connections
+            "idleConnections": state.idle_connections,
+            "listener": self.pool.listener_status().await
         })
     }
 }
@@ -301,7 +333,8 @@ pub async fn create_redis_pool(cns: &str) -> Result<RedisConnectionPool, RedisCo
 
     let redis_manager =
         RedisConnectionManager::new(&cns_clean, conn_config, listener_connect_timeout, None, pool_timeout)?;
-    let redis = bb8::Pool::builder()
+    let listener = redis_manager.listener.clone();
+    let pool = bb8::Pool::builder()
         .max_size(max_size)
         .connection_timeout(pool_timeout)
         .error_sink(Box::new(PoolErrorLogger("redis")))
@@ -312,7 +345,7 @@ pub async fn create_redis_pool(cns: &str) -> Result<RedisConnectionPool, RedisCo
     tracing::info!(
         "Redis pool created (max_size: {max_size}, pool_timeout: {pool_timeout:?}, timeout_ms: {timeout_ms:?})"
     );
-    Ok(redis)
+    Ok(RedisConnectionPool { pool, listener })
 }
 
 #[cfg(test)]

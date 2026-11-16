@@ -1,5 +1,8 @@
 use rustls::crypto::ring;
-use shine_infra::db::postgres::{create_postgres_pool, PgConfig, PgError, PgListener};
+use shine_infra::db::{
+    postgres::{create_postgres_pool, PgConfig, PgError, PgListener},
+    ListenerStatus,
+};
 use shine_infra_testing::{db::postgres::get_postgres_cns, listener::ListenerEvents};
 use shine_test::test;
 use std::{collections::HashSet, str::FromStr, sync::Arc, time::Duration};
@@ -633,4 +636,56 @@ async fn test_pg_listener_duplicate_listen_is_rejected() {
         matches!(err, PgError::AlreadyListening(ref channel) if channel == "shine-test-duplicate"),
         "expected PGError::AlreadyListening, got {err:?}"
     );
+}
+
+// The status reports the dedicated connection and the registered channels: nothing is connected until
+// the first channel, the connection comes back after a kill, and the channels follow unlisten.
+#[test(serial = "pg-listener")]
+async fn test_pg_listener_status() {
+    let _ = ring::default_provider().install_default();
+
+    let cns = get_postgres_cns();
+    let pool = create_postgres_pool(&cns).await.unwrap();
+    let conn = pool.get().await.unwrap();
+    let helper = pool.get().await.unwrap();
+
+    assert_eq!(
+        pool.listener_status().await,
+        ListenerStatus { connected: false, channels: 0 }
+    );
+
+    conn.listen("shine-test-status-a", |_| {}).await.unwrap();
+    conn.listen("shine-test-status-b", |_| {}).await.unwrap();
+    assert_eq!(
+        pool.listener_status().await,
+        ListenerStatus { connected: true, channels: 2 }
+    );
+
+    let listener_pid = conn
+        .listener_backend_pid()
+        .await
+        .expect("listener connection not found");
+    helper
+        .execute("SELECT pg_terminate_backend($1)", &[&listener_pid])
+        .await
+        .unwrap();
+
+    let mut reconnected = false;
+    for _ in 0..100 {
+        if conn.listener_backend_pid().await.is_some_and(|pid| pid != listener_pid) {
+            reconnected = true;
+            break;
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
+    assert!(reconnected, "listener did not reconnect onto a new backend");
+    assert_eq!(
+        pool.listener_status().await,
+        ListenerStatus { connected: true, channels: 2 }
+    );
+
+    conn.unlisten("shine-test-status-a").await.unwrap();
+    assert_eq!(pool.listener_status().await.channels, 1);
+    conn.unlisten_all().await.unwrap();
+    assert_eq!(pool.listener_status().await.channels, 0);
 }

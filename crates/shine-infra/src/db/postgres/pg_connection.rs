@@ -3,6 +3,7 @@ use crate::{
         cacerts::{get_root_cert_store, CertError},
         pool_error_logger::PoolErrorLogger,
         postgres::PgError,
+        ListenerStatus,
     },
     health::StatusProvider,
 };
@@ -248,7 +249,38 @@ impl bb8::ManageConnection for PgConnectionManager {
 }
 
 pub type PgPoolError = RunError<<PgConnectionManager as ManageConnection>::Error>;
-pub type PgConnectionPool = BB8Pool<PgConnectionManager>;
+
+/// The connection pool together with the handle of the listener its manager owns, as bb8 gives no
+/// access to the manager. Derefs to the bb8 pool.
+#[derive(Clone)]
+pub struct PgConnectionPool {
+    pool: BB8Pool<PgConnectionManager>,
+    listener: PgListener,
+}
+
+impl std::fmt::Debug for PgConnectionPool {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PgConnectionPool")
+            .field("pool", &self.pool)
+            .finish_non_exhaustive()
+    }
+}
+
+impl PgConnectionPool {
+    pub async fn listener_status(&self) -> ListenerStatus {
+        self.listener.status().await
+    }
+}
+
+impl Deref for PgConnectionPool {
+    type Target = BB8Pool<PgConnectionManager>;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.pool
+    }
+}
+
 pub type PgPooledConnection<'a> = PooledConnection<'a, PgConnectionManager>;
 pub type PgRawError = tokio_postgres::Error;
 pub type PgStatement = tokio_postgres::Statement;
@@ -301,7 +333,8 @@ impl StatusProvider for PostgresPoolStatus {
         let state = self.pool.state();
         serde_json::json!({
             "connections": state.connections,
-            "idleConnections": state.idle_connections
+            "idleConnections": state.idle_connections,
+            "listener": self.pool.listener_status().await
         })
     }
 }
@@ -376,7 +409,8 @@ pub async fn create_postgres_pool(cns: &str) -> Result<PgConnectionPool, PgConne
         .copied()
         .unwrap_or(PgListener::DEFAULT_CONNECT_TIMEOUT);
     let postgres_manager = PgConnectionManager::new(pg_config, tls, connect_timeout, None, pool_timeout);
-    let postgres = bb8::Pool::builder()
+    let listener = postgres_manager.listener.clone();
+    let pool = bb8::Pool::builder()
         .max_size(max_size)
         .connection_timeout(pool_timeout)
         .error_sink(Box::new(PoolErrorLogger("postgres")))
@@ -386,7 +420,7 @@ pub async fn create_postgres_pool(cns: &str) -> Result<PgConnectionPool, PgConne
     tracing::info!(
         "Postgres pool created (max_size: {max_size}, pool_timeout: {pool_timeout:?}, connect_timeout: {connect_timeout:?})"
     );
-    Ok(postgres)
+    Ok(PgConnectionPool { pool, listener })
 }
 
 #[cfg(test)]

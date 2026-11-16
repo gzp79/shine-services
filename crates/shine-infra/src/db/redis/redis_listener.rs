@@ -1,5 +1,5 @@
 use crate::{
-    db::redis::RedisError,
+    db::{redis::RedisError, ListenerStatus},
     sync::{ExponentialBackoff, KeepAlive},
 };
 use futures::StreamExt;
@@ -285,6 +285,14 @@ impl RedisListener {
         let _permit = self.inner.op_lock.acquire().await.expect("op_lock is never closed");
         self.inner.state.write().await.shutdown();
         self.inner.keep_alive.stop();
+    }
+
+    pub async fn status(&self) -> ListenerStatus {
+        let state = self.inner.state.read().await;
+        ListenerStatus {
+            connected: state.sink.is_some(),
+            channels: state.handlers.len(),
+        }
     }
 
     /// Registers `handler` for `channel`, opening the shared connection on first use.

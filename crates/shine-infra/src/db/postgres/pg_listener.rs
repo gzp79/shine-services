@@ -1,5 +1,5 @@
 use crate::{
-    db::postgres::PgError,
+    db::{postgres::PgError, ListenerStatus},
     sync::{ExponentialBackoff, KeepAlive},
 };
 use futures::{stream, StreamExt};
@@ -395,6 +395,14 @@ impl PgListener {
             with_timeout(self.inner.connect_timeout, client.execute("UNLISTEN *", &[])).await?;
         }
         Ok(())
+    }
+
+    pub async fn status(&self) -> ListenerStatus {
+        let state = self.inner.state.read().await;
+        ListenerStatus {
+            connected: state.client.is_some(),
+            channels: state.handlers.len(),
+        }
     }
 
     pub async fn backend_pid(&self) -> Option<i32> {

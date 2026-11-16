@@ -1,5 +1,8 @@
 use redis::{aio::ConnectionLike, AsyncCommands, Client};
-use shine_infra::db::redis::{create_redis_pool, RedisError, RedisListener};
+use shine_infra::db::{
+    redis::{create_redis_pool, RedisError, RedisListener},
+    ListenerStatus,
+};
 use shine_infra_testing::{db::redis::get_redis_cns, listener::ListenerEvents};
 use shine_test::test;
 use std::{collections::HashSet, sync::Arc, time::Duration};
@@ -383,4 +386,69 @@ async fn test_redis_listener_duplicate_listen_is_rejected() {
         matches!(err, RedisError::AlreadyListening(ref channel) if channel == "shine-test-duplicate"),
         "expected RedisError::AlreadyListening, got {err:?}"
     );
+}
+
+// The status reports the dedicated connection and the registered channels: nothing is connected until
+// the first channel, the connection comes back after a kill, and the channels follow unlisten.
+// Serial: it kills ALL pub/sub clients.
+#[test(serial = "redis-listener")]
+async fn test_redis_listener_status() {
+    let cns = get_redis_cns();
+    let pool = create_redis_pool(&cns).await.unwrap();
+    let conn = pool.get().await.unwrap();
+    let mut helper = pool.get().await.unwrap();
+
+    assert_eq!(
+        pool.listener_status().await,
+        ListenerStatus { connected: false, channels: 0 }
+    );
+
+    let reconnects = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let reconnects_write = reconnects.clone();
+    conn.listen("shine-test-status-a", move |payload| {
+        if payload.is_none() {
+            reconnects_write.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+    })
+    .await
+    .unwrap();
+    conn.listen("shine-test-status-b", |_| {}).await.unwrap();
+    assert_eq!(
+        pool.listener_status().await,
+        ListenerStatus { connected: true, channels: 2 }
+    );
+
+    // `None` is also sent right after listen; let that one land so only the reconnect nudge is counted.
+    sleep(Duration::from_millis(500)).await;
+    let nudges_before = reconnects.load(std::sync::atomic::Ordering::SeqCst);
+
+    let _: () = redis::cmd("CLIENT")
+        .arg("KILL")
+        .arg("TYPE")
+        .arg("pubsub")
+        .query_async(&mut *helper)
+        .await
+        .unwrap();
+
+    let mut reconnected = false;
+    for _ in 0..100 {
+        if reconnects.load(std::sync::atomic::Ordering::SeqCst) > nudges_before {
+            reconnected = true;
+            break;
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
+    assert!(
+        reconnected,
+        "expected a reconnect after the pub/sub connection was killed"
+    );
+    assert_eq!(
+        pool.listener_status().await,
+        ListenerStatus { connected: true, channels: 2 }
+    );
+
+    conn.unlisten("shine-test-status-a").await.unwrap();
+    assert_eq!(pool.listener_status().await.channels, 1);
+    conn.unlisten_all().await.unwrap();
+    assert_eq!(pool.listener_status().await.channels, 0);
 }
