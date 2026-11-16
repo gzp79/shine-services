@@ -56,6 +56,7 @@
         "env": {
           "RUST_LOG": "warn",
           "RUST_BACKTRACE": "full",
+          "_RUST_TEST_THREADS": "1",
           "SHINE_TEST_TOXIPROXY_URL": "http://localhost:8474",
           "SHINE_TEST_PG_CNS": "postgres://username:password@localhost:5432/database-test?sslmode=disable",
           "SHINE_TEST_PG_CNS_DIRECT": "postgres://username:password@localhost:25432/database-test?sslmode=disable",
@@ -103,7 +104,7 @@
     {
       "label": "dev environment",
       "type": "shell",
-      "command": "docker compose -f services/docker-compose.yml -p shine ${input:env-task}",
+      "command": "pwsh -NoProfile -File scripts/dev.ps1 ${input:env-task}",
       "group": "build",
       "isBackground": true
     },
@@ -126,8 +127,8 @@
         "env": {
           "RUST_BACKTRACE": "full",
           "SHINE--SERVICE--PORT": "8443",
-          "SHINE--SERVICE--TLS__CERT": "../../certificates/scytta.crt",
-          "SHINE--SERVICE--TLS__KEY": "../../certificates/scytta.key"
+          "SHINE--SERVICE--TLS--CERT": "../../certificates/scytta.crt",
+          "SHINE--SERVICE--TLS--KEY": "../../certificates/scytta.key"
         }
       },
       "problemMatcher": [
@@ -144,8 +145,8 @@
         "env": {
           "RUST_BACKTRACE": "full",
           "SHINE--SERVICE--PORT": "8444",
-          "SHINE--SERVICE--TLS__CERT": "../../certificates/scytta.crt",
-          "SHINE--SERVICE--TLS__KEY": "../../certificates/scytta.key"
+          "SHINE--SERVICE--TLS--CERT": "../../certificates/scytta.crt",
+          "SHINE--SERVICE--TLS--KEY": "../../certificates/scytta.key"
         }
       },
       "problemMatcher": [
@@ -158,7 +159,7 @@
     {
       "type": "pickString",
       "id": "config-stage",
-      "description": "Select config (local: dev overrides on top of test; test: as used by CI)",
+      "description": "Select config",
       "options": [
         "local",
         "test"
@@ -246,28 +247,12 @@
       "id": "env-task",
       "description": "Select env task",
       "options": [
-        {
-          "label": "start (rebuild)",
-          "value": "up --build"
-        },
-        {
-          "label": "start",
-          "value": "up"
-        },
-        {
-          "label": "start (with trace dashboard)",
-          "value": "--profile observe up"
-        },
-        {
-          "label": "stop",
-          "value": "--profile \"*\" down"
-        },
-        {
-          "label": "status",
-          "value": "ps"
-        }
+        { "label": "start", "value": "up" },
+        { "label": "start (with trace dashboard)", "value": "up-observe" },
+        { "label": "stop", "value": "down" },
+        { "label": "status", "value": "status" }
       ],
-      "default": "asset-service"
+      "default": "up-observe"
     }
   ]
 }
