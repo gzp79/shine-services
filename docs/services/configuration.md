@@ -114,6 +114,56 @@ DB-backed Rust tests skip silently (or panic, for helpers that require them) wit
 
 A missing `_DIRECT` variable falls back to the proxied URL with a warning, which hides outage-test bugs.
 
+## Redis ACL users (prod, Fly.io / Upstash)
+
+The prod Redis is the managed Upstash instance on Fly.io. Each credential gets its own ACL user, scoped to the keys and commands it needs, so a leaked connection string exposes only one feature's data. Locally the docker Redis has no users and needs none.
+
+| User | Config key | Keys | Used for |
+|---|---|---|---|
+| `identity` | `identity.db.redisCns` | `session:*` | session create / extend / delete (see [session lifecycle](identity/session-lifecycle.md)) |
+| `shine` | `service.sessionRedisCns` | `session:*` | read-only current-user check, shared by identity and builder |
+| `builder` | `builder.db.redisCns` | `cmd-inbox:*`, `hub-connection:*` | command inbox streams, hub connection registry |
+
+Upstash manages ACL passwords itself: `ACL SETUSER … >password` with a self-chosen password is not accepted. Create a user in two steps, `ACL GENTOKEN`, then `ACL SETUSER` with that token as the password. The default user stays under Upstash's control; there is no `aclfile` or `redis.conf` to mount on a managed instance.
+
+<details data-agent="security">
+<summary>ACL commands per user</summary>
+
+```text
+ACL GENTOKEN
+> "<identity_token>"
+ACL SETUSER identity on ><identity_token> ~session:* \
+  +ping +get +set +setnx +expire +del +scan +ttl
+
+ACL GENTOKEN
+> "<shine_token>"
+ACL SETUSER shine on ><shine_token> ~session:* \
+  +ping +get +exists +scan +ttl +expire
+
+ACL GENTOKEN
+> "<builder_token>"
+ACL SETUSER builder on ><builder_token> ~cmd-inbox:* ~hub-connection:* \
+  +@all -@admin -@dangerous +info +config|get
+```
+
+The `builder` rule is deliberately general: any command on its own keys is allowed, so a new Redis operation in the builder code needs no ACL change. What it cannot do is administrative or whole-keyspace work: `-@admin` (`CONFIG`, `ACL`, `SHUTDOWN`, …), and `-@dangerous` (`FLUSHALL`, `FLUSHDB`, `KEYS`, `DEBUG`, …). Lua scripts (`EVAL`, `EVALSHA`, `FUNCTION`) stay allowed: Redis checks every `redis.call` in a script against the user's ACL, so a script cannot touch keys or commands the user itself cannot. `+info` and `+config|get` come last because `INFO` is in `@dangerous` and `CONFIG` in `@admin`, and the startup check (`check_redis`) needs `INFO server` and `CONFIG GET maxmemory-policy` (rules apply in order; `+config|get` allows only the read-only subcommand, `CONFIG SET` stays denied). Without `config|get` the service still starts, but logs "Could not check Redis maxmemory-policy". If the builder ever needs a command from a removed category, add just that command (`+<command>`) instead of the whole category. The `identity` and `shine` users stay on explicit lists: they are tiny, and a new operation there should be a conscious decision.
+
+Connection strings carry the credential inline: `redis://<user>:<token>@<host>:6379?timeout=3000&pool_timeout=5000`.
+
+What the builder uses today (`services/builder/src/repositories/`); the rule above covers all of it:
+
+| Feature | Keys / channels | Commands |
+|---|---|---|
+| Command inbox (`command_inbox/redis`) | stream `cmd-inbox:<stream_id>`, channel `cmd-inbox-wake` | `XADD`, `XRANGE`, `XTRIM`, `XLEN`, `EXPIRE`, `PUBLISH`, `SUBSCRIBE`, `UNSUBSCRIBE` |
+| Hub registry (`hub_registry/redis`) | `hub-connection:<user_id>`, channel `hub-registry-changed` | `SET … EX`, `GET`, `MGET`, `EXPIRE`, `DEL`, `SCAN MATCH` (the `WATCH`/`MULTI`/`EXEC` group is the optimistic transaction in `transaction_async`), `PUBLISH`, `SUBSCRIBE`, `UNSUBSCRIBE` |
+| Startup (`shine_infra::db::redis`) | none | `INFO server`, `CONFIG GET maxmemory-policy` (`check_redis`), `PING` |
+
+`SCAN` and the pub/sub commands take no key arguments, so the key pattern does not restrict them: the `builder` user can still scan the keyspace (it sees names, not values) and use any channel. Channel rules (`resetchannels &cmd-inbox-wake &hub-registry-changed`) would close that, but whether Upstash accepts them is untested.
+
+**Untested:** none of these users exist yet. Before switching a service over, check each with `ACL DRYRUN <user> <command> <args>`: an allowed command on an own key must pass, any command on a `session:*` key (for `builder`) or a `cmd-inbox:*` key (for `identity` / `shine`) must be denied. A `NOPERM` in the service log after the switch means a command is missing from the list (`identity` / `shine`) or sits in a removed category (`builder`). Whether Upstash accepts `@category` rules is untested too; if it rejects them, list the commands from the table above explicitly.
+
+</details>
+
 ## One-time setup
 
 | Need | How |

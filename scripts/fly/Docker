@@ -1,0 +1,16 @@
+FROM alpine:3.22
+
+RUN apk add --no-cache bash ca-certificates curl redis \
+ && curl -L https://fly.io/install.sh | sh
+
+ENV PATH="/root/.fly/bin:${PATH}"
+
+# Cheat sheet shown on every interactive shell start and by 'fly-help'.
+COPY motd.txt /etc/fly-motd
+RUN printf '#!/bin/sh\ncat /etc/fly-motd\n' > /usr/local/bin/fly-help \
+ && chmod +x /usr/local/bin/fly-help \
+ && printf 'export PATH="/root/.fly/bin:$PATH"\nfly-help\n' > /etc/profile.d/fly-help.sh
+
+EXPOSE 16379
+# Login shell, so /etc/profile.d runs. Alpine's /etc/profile resets PATH, hence the export above.
+CMD ["bash", "-l"]

@@ -80,8 +80,6 @@ A session counts as alive only if *both* keys exist. Splitting sentinel from dat
 
 | File | Role |
 |---|---|
-| `services/docker/redis/users.acl` | Redis ACL file defining the `identity` and `shine` credentials and their command/key scope (target-state — not yet created). |
-| `services/docker-compose.yml` | Redis service definition; mounts the ACL file and passes it via `--aclfile`. |
 | `crates/shine-infra/src/db/redis.rs` | `create_redis_pool` — parses the connection string (including embedded credentials) and opens the pool; no code change needed, credentials travel in the URL. |
 | `crates/shine-infra/src/web/service_config.rs` | Declares `session_redis_cns` — the `shine`-credential connection string, shared by every service. |
 | `crates/shine-infra/src/session/current_user_service.rs` | `CurrentUserService::get_current_user` — the read/keep-alive path that runs as `shine`. |
@@ -97,26 +95,5 @@ A session counts as alive only if *both* keys exist. Splitting sentinel from dat
 The raw session key is 16 random bytes generated once, server-side, when a session is created (`SessionKey::new_random`, `services/identity/src/services/session_service.rs`). It is handed to the client in the signed session cookie and is never written to the store — the store only ever sees `SHA-256(raw key)`, computed by `hash_key()` in the same file. That hash is used both as the key name (`session:<user_id>:<hash>:{sentinel,data}`) and nowhere else; the stored sentinel/data records themselves don't embed the raw key or the hash again.
 
 So a read of the session store — whether through the `identity` credential or the read-only `shine` credential, or via broader access such as a database dump or backup — exposes at most a user id and a SHA-256 hash. With 128 bits of entropy in the original key, that hash cannot practically be inverted or brute-forced back into a value that would authenticate as that session. Compare this to the fingerprint/cookie-signing key, which if exposed would let an attacker forge a session cookie — the session store itself carries no equivalent secret.
-
-</details>
-
-<details data-agent="security" data-transient="true">
-<summary>Redis ACL setup for the two credentials (Upstash-managed instance)</summary>
-
-The session store runs on Upstash (via Fly.io), which manages ACL user passwords itself rather than accepting an arbitrary `ACL SETUSER … >password`. Creating a user is two steps: generate a token with `ACL GENTOKEN`, then create the user with `ACL SETUSER` using that token as the password. The default user's own password/admin rights are managed by Upstash and are not touched here — there is no `aclfile` or `redis.conf` to mount on a managed instance.
-
-```text
-ACL GENTOKEN
-> "<identity_token>"
-ACL SETUSER identity on ><identity_token> ~session:* \
-  +ping +get +set +setnx +expire +del +scan +ttl
-
-ACL GENTOKEN
-> "<shine_token>"
-ACL SETUSER shine on ><shine_token> ~session:* \
-  +ping +get +exists +scan +ttl +expire
-```
-
-Connection strings then carry the credential inline: `redis://identity:<identity_token>@<host>:6379?timeout=3000&pool_timeout=5000` and `redis://shine:<shine_token>@<host>:6379?timeout=3000&pool_timeout=5000`.
 
 </details>
