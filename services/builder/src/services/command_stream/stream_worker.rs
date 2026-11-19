@@ -362,6 +362,10 @@ where
                     break;
                 }
             }
+
+            // The loop feeds itself (a full page wakes the next pass, a result wakes the next submit), and the
+            // select is biased, so without a yield a busy stream could hold its thread and starve other tasks.
+            tokio::task::yield_now().await;
         }
 
         if alive {

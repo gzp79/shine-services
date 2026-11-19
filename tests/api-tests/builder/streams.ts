@@ -216,7 +216,7 @@ test.describe('Builder streams', { tag: ['@regression'] }, () => {
         });
     });
 
-    // A command the kind does not accept is refused at once, before it reaches the stream.
+    // A command the kind does not accept is dropped at once, before it reaches the stream.
     for (const invalid of [
         { title: 'a paint off the map', kind: PIXEL_MAP, command: paint(99, 0, 1) },
         { title: 'a paint with a color outside the palette', kind: PIXEL_MAP, command: paint(0, 0, 200) },
@@ -229,7 +229,7 @@ test.describe('Builder streams', { tag: ['@regression'] }, () => {
         },
         { title: 'a command that is not base64', kind: CHAT, command: '!!not base64!!' }
     ]) {
-        test(`WS stream ${invalid.title} shall be refused as invalid`, async ({ homeUrl, builderWSUrl }) => {
+        test(`WS stream ${invalid.title} shall be ignored without an answer`, async ({ homeUrl, builderWSUrl }) => {
             const a = await connect(homeUrl, builderWSUrl, alice);
             const streamId = newStreamId(invalid.kind, 'stream');
             await a.subscribe(streamId);
@@ -237,15 +237,13 @@ test.describe('Builder streams', { tag: ['@regression'] }, () => {
 
             a.command(streamId, commandId, invalid.command);
 
-            expect(await a.waitFrame('streamNack', (f) => f.commandId === commandId)).toMatchObject({
-                streamId,
-                reason: 'invalid'
-            });
-            // The refusal did not use a version, and the stream goes on.
+            // The ignored command did not use a version, and the stream goes on. The frames of one connection
+            // are handled in order, so an answer to the ignored command would have come before this delivery.
             const next = invalid.kind === CHAT ? add('fine') : paint(1, 1, 1);
             a.command(streamId, randomUUID(), next);
             const delivered = await a.waitFrame('streamCommands', (f) => f.streamId === streamId);
             expect(delivered.commands[0]).toMatchObject({ version: 1, command: next });
+            await a.expectNoFrame('streamNack', (f) => 'commandId' in f && f.commandId === commandId, 200);
         });
     }
 
@@ -277,7 +275,10 @@ test.describe('Builder streams', { tag: ['@regression'] }, () => {
     });
 
     // A command is at most 16 KiB; the socket takes messages up to twice that, so the two limits are apart.
-    test('WS stream command over the size limit shall be refused as invalid', async ({ homeUrl, builderWSUrl }) => {
+    test('WS stream command over the size limit shall be ignored without an answer', async ({
+        homeUrl,
+        builderWSUrl
+    }) => {
         const a = await connect(homeUrl, builderWSUrl, alice);
         const streamId = newStreamId(PIXEL_MAP, 'canvas');
         await a.subscribe(streamId);
@@ -286,13 +287,10 @@ test.describe('Builder streams', { tag: ['@regression'] }, () => {
         // Small enough for the socket to take the message, but over the size of a command.
         a.command(streamId, commandId, encodeCommand(Buffer.alloc(20_000)));
 
-        expect(await a.waitFrame('streamNack', (f) => f.commandId === commandId)).toMatchObject({
-            streamId,
-            reason: 'invalid'
-        });
         a.command(streamId, randomUUID(), paint(1, 1, 1));
         const delivered = await a.waitFrame('streamCommands', (f) => f.streamId === streamId);
         expect(delivered.commands[0]).toMatchObject({ version: 1 });
+        await a.expectNoFrame('streamNack', (f) => 'commandId' in f && f.commandId === commandId, 200);
     });
 
     test('WS stream message over the socket limit shall end the socket and leave the user free to reconnect', async ({

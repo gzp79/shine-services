@@ -1,21 +1,26 @@
-use std::future::Future;
+use std::{future::Future, sync::Arc};
 use tokio::{
     sync::watch,
-    time::{self, error::Elapsed, Duration, MissedTickBehavior},
+    time::{self, error::Elapsed, Duration, Instant, MissedTickBehavior},
 };
 use tracing::Instrument;
+
+/// Observes a wait that had to block: how long it took and whether the limit was released (`false` on timeout).
+pub type ThrottleObserver = Arc<dyn Fn(Duration, bool) + Send + Sync>;
 
 /// A soft queue limit with hysteresis: blocks at the high watermark and releases at the low one.
 ///
 /// A spawned task polls the async count callback every `poll_period`. Waiting is blocked until the
 /// first count arrives. With a `timeout`, a wait gives up after it; without one, it waits until released.
-/// Dropping every handle stops the polling task.
+/// Dropping every handle stops the polling task. The optional `on_throttle` observer is called only for
+/// the waits that actually blocked.
 #[derive(Clone)]
 pub struct Backpressure {
     rx: watch::Receiver<bool>,
     low_watermark: usize,
     high_watermark: usize,
     timeout: Option<Duration>,
+    on_throttle: Option<ThrottleObserver>,
 }
 
 impl Backpressure {
@@ -26,6 +31,7 @@ impl Backpressure {
         high_watermark: usize,
         poll_period: Duration,
         timeout: Option<Duration>,
+        on_throttle: Option<ThrottleObserver>,
         count: F,
     ) -> Self
     where
@@ -69,6 +75,7 @@ impl Backpressure {
             low_watermark,
             high_watermark,
             timeout,
+            on_throttle,
         }
     }
 
@@ -87,10 +94,11 @@ impl Backpressure {
             high_watermark = self.high_watermark
         );
         async move {
+            let started = Instant::now();
             let released = async {
                 let _ = rx.wait_for(|blocked| !*blocked).await;
             };
-            match self.timeout {
+            let result = match self.timeout {
                 None => {
                     released.await;
                     Ok(())
@@ -98,7 +106,11 @@ impl Backpressure {
                 Some(timeout) => time::timeout(timeout, released).await.inspect_err(|_| {
                     tracing::info!("Backpressure was not released within {timeout:?}");
                 }),
+            };
+            if let Some(on_throttle) = &self.on_throttle {
+                on_throttle(started.elapsed(), result.is_ok());
             }
+            result
         }
         .instrument(span)
         .await
@@ -140,7 +152,7 @@ mod tests {
     #[shine_test::test(flavor = "current_thread")]
     async fn throttles_at_high_watermark_until_low_watermark_and_releases_all_waiters() {
         let pending = Arc::new(AtomicUsize::new(4));
-        let backpressure = Backpressure::new(3, 5, POLL, None, counter(&pending));
+        let backpressure = Backpressure::new(3, 5, POLL, None, None, counter(&pending));
         state(&backpressure, false).await;
         backpressure.wait().await.unwrap();
 
@@ -177,7 +189,7 @@ mod tests {
     #[shine_test::test(flavor = "current_thread")]
     async fn wait_gives_up_after_the_timeout_while_blocked() {
         let pending = Arc::new(AtomicUsize::new(5));
-        let backpressure = Backpressure::new(3, 5, POLL, SHORT, counter(&pending));
+        let backpressure = Backpressure::new(3, 5, POLL, SHORT, None, counter(&pending));
         state(&backpressure, true).await;
         assert!(backpressure.wait().await.is_err());
 
@@ -187,11 +199,30 @@ mod tests {
     }
 
     #[shine_test::test(flavor = "current_thread")]
+    async fn observer_is_called_only_for_the_waits_that_blocked() {
+        let observed = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let observer: ThrottleObserver = {
+            let observed = observed.clone();
+            Arc::new(move |_, released| observed.lock().unwrap().push(released))
+        };
+        let pending = Arc::new(AtomicUsize::new(0));
+        let backpressure = Backpressure::new(3, 5, POLL, SHORT, Some(observer), counter(&pending));
+        state(&backpressure, false).await;
+        backpressure.wait().await.unwrap();
+        assert!(observed.lock().unwrap().is_empty());
+
+        pending.store(5, Ordering::SeqCst);
+        state(&backpressure, true).await;
+        assert!(backpressure.wait().await.is_err());
+        assert_eq!(*observed.lock().unwrap(), [false]);
+    }
+
+    #[shine_test::test(flavor = "current_thread")]
     async fn waits_for_initial_count_and_stops_polling_when_all_handles_are_dropped() {
         let (ready_tx, ready_rx) = watch::channel(false);
         let pending = Arc::new(AtomicUsize::new(0));
         let tracked = pending.clone();
-        let backpressure = Backpressure::new(3, 5, POLL, SHORT, move || {
+        let backpressure = Backpressure::new(3, 5, POLL, SHORT, None, move || {
             let mut ready = ready_rx.clone();
             let pending = tracked.clone();
             async move {

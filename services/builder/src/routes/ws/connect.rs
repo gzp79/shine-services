@@ -5,7 +5,7 @@ use crate::{
         message::{decode_wire_command, stream_message_to_wire, PingRequest, WSMessageRequest, WSMessageResponse},
         ws_metrics::ws_metrics,
     },
-    services::{HubService, MAX_COMMAND_BYTES},
+    services::{stream_metrics, HubService, MAX_COMMAND_BYTES},
 };
 use axum::{
     extract::{
@@ -20,7 +20,7 @@ use opentelemetry::trace::SpanContext;
 use shine_game::replica::StreamId;
 use shine_infra::{
     session::{CheckedCurrentUser, CurrentUser, SessionKey},
-    telemetry::{current_span_context, label, link_span},
+    telemetry::{current_span_context, link_span},
     web::{
         extracts::{Origin, TargetHost},
         responses::{IntoProblemResponse, Problem, ProblemConfig, ProblemResponse},
@@ -187,9 +187,7 @@ async fn serve_socket<S, R, E>(
                             .await;
                     }
                     Err(_) => {
-                        ws_metrics()
-                            .messages_received
-                            .add(1, &[label("kind", "unknown"), label("outcome", "invalid")]);
+                        ws_metrics().message_received("unknown", "invalid");
                         tracing::trace!("[{current_user_id}] Received invalid message: {text}");
                     }
                 }
@@ -293,10 +291,18 @@ async fn handle_stream_request(
                         .send_stream_command(connection_id, user_id, &stream_id, command_id, &command)
                         .await
                 }
-                None => Err(CommandFailure::Invalid),
+                None => {
+                    stream_metrics().command_refused(stream_id.kind(), CommandFailure::Invalid);
+                    Err(CommandFailure::Invalid)
+                }
             };
             match sent {
                 Ok(()) => ("stream_command", "ok"),
+                // Like any other malformed frame, an invalid command is dropped without an answer.
+                Err(CommandFailure::Invalid) => {
+                    tracing::trace!("[{user_id}] Invalid command for {stream_id}");
+                    ("stream_command", "invalid")
+                }
                 Err(reason) => {
                     send_stream_response(replies, StreamMessage::CommandFailed { stream_id, command_id, reason });
                     ("stream_command", "refused")
@@ -324,9 +330,7 @@ async fn handle_stream_request(
             ("ping", outcome)
         }
     };
-    ws_metrics()
-        .messages_received
-        .add(1, &[label("kind", kind), label("outcome", outcome)]);
+    ws_metrics().message_received(kind, outcome);
 }
 
 /// Forwards the hub's messages to the socket, and closes it once the hub ends the connection.

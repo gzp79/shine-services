@@ -5,18 +5,17 @@ use crate::{
         command_log::CommandLogDb,
     },
     services::command_stream::{
-        stream_metrics::{elapsed_seconds, kind_label, stream_metrics},
+        stream_metrics::{kind_label, stream_metrics},
         StreamConfig, StreamEgress, StreamLogService, StreamWorker,
     },
 };
 use futures::future::join_all;
 use shine_core::tokio::Backpressure;
 use shine_game::replica::{decode_command, ReplayState, StreamId, StreamKind};
-use shine_infra::telemetry::label;
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
-    time::{Duration, Instant},
+    time::Duration,
 };
 use uuid::Uuid;
 
@@ -204,30 +203,13 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
         command_id: Uuid,
         command: &[u8],
     ) -> Result<(), CommandFailure> {
-        let result = self
-            .try_push(connection_id, stream_id, user_id, command_id, command)
-            .await;
-        let outcome = match &result {
-            Ok(()) => "queued",
-            Err(CommandFailure::NotSubscribed) => "not_subscribed",
-            Err(CommandFailure::Invalid) => "invalid",
-            Err(CommandFailure::Busy) => "busy",
-            Err(CommandFailure::Failed) => "failed",
-        };
-        stream_metrics()
-            .commands_pushed
-            .add(1, &[kind_label(stream_id.kind()), label("outcome", outcome)]);
-        result
-    }
+        // It should be handled at the api level.
+        assert!(command.len() <= MAX_COMMAND_BYTES);
 
-    async fn try_push(
-        &self,
-        connection_id: Uuid,
-        stream_id: &StreamId,
-        user_id: Uuid,
-        command_id: Uuid,
-        command: &[u8],
-    ) -> Result<(), CommandFailure> {
+        if !self.validate(stream_id.kind(), command) {
+            return Err(CommandFailure::Invalid);
+        }
+
         let backpressure = {
             let state = self.inner.state.lock().unwrap();
             let is_open = state
@@ -240,25 +222,7 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
                 .ok_or(CommandFailure::NotSubscribed)?
         };
 
-        let Some(entry) = self.inner.kinds.get(&stream_id.kind()) else {
-            return Err(CommandFailure::Invalid);
-        };
-        if command.len() > MAX_COMMAND_BYTES || !(entry.is_valid_command)(command) {
-            return Err(CommandFailure::Invalid);
-        }
-
-        // Only the pushes that had to wait are measured, a free inbox would flood the histogram with zeros.
-        let throttled = backpressure.is_blocked();
-        let waiting_since = Instant::now();
-        let released = backpressure.wait().await;
-        if throttled {
-            let outcome = if released.is_ok() { "ok" } else { "timeout" };
-            stream_metrics().push_throttle_wait.record(
-                elapsed_seconds(waiting_since),
-                &[kind_label(stream_id.kind()), label("outcome", outcome)],
-            );
-        }
-        if released.is_err() {
+        if backpressure.is_blocked() && backpressure.wait().await.is_err() {
             tracing::info!("[{stream_id}] The inbox stayed full");
             return Err(CommandFailure::Busy);
         }
@@ -390,11 +354,15 @@ fn inbox_backpressure<I: CommandInboxDb + 'static>(
     config: &StreamConfig,
 ) -> Backpressure {
     let inbox = inbox.clone();
+    let kind = stream_id.kind();
     Backpressure::new(
         config.inbox_backpressure_low,
         config.inbox_backpressure_high,
         config.inbox_backpressure_poll_period,
         Some(config.inbox_backpressure_timeout),
+        Some(Arc::new(move |waited, released| {
+            stream_metrics().push_throttled(kind, waited, released);
+        })),
         move || {
             let (inbox, stream_id) = (inbox.clone(), stream_id.clone());
             async move {

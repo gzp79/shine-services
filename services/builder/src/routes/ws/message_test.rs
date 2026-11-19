@@ -45,6 +45,23 @@ fn a_sync_carries_the_snapshot_and_the_commands() {
 }
 
 #[test]
+fn a_command_is_taken_up_to_the_size_limit_and_refused_beyond_it() {
+    let encode = |len: usize| STANDARD.encode(vec![7u8; len]);
+
+    let fits = encode(MAX_COMMAND_BYTES);
+    let longest_text = fits.len();
+    assert_eq!(decode_wire_command(&fits).map(|c| c.len()), Some(MAX_COMMAND_BYTES));
+    assert_eq!(decode_wire_command(&encode(0)), Some(vec![]));
+
+    // One byte more is a longer text, and is refused before it is decoded.
+    assert_eq!(decode_wire_command(&encode(MAX_COMMAND_BYTES + 1)), None);
+    assert_eq!(decode_wire_command(&"A".repeat(longest_text + 4)), None);
+    // Unpadded text of the longest length decodes to two bytes too many, which the decoded size refuses.
+    assert_eq!(decode_wire_command(&"A".repeat(longest_text)), None);
+    assert_eq!(decode_wire_command("not base64!"), None);
+}
+
+#[test]
 fn a_sync_without_a_snapshot_has_a_null_one() {
     let json = frame(StreamMessage::Sync {
         stream_id: TestStreamId::new_chat_with("room-1"),

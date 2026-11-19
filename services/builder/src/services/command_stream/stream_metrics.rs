@@ -1,3 +1,4 @@
+use crate::models::messages::CommandFailure;
 use opentelemetry::{
     global,
     metrics::{Counter, Histogram, UpDownCounter},
@@ -5,7 +6,10 @@ use opentelemetry::{
 };
 use shine_game::replica::StreamKind;
 use shine_infra::telemetry::{label, SECONDS_BUCKETS};
-use std::{sync::LazyLock, time::Instant};
+use std::{
+    sync::LazyLock,
+    time::{Duration, Instant},
+};
 
 /// Bucket boundaries of counts of entries (inbox depth, batch size).
 const COUNT_BUCKETS: &[f64] = &[
@@ -16,7 +20,7 @@ const COUNT_BUCKETS: &[f64] = &[
 /// persistence and the lifecycle of the workers. Every instrument is labelled with the stream `kind`;
 /// ids of streams, users and commands are only available in the traces.
 pub struct StreamMetrics {
-    /// Commands offered to the write path, by outcome (`queued`, `invalid`, `not_subscribed`, `busy`, `failed`).
+    /// Commands a client offered to the write path, by outcome (`queued`, `invalid`, `not_subscribed`, `busy`, `failed`).
     pub commands_pushed: Counter<u64>,
     /// Time a push waited for the inbox to drain, by outcome (`ok`, `timeout`). Only pushes that had to wait.
     pub push_throttle_wait: Histogram<f64>,
@@ -154,5 +158,30 @@ impl StreamMetrics {
                 .with_description("Connections subscribed to a stream worker")
                 .build(),
         }
+    }
+
+    /// A command a client offered to the write path was queued.
+    pub fn command_queued(&self, kind: StreamKind) {
+        self.commands_pushed
+            .add(1, &[kind_label(kind), label("outcome", "queued")]);
+    }
+
+    /// A command a client offered to the write path was refused.
+    pub fn command_refused(&self, kind: StreamKind, reason: CommandFailure) {
+        let outcome = match reason {
+            CommandFailure::NotSubscribed => "not_subscribed",
+            CommandFailure::Invalid => "invalid",
+            CommandFailure::Busy => "busy",
+            CommandFailure::Failed => "failed",
+        };
+        self.commands_pushed
+            .add(1, &[kind_label(kind), label("outcome", outcome)]);
+    }
+
+    /// A push that had to wait for the inbox to drain, and whether the inbox released it before the timeout.
+    pub fn push_throttled(&self, kind: StreamKind, waited: Duration, released: bool) {
+        let outcome = if released { "ok" } else { "timeout" };
+        self.push_throttle_wait
+            .record(waited.as_secs_f64(), &[kind_label(kind), label("outcome", outcome)]);
     }
 }

@@ -66,7 +66,7 @@ sequenceDiagram
     participant W as Stream worker
 
     H->>R: push(connection, user, stream, command)
-    alt not open, invalid, too large, inbox stayed full, or push failed
+    alt invalid, not open, inbox stayed full, or push failed
         R-->>H: refusal
     else accepted
         R->>R: wait for the inbox back-pressure
@@ -78,8 +78,8 @@ sequenceDiagram
 
 The checks run in this order, each with its refusal reason:
 
-1. The stream is open for the connection: `notSubscribed`.
-2. The command is at most `MAX_COMMAND_BYTES` (16 KiB) and is the canonical encoding of a well-formed command of the stream's kind, meaning decoding and encoding again gives the same bytes: `invalid`. So the bytes a client sends are the bytes that are stored and hashed.
+1. The command is the canonical encoding of a well-formed command of the stream's kind, meaning decoding and encoding again gives the same bytes: `invalid`. So the bytes a client sends are the bytes that are stored and hashed. It needs no registry state, so it runs before the state lock is taken.
+2. The stream is open for the connection: `notSubscribed`.
 3. The inbox back-pressure admits it: `busy`, see [Back-pressure](#back-pressure).
 4. The inbox push succeeds: `failed`. The command may or may not have been queued.
 
@@ -129,15 +129,15 @@ Frames are JSON text with a camel-case `type`; the `StreamId` carries the kind p
 | to client | `streamCommands` | `streamId`, contiguous optimistic or canonical commands. |
 | to client | `streamCheckpoint` | `streamId`, `version`, `stateHash`; sent after the commands it covers, to compare with the client's own state hash at that version. |
 | to client | `streamUnsynced` | `streamId`; the worker cannot serve the stream now, subscribe again. |
-| to client | `streamNack` | `streamId`, `commandId`, reason `notSubscribed`, `invalid`, `failed` or `busy` (then the connection is dropped). |
+| to client | `streamNack` | `streamId`, `commandId`, reason `notSubscribed`, `failed` or `busy` (then the connection is dropped). |
 | to client | `streamSubscribeFailed` | `streamId`, reason `unauthorized` or `failed`. |
 | to client | `streamReset` | Defined but never sent: a sync alone replaces the state. |
 
-A frame that carries an invalid stream id is ignored without an answer. A valid request that breaks a rule, such as a command that does not decode, gets the matching refusal frame. A socket message over twice `MAX_COMMAND_BYTES` ends the socket.
+A frame that carries an invalid stream id is ignored without an answer. A command that is invalid (it does not decode, is not valid for the kind, or is over `MAX_COMMAND_BYTES`) is ignored the same way, and counted as `invalid` in `ws_messages_received`. A valid request that is refused for another reason gets the matching `streamNack`. A socket message over twice `MAX_COMMAND_BYTES` ends the socket.
 
 ### Command encoding
 
-A command is its **postcard** encoding: the same bytes on the client, in the Redis inbox and in Postgres. JSON frames carry them as base64. The server accepts only the canonical encoding of a well-formed command of the stream's kind and refuses anything else as `invalid`, so the bytes a client sends are the bytes that are stored and hashed.
+A command is its **postcard** encoding: the same bytes on the client, in the Redis inbox and in Postgres. JSON frames carry them as base64. The server accepts only the canonical encoding of a well-formed command of the stream's kind and ignores anything else, so the bytes a client sends are the bytes that are stored and hashed.
 
 Clients build and read commands and snapshots with the generated TypeScript bindings in `client/game-bindings` (`pnpm gen:game-bindings` writes them).
 
@@ -225,6 +225,42 @@ stateDiagram-v2
 
 A worker reconciles with Postgres at startup. After that a peer's advance is found by the next persistence, whose baseline no longer matches; a quiet worker is not checked periodically.
 
+### Shutdown
+
+A worker ends only after its persistence has made everything the relay took from the inbox durable. The hub's shutdown waits for that, so the process ends after the workers, or after `stream_shutdown_timeout` (default 10 s) when they are too slow.
+
+```mermaid
+sequenceDiagram
+    participant H as Hub command loop
+    participant D as Stream dispatcher
+    participant R as Registry
+    participant A as Relay task
+    participant P as Persistence task
+
+    H->>D: Shutdown event
+    D->>R: shutdown(timeout)
+    R->>A: Stop message
+    Note over A: Stop is handled before any other event
+    A->>A: close the message channel, no new subscribe
+    A->>A: last inbox pass, no subscriber is served
+    loop until nothing is waiting
+        A->>P: persist(batch)
+        P-->>A: result
+    end
+    A->>A: queued subscribers get streamUnsynced, subscribers released
+    A--)P: relay task ends, request channel closes
+    P->>P: queued requests done, task ends
+    R->>R: wait_finished: message channel closed, both tasks joined
+    R-->>D: all workers ended, or the timeout passed
+    D-->>H: dispatcher task ends
+    H->>H: shutdown complete
+```
+
+- **Idle unload** takes the same path from the drain on, without the registry and the dispatcher.
+- **Closing order:** message channel, then request channel; every request is answered before the persistence task ends.
+- **Early end of the drain:** a persistence that is gone, failed or reloaded ends the drain. A reload means the state is out of sync and is dropped by design. A worker that ended by failure skips the drain. Commands not made durable stay in the Redis inbox for the next worker, as does a proposal that arrives after the last inbox pass.
+- **Timeout:** the registry only stops waiting. The tasks are not aborted and run on until the runtime ends.
+
 ## Back-pressure
 
 The two limits stack on either side of the Redis inbox, so a slow persistence ends up refusing client pushes.
@@ -260,7 +296,7 @@ After advancing, the persistence trims the Redis inbox through the latest stored
 
 | Metric | Labels | Measures |
 |---|---|---|
-| `stream_commands_pushed` | outcome: `queued`, `invalid`, `not_subscribed`, `busy`, `failed` | Commands offered to the write path. Tells apart what the websocket metric reports as `refused`. |
+| `stream_commands_pushed` | outcome: `queued`, `invalid`, `not_subscribed`, `busy`, `failed` | Every command a client sends: the hub counts the answer of the write path, the socket counts the ones refused as `invalid` before it (undecodable or over `MAX_COMMAND_BYTES`). Tells apart what the websocket metric reports as `refused` or `invalid`. |
 | `stream_push_throttle_wait` | outcome: `ok`, `timeout` | Time a push waited for the inbox to drain. Only pushes that had to wait are recorded, so the count is the number of throttled pushes. |
 | `stream_inbox_depth` | | Inbox length, sampled by the back-pressure check. |
 | `stream_commands_ingested` | | Commands taken from the inbox and versioned. |
@@ -303,7 +339,7 @@ After advancing, the persistence trims the Redis inbox through the latest stored
 | Authorization | `StreamAuthorizeService` decides a subscribe; it currently allows every stream. |
 | Busy connection | A push into an inbox that stays full is nacked `busy` and the connection is dropped (close code 4000, reason `busy`). |
 | Socket limit | A socket message over twice `MAX_COMMAND_BYTES` ends the socket; the command limits are the registry's. |
-| Shutdown | On the hub's shutdown the dispatcher has the registry persist what is waiting, for up to `stream_shutdown_timeout`. |
+| Shutdown | On the hub's shutdown the dispatcher has the registry persist what is waiting, for up to `stream_shutdown_timeout`; see [Shutdown](#shutdown). |
 
 ## File map
 
