@@ -68,6 +68,9 @@ pg_query!( pub InsertCommands =>
                 WHERE stored.version <> input.version
                     OR stored.chain_hash <> input.chain_hash
                     OR stored.command_hash <> input.command_hash
+                    OR stored.command_id <> input.command_id
+                    OR stored.user_id <> input.user_id
+                    OR stored.inbox_id <> input.inbox_id
             ) AS matches
         ), inserted AS (
             INSERT INTO cl_commands (kind, id, version, command_id, inbox_id, user_id, data, command_hash, chain_hash)

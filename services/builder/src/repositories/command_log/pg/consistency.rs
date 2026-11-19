@@ -68,7 +68,13 @@ pub async fn check_consistency(
                 found: command.version,
             });
         } else {
-            let expected = shine_game::replica::fold_chain_hash(prev_chain_hash, command.version, command.command_hash);
+            let expected = shine_game::replica::fold_chain_hash(
+                prev_chain_hash,
+                command.version,
+                command.command_id,
+                command.user_id,
+                command.command_hash,
+            );
             if expected != command.chain_hash {
                 issues.push(ConsistencyIssue::CommandChainBroken { version: command.version });
             }

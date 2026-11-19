@@ -31,7 +31,7 @@ Severity: **Blocker** = fix before a prod deploy; High / Medium / Low as assesse
 | D6 ✅ | Fixed | migration | Service migrations ran under the 10 s `statement_timeout` |
 | D7 ✅ | No action | config | Config is trusted; a zero interval already stops start-up |
 | **Stream log correctness** | | | |
-| L1 | High | soundness | Chain hash ignores `user_id`/`command_id`/`inbox_id`; false "stored" verdict loses a command |
+| L1 ✅ | Fixed | soundness | Chain hash ignored `user_id`/`command_id`/`inbox_id`; false "stored" verdict lost a command |
 | L2 | Medium | multi-instance | Persisted-version wakes are ignored; stale instances never reconcile |
 | L3 | Medium | idempotency | No dedup by `command_id`; resends, retries and drain leftovers duplicate commands |
 | L4 | Low | integrity | Replay trusts stored `snapshot.hash` and `command_hash` |
@@ -113,7 +113,7 @@ Checked and found sound: see [Verified as sound](#verified-as-sound). Test gaps:
 
 ## Stream log correctness
 
-### L1. Chain hash does not bind command identity: false "stored" verdict loses a command (High)
+### L1 ✅. Chain hash does not bind command identity: false "stored" verdict loses a command (Fixed)
 
 - `Command::content_hash` is the stable hash of the command payload only (`crates/shine-game/src/replica/state.rs:9`; e.g. `ChatCommand::stable_hash` hashes text, `PixelMapCommand` hashes x/y/color). `fold_chain_hash(parent, version, content_hash)` (`crates/shine-game/src/replica/stable_hash.rs:54`) adds only the version. `user_id`, `command_id` and `inbox_id` are not in any hash.
 - `repositories/command_log/pg/append.rs:112-131` decides an overlap is "covered" purely by `chain_hash` equality at `head.version` and returns `Ok(head)` without writing; `StreamLogService::append` turns that into `AppendOutcome::Stored` when `head.version == last.version && head.chain_hash == last.chain_hash` (`stream_log_service.rs:124`). The only full-field comparison (`stream_persistence.rs:133-138`) runs on the `Behind` path, not on `Stored`.
@@ -127,10 +127,13 @@ Failure scenario (two instances A and C, both loaded for `chat:global`, log at v
 
 For `pixel-map` the collision probability is high (16x32x32 distinct payloads, same payload from many users); for chat it needs the same text. Also applies to one user repeating the same payload (double click).
 
-Fix:
-- Short term: in `PgCommandLogDb::append`, when the batch overlaps stored rows, compare the stored `command_id` and `user_id` (and `inbox_id`) to the batch rather than only the hash, or have the service compare `commands_after(baseline)` to the batch before returning `Stored`; on mismatch go through catch-up.
-- Longer term: fold `command_id` and `user_id` into the per-command hash that feeds the chain (breaking change to the hash definition and needs a migration: version it, mirror in the web client `crates/shine-game` wasm).
-- On load, verify `snapshot.hash` (L4) and make `try_store_snapshot` reject a snapshot whose state hash differs from an independent replay if cheap.
+**Fixed.** `InsertCommands` in `repositories/command_log/pg/append.rs` validates every retained overlapping row against the batch, and now also compares `command_id`, `user_id` and `inbox_id`, not only the version and the two hashes. A batch with the same hashes but another command identity makes the validation fail, the append returns `LogDiverged`, and `StreamLogService::append` takes the `Behind` path: it reads the canonical commands, and the persistence reloads when they differ from its own. Test: `a_batch_with_the_same_hashes_but_another_command_identity_is_diverged` (`pg_command_log_db_test.rs`) covers a differing `command_id`, `user_id` and `inbox_id`, for a batch that covers the head, extends past it, and overlaps only the head. It failed before the change with `Ok(StreamHead { version: 3, .. })`. Full workspace suite: green.
+
+The chain hash itself now binds the command identity too: `fold_chain_hash(parent, version, command_id, user_id, content_hash)` in `crates/shine-game/src/replica/stable_hash.rs` folds both ids in. `CommandEnvelope::new`, `Replica::apply_next`, the relay (`stream_relay.rs`, ingest and `reversion_optimistic`) and the consistency check (`pg/consistency.rs`) all pass them. Because of this, a command from another author or under another id has another chain hash, so an overlap that reaches below the pruning horizon is rejected by the hashes too, not only by the retained-row comparison. Tests: `the_same_content_from_another_author_or_command_id_has_another_chain_hash` and `a_command_of_another_author_with_the_chain_hash_of_the_original_is_rejected_as_diverged` (`crates/shine-game/tests/replica/replica.rs`); both failed before the change. It is a breaking change of the hash definition: every stored chain hash and snapshot made with the old one is invalid, so purge the databases (see `docs/plans/purge-databases.sql`) and deploy the server and the web client (`shine-game` wasm) together. The web client treats `chainHash` as an opaque hex string, so no TypeScript changed.
+
+The `InsertCommands` row comparison is kept as a second line of defence for `inbox_id`, which the chain hash does not cover.
+
+Still open: verifying `snapshot.hash` on load and in `try_store_snapshot` is tracked in L4.
 
 ### L2. Persisted wakes are ignored: stale instances never reconcile (Medium)
 
@@ -439,7 +442,7 @@ Every command carries the sender's raw `user_id` (`routes/ws/message.rs:46`); us
 | Missing fault and race cases: listener failure, `WATCH` conflict, half-open or oversized frames, id regression; fixed sleeps and `tick * N` waits remain. | `services/hub/tests/fault.rs`; `contention.rs:513,582`; `lifecycle.rs:440,479`; `routes/ws/connect_test.rs:294`; `stream_worker_test.rs:120,271` |
 | Mutation blind spots: the close-code test compares the constant to itself, no test drives `AppState` wiring, the `SEND_DRAIN_TIMEOUT` abort is untested. | `routes/ws/connect_test.rs:104-112`; `app_state.rs:56`; `connect.rs:65,228` |
 | Rust, `shine-infra`: the prod TLS check is tested for rejections only (no database needed); there is no test for accepting `sslmode=require` through the pool. | `crates/shine-infra/src/db/postgres/pg_connection.rs` |
-| Rust, builder: the stale-instance identical-content race (L1), a duplicate resent command (L3), `ConnectUser` registry failure (R10), inbox push at the hard limit returns `Full` (A4), and `ensure_stream` (L8). | `services/builder/src/services/command_stream/` |
+| Rust, builder: a duplicate resent command (L3), `ConnectUser` registry failure (R10), inbox push at the hard limit returns `Full` (A4), and `ensure_stream` (L8). | `services/builder/src/services/command_stream/` |
 | Rust, `shine-game` `client_stream`: mid-batch gap, a command that fails to decode, a checkpoint mismatch while `Waiting`, overlapping `Sync` tails, trailing snapshot bytes, `HASH_HISTORY` eviction at 256, a `failed` nack on a known pending command, a command folded into the snapshot but absent from the tail. | `crates/shine-game/tests/replica/client_stream.rs` |
 | TypeScript: only two tests exist for the hub. Missing: stale live after reconnect, a hang in waiting, an immediate close after open with growing delay, `connect()` twice, the `unsynced` timer re-arming, `resync()` while closed or replaced. Nothing tests the pixel map experiment's stream handling. | `client/web/src/engine/net/websocket-stream-hub.test.ts` |
 | `shine-test` panic hook exits the whole run on a background-thread panic; a test that expects a spawned-task panic cannot exist. The fuzz CI job uses an unpinned nightly and an uncached `cargo install`. | `crates/shine-test/src/lib.rs` (~65-84); `.github/workflows/fuzz_ci.yml` |
