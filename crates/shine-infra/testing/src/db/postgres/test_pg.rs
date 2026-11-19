@@ -1,5 +1,8 @@
 use crate::db::postgres::{get_postgres_cns, get_postgres_cns_direct};
-use shine_infra::db::postgres::{PgConnectionPool, create_postgres_pool};
+use shine_infra::{
+    db::postgres::{PgConnectionPool, create_postgres_pool},
+    web::TEST_STAGE,
+};
 
 pub struct TestPg {
     pub pool: PgConnectionPool,
@@ -9,10 +12,10 @@ pub struct TestPg {
 impl TestPg {
     pub async fn from_env() -> Self {
         let cns = get_postgres_cns();
-        let pool = create_postgres_pool(&cns).await.unwrap();
+        let pool = create_postgres_pool(TEST_STAGE, &cns).await.unwrap();
 
         let cns = get_postgres_cns_direct();
-        let direct_pool = create_postgres_pool(&cns).await.unwrap();
+        let direct_pool = create_postgres_pool(TEST_STAGE, &cns).await.unwrap();
         Self { pool, direct_pool }
     }
 }

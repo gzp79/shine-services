@@ -24,8 +24,8 @@ mod embedded {
     embed_migrations!("./sql_migrations");
 }
 
-pub async fn create_postgres_pool(config: &DBConfig) -> Result<PgConnectionPool, PgError> {
-    let postgres = shine_infra::db::postgres::create_postgres_pool(config.sql_cns.as_str())
+pub async fn create_postgres_pool(stage: &str, config: &DBConfig) -> Result<PgConnectionPool, PgError> {
+    let postgres = shine_infra::db::postgres::create_postgres_pool(stage, config.sql_cns.as_str())
         .await
         .map_err(PgError::CreatePoolError)?;
 
@@ -33,8 +33,8 @@ pub async fn create_postgres_pool(config: &DBConfig) -> Result<PgConnectionPool,
     Ok(postgres)
 }
 
-pub async fn create_redis_pool(config: &DBConfig) -> Result<RedisConnectionPool, RedisError> {
-    shine_infra::db::redis::create_redis_pool(config.redis_cns.as_str())
+pub async fn create_redis_pool(stage: &str, config: &DBConfig) -> Result<RedisConnectionPool, RedisError> {
+    shine_infra::db::redis::create_redis_pool(stage, config.redis_cns.as_str())
         .await
         .map_err(RedisError::PoolError)
 }

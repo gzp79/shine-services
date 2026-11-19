@@ -7,6 +7,7 @@ use postgres_types::ToSql;
 use shine_infra::{
     db::postgres::{create_postgres_pool, PgValueTypeUnknown, ToPgType},
     pg_query,
+    web::TEST_STAGE,
 };
 use shine_infra_testing::db::postgres::get_postgres_cns;
 use shine_test::test;
@@ -42,7 +43,7 @@ async fn an_array_of_a_composite_type_binds_and_unnests() {
     let _ = rustls::crypto::ring::default_provider().install_default();
 
     let cns = get_postgres_cns();
-    let pool = create_postgres_pool(&cns).await.unwrap();
+    let pool = create_postgres_pool(TEST_STAGE, &cns).await.unwrap();
     let client = pool.get().await.unwrap();
 
     // Kept independent of any migration: Postgres has no `CREATE TYPE IF NOT EXISTS`, so

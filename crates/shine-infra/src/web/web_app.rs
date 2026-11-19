@@ -230,7 +230,7 @@ async fn create_web_app<A: WebApplication>(
     tracing::trace!("Creating in-flight service...");
     let in_flight_service = crate::health::InFlightService::new();
     tracing::trace!("Creating current user service...");
-    let current_user_service = Arc::new(CurrentUserService::from_config(&config.service).await?);
+    let current_user_service = Arc::new(CurrentUserService::from_config(&config.core.stage, &config.service).await?);
     let core_services = CoreServices {
         current_user_service: Arc::clone(&current_user_service),
     };

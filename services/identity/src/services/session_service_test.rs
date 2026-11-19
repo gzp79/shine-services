@@ -8,7 +8,10 @@ use ring::rand::SystemRandom;
 use shine_infra::{
     db,
     session::SessionKey,
-    web::extracts::{ClientFingerprint, SiteInfo},
+    web::{
+        extracts::{ClientFingerprint, SiteInfo},
+        TEST_STAGE,
+    },
 };
 use shine_infra_testing::db::redis::get_redis_cns;
 use shine_test::test;
@@ -16,7 +19,7 @@ use uuid::Uuid;
 
 async fn create_db(scope: &str) -> impl SessionDb {
     let cns = get_redis_cns();
-    let redis = db::redis::create_redis_pool(cns.as_str()).await.unwrap();
+    let redis = db::redis::create_redis_pool(TEST_STAGE, cns.as_str()).await.unwrap();
     RedisSessionDb::new(&redis, format!("{scope}_"), Duration::seconds(1000))
         .await
         .unwrap()

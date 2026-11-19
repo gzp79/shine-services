@@ -6,6 +6,7 @@ use crate::{
         ListenerStatus,
     },
     health::StatusProvider,
+    web::PROD_STAGE,
 };
 use async_trait::async_trait;
 use bb8::{ManageConnection, Pool as BB8Pool, PooledConnection, RunError};
@@ -324,6 +325,8 @@ pub enum PgConnectionError {
     ConfigError(#[from] crate::db::CnsParamError),
     #[error("Connection string parameter {0:?} must be greater than zero")]
     InvalidPoolParam(&'static str),
+    #[error("Production Postgres connections must set sslmode=require")]
+    TlsRequired,
 }
 
 pub struct PostgresPoolStatus {
@@ -385,12 +388,18 @@ fn apply_session_timeouts(pg_config: &mut PgConfig) {
 /// - `max_size`: custom parameter for the maximum number of pooled connections (default 10)
 /// - `options`: PostgreSQL native parameter; defaults to `-c statement_timeout=10000` unless set
 /// - `tcp_user_timeout`: PostgreSQL native parameter; defaults to 10s unless set
-pub async fn create_postgres_pool(cns: &str) -> Result<PgConnectionPool, PgConnectionError> {
+///
+/// In the production `stage` the connection string must set `sslmode=require` (a missing `sslmode`
+/// fails too, as the driver default is not `require`).
+pub async fn create_postgres_pool(stage: &str, cns: &str) -> Result<PgConnectionPool, PgConnectionError> {
     // Parse and validate before the TLS/cert setup so a bad connection string fails fast without
     // touching the cert store or a crypto provider.
     let mut cns = crate::db::ConnectionString::parse(cns);
     let pool_timeout_s = cns.take_u64("pool_timeout")?.unwrap_or(30);
     let max_size = cns.take_u64("max_size")?.unwrap_or(10);
+    if stage == PROD_STAGE && !cns.check_property("sslmode", "require") {
+        return Err(PgConnectionError::TlsRequired);
+    }
     let cns_clean = cns.into_cns();
 
     // Reject the degenerate values bb8 would otherwise accept: max_size=0 builds a pool that can
@@ -440,6 +449,7 @@ pub async fn create_postgres_pool(cns: &str) -> Result<PgConnectionPool, PgConne
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::web::TEST_STAGE;
 
     // Degenerate pool params are rejected before any network I/O, so these run without a server.
     // Parsing (non-integer / duplicate values) is covered by the connection-string parser's own
@@ -453,7 +463,7 @@ mod test {
 
     #[tokio::test]
     async fn max_size_zero_is_rejected_not_panicked() {
-        let err = create_postgres_pool("postgres://localhost?max_size=0")
+        let err = create_postgres_pool(TEST_STAGE, "postgres://localhost?max_size=0")
             .await
             .unwrap_err();
         assert_eq!(invalid_param(err), "max_size");
@@ -462,15 +472,37 @@ mod test {
     #[tokio::test]
     async fn max_size_overflowing_u32_is_rejected() {
         let cns = format!("postgres://localhost?max_size={}", u32::MAX as u64 + 1);
-        let err = create_postgres_pool(&cns).await.unwrap_err();
+        let err = create_postgres_pool(TEST_STAGE, &cns).await.unwrap_err();
         assert_eq!(invalid_param(err), "max_size");
     }
 
     #[tokio::test]
     async fn pool_timeout_zero_is_rejected() {
-        let err = create_postgres_pool("postgres://localhost?pool_timeout=0")
+        let err = create_postgres_pool(TEST_STAGE, "postgres://localhost?pool_timeout=0")
             .await
             .unwrap_err();
         assert_eq!(invalid_param(err), "pool_timeout");
+    }
+
+    // The TLS check runs before any certificate or connection setup, so only the rejections can be
+    // tested without a database; accepting `sslmode=require` is covered by `check_property` tests.
+    #[tokio::test]
+    async fn prod_rejects_non_require_sslmode_even_with_pool_params() {
+        for cns in [
+            "postgres://u:p@host/db?sslmode=disable&pool_timeout=5&max_size=3",
+            "postgres://u:p@host/db?pool_timeout=5&max_size=3",
+            "postgres://u:p@host/db",
+        ] {
+            let err = create_postgres_pool(PROD_STAGE, cns).await.unwrap_err();
+            assert!(matches!(err, PgConnectionError::TlsRequired), "{cns}: {err:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn prod_check_runs_after_pool_params_are_validated() {
+        let err = create_postgres_pool(PROD_STAGE, "postgres://host/db?sslmode=require&max_size=0")
+            .await
+            .unwrap_err();
+        assert_eq!(invalid_param(err), "max_size");
     }
 }

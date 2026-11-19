@@ -42,6 +42,14 @@ impl<'a> ConnectionString<'a> {
         })
     }
 
+    /// True if the parameter is present and every occurrence equals `expected`. A missing parameter
+    /// is `false`, so a check for a safe setting fails closed when the setting is left to a default.
+    pub fn check_property(&self, name: &str, expected: &str) -> bool {
+        let prefix = format!("{name}=");
+        let mut values = self.params.iter().filter_map(|p| p.strip_prefix(&prefix)).peekable();
+        values.peek().is_some() && values.all(|v| v == expected)
+    }
+
     /// The connection string with every taken parameter removed.
     pub fn into_cns(self) -> String {
         if self.params.is_empty() {
@@ -163,5 +171,35 @@ mod test {
         let mut cns = ConnectionString::parse("redis://user:pa?ss@host");
         assert_eq!(cns.take_u64("pool_timeout").unwrap(), None);
         assert_eq!(cns.into_cns(), "redis://user:pa?ss@host");
+    }
+}
+
+#[cfg(test)]
+mod check_property_test {
+    use super::*;
+
+    #[test]
+    fn check_property_matches_present_value() {
+        let cns = ConnectionString::parse("postgres://u:p@host/db?sslmode=require&pool_timeout=5");
+        assert!(cns.check_property("sslmode", "require"));
+        assert!(!cns.check_property("sslmode", "disable"));
+    }
+
+    #[test]
+    fn check_property_fails_closed_when_absent() {
+        assert!(!ConnectionString::parse("postgres://host/db").check_property("sslmode", "require"));
+        assert!(!ConnectionString::parse("postgres://host/db?max_size=3").check_property("sslmode", "require"));
+    }
+
+    #[test]
+    fn check_property_requires_every_occurrence_to_match() {
+        let cns = ConnectionString::parse("postgres://host/db?sslmode=require&sslmode=disable");
+        assert!(!cns.check_property("sslmode", "require"));
+    }
+
+    #[test]
+    fn check_property_ignores_prefix_collisions() {
+        let cns = ConnectionString::parse("postgres://host/db?xsslmode=require");
+        assert!(!cns.check_property("sslmode", "require"));
     }
 }

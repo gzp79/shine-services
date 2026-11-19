@@ -17,16 +17,16 @@ mod embedded {
     embed_migrations!("./sql_migrations");
 }
 
-pub async fn create_redis_pool(config: &DBConfig) -> Result<RedisConnectionPool, RedisError> {
+pub async fn create_redis_pool(stage: &str, config: &DBConfig) -> Result<RedisConnectionPool, RedisError> {
     tracing::info!("Creating redis pool...");
-    shine_infra::db::redis::create_redis_pool(config.redis_cns.as_str())
+    shine_infra::db::redis::create_redis_pool(stage, config.redis_cns.as_str())
         .await
         .map_err(RedisError::PoolError)
 }
 
-pub async fn create_postgres_pool(config: &DBConfig) -> Result<PgConnectionPool, PgError> {
+pub async fn create_postgres_pool(stage: &str, config: &DBConfig) -> Result<PgConnectionPool, PgError> {
     tracing::info!("Creating postgres pool...");
-    let postgres = shine_infra::db::postgres::create_postgres_pool(config.sql_cns.as_str())
+    let postgres = shine_infra::db::postgres::create_postgres_pool(stage, config.sql_cns.as_str())
         .await
         .map_err(PgError::CreatePoolError)?;
 
