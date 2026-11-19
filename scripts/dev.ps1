@@ -19,6 +19,10 @@
       stop <identity|builder|all>
                              stop the services running on the host, infra stays up. Only a process answering as the
                              service is stopped, anything else holding the port is left.
+      fly [command...]       build scripts/fly/Docker (flyctl + redis-cli) and run it interactively in a throwaway
+                             container (shell by default, or the given command, e.g. 'fly fly status').
+                             Port 16379 is published to localhost (for 'fly proxy'); 'fly-help' lists the common
+                             commands. FLY_API_TOKEN / FLY_ACCESS_TOKEN are passed through when set.
       env <rust|api>         check that the environment is ready for the tests and set their variables. Variables
                              only stay when the script is dot-sourced, in the same call as the test command:
                                pwsh -NoProfile -Command ". scripts/dev.ps1 env rust; cargo test -p shine-builder"
@@ -232,6 +236,18 @@ function Invoke-Stop([string[]]$StopArgs) {
     }
 }
 
+function Invoke-Fly([string[]]$FlyArgs) {
+    $image = 'shine-fly'
+    docker build -q -t $image -f scripts/fly/Docker scripts/fly | Out-Null
+    if ($LASTEXITCODE -ne 0) { Fail 'docker build of the fly image failed.' }
+
+    # Tokens are passed by name only, so their values never show up in the command line.
+    $envArgs = @('FLY_API_TOKEN', 'FLY_ACCESS_TOKEN') | Where-Object { Test-Path "Env:$_" } | ForEach-Object { '-e'; $_ }
+    # 16379: for `fly proxy 16379:6379 <redis> --bind-addr 0.0.0.0` inside, reachable as localhost:16379 on the host.
+    docker run --rm -it -p 127.0.0.1:16379:16379 @envArgs $image @FlyArgs
+    exit $LASTEXITCODE
+}
+
 function Invoke-Env([string]$Target) {
     if ($Target -notin 'rust', 'api') { Fail 'Usage: dev.ps1 env <rust|api>' }
     $problems = @(if ($Target -eq 'api') { Get-ApiTestProblems } else { Get-RustTestProblems })
@@ -290,6 +306,7 @@ switch ($command) {
         }
     }
     'start' { Invoke-Start $commandArgs }
+    'fly' { Invoke-Fly $commandArgs }
     'env' { Invoke-Env ($commandArgs | Select-Object -First 1) }
     default {
         Get-Help $PSCommandPath | Out-String | Write-Host
