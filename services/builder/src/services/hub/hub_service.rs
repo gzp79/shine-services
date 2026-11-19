@@ -188,11 +188,20 @@ impl HubServiceBuilder {
             Heartbeat::start(service.clone(), config.heartbeat).await,
             SessionChecker::start(service.clone(), session_service, config.session_check).await,
         ];
-        if let Some(registry) = service.inner.stream_registry.clone() {
-            registry.listen().await?;
-            StreamDispatcher::start(service.clone(), registry, config.stream_shutdown_timeout).await;
-        }
-        HubService::start_dispatcher(service.clone(), control_rx, background_tasks, shutdown_complete_tx);
+        let stream_dispatcher = match service.inner.stream_registry.clone() {
+            Some(registry) => {
+                registry.listen().await?;
+                Some(StreamDispatcher::start(service.clone(), registry, config.stream_shutdown_timeout).await)
+            }
+            None => None,
+        };
+        HubService::start_dispatcher(
+            service.clone(),
+            control_rx,
+            background_tasks,
+            stream_dispatcher,
+            shutdown_complete_tx,
+        );
         Ok(service)
     }
 }
@@ -459,6 +468,7 @@ impl HubService {
         service: HubService,
         mut control_rx: mpsc::UnboundedReceiver<ControlMessage>,
         background_tasks: Vec<JoinHandle<()>>,
+        stream_dispatcher: Option<JoinHandle<()>>,
         shutdown_complete: watch::Sender<bool>,
     ) {
         tokio::spawn(async move {
@@ -497,6 +507,13 @@ impl HubService {
                     if !err.is_cancelled() {
                         tracing::error!("Hub background task failed while stopping: {err}");
                     }
+                }
+            }
+            // Not aborted: on the Shutdown event it has the stream workers make their last commands durable,
+            // bounded by `stream_shutdown_timeout`, and the process must not end before that.
+            if let Some(dispatcher) = stream_dispatcher {
+                if let Err(err) = dispatcher.await {
+                    tracing::error!("Stream dispatcher failed while stopping: {err}");
                 }
             }
             drop(control_rx);

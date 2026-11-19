@@ -208,6 +208,50 @@ mod served {
     }
 
     #[test(serial = "hub-service")]
+    async fn the_hub_shutdown_completes_after_the_workers_made_the_commands_durable() {
+        let test = create_test_hub().await;
+        let user = Uuid::new_v4();
+        let id = TestStreamId::new_chat();
+        let (connection, mut socket) = test.connect_ping(user, 32);
+        test.stream_subscribe(connection, user, &id).await.unwrap();
+        next_stream_message(&mut socket).await;
+        // Appends wait on this lock (reads do not), taken before the command so that the persistence cannot
+        // be done by the time the hub shuts down.
+        let log = test.stream_log.as_ref().unwrap();
+        let locker = log.pg.direct_pool.get_owned().await.unwrap();
+        locker
+            .batch_execute("BEGIN; LOCK TABLE cl_commands IN SHARE ROW EXCLUSIVE MODE;")
+            .await
+            .unwrap();
+        test.hub
+            .send_stream_command(
+                connection,
+                user,
+                &id,
+                Uuid::new_v4(),
+                &TestMessage::new_chat_command("last words"),
+            )
+            .await
+            .unwrap();
+        let release = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            locker.batch_execute("COMMIT;").await.unwrap();
+        });
+
+        test.hub.request_shutdown().unwrap();
+        test.wait_shutdown_complete().await;
+
+        // No waiting for the log: shutdown complete is the promise that the command is there, which can
+        // only hold if the hub waited for the lock to be released.
+        assert!(
+            release.is_finished(),
+            "the hub shut down while the persistence was blocked"
+        );
+        assert_eq!(log.all_commands(&id).await.len(), 1);
+        assert_eq!(test.stream_registry.as_ref().unwrap().worker_count(), 0);
+    }
+
+    #[test(serial = "hub-service")]
     async fn a_disconnect_releases_the_workers_of_the_connection() {
         let mut test = create_test_hub().await;
         let user = Uuid::new_v4();

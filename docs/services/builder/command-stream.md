@@ -225,6 +225,42 @@ stateDiagram-v2
 
 A worker reconciles with Postgres at startup. After that a peer's advance is found by the next persistence, whose baseline no longer matches; a quiet worker is not checked periodically.
 
+### Shutdown
+
+A worker ends only after its persistence has made everything the relay took from the inbox durable. The hub's shutdown waits for that, so the process ends after the workers, or after `stream_shutdown_timeout` (default 10 s) when they are too slow.
+
+```mermaid
+sequenceDiagram
+    participant H as Hub command loop
+    participant D as Stream dispatcher
+    participant R as Registry
+    participant A as Relay task
+    participant P as Persistence task
+
+    H->>D: Shutdown event
+    D->>R: shutdown(timeout)
+    R->>A: Stop message
+    Note over A: Stop is handled before any other event
+    A->>A: close the message channel, no new subscribe
+    A->>A: last inbox pass, no subscriber is served
+    loop until nothing is waiting
+        A->>P: persist(batch)
+        P-->>A: result
+    end
+    A->>A: queued subscribers get streamUnsynced, subscribers released
+    A--)P: relay task ends, request channel closes
+    P->>P: queued requests done, task ends
+    R->>R: wait_finished: message channel closed, both tasks joined
+    R-->>D: all workers ended, or the timeout passed
+    D-->>H: dispatcher task ends
+    H->>H: shutdown complete
+```
+
+- **Idle unload** takes the same path from the drain on, without the registry and the dispatcher.
+- **Closing order:** message channel, then request channel; every request is answered before the persistence task ends.
+- **Early end of the drain:** a persistence that is gone, failed or reloaded ends the drain. A reload means the state is out of sync and is dropped by design. A worker that ended by failure skips the drain. Commands not made durable stay in the Redis inbox for the next worker, as does a proposal that arrives after the last inbox pass.
+- **Timeout:** the registry only stops waiting. The tasks are not aborted and run on until the runtime ends.
+
 ## Back-pressure
 
 The two limits stack on either side of the Redis inbox, so a slow persistence ends up refusing client pushes.
@@ -303,7 +339,7 @@ After advancing, the persistence trims the Redis inbox through the latest stored
 | Authorization | `StreamAuthorizeService` decides a subscribe; it currently allows every stream. |
 | Busy connection | A push into an inbox that stays full is nacked `busy` and the connection is dropped (close code 4000, reason `busy`). |
 | Socket limit | A socket message over twice `MAX_COMMAND_BYTES` ends the socket; the command limits are the registry's. |
-| Shutdown | On the hub's shutdown the dispatcher has the registry persist what is waiting, for up to `stream_shutdown_timeout`. |
+| Shutdown | On the hub's shutdown the dispatcher has the registry persist what is waiting, for up to `stream_shutdown_timeout`; see [Shutdown](#shutdown). |
 
 ## File map
 
