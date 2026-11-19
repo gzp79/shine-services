@@ -1,3 +1,4 @@
+use crate::models::messages::CommandFailure;
 use opentelemetry::{
     global,
     metrics::{Counter, Histogram, UpDownCounter},
@@ -16,7 +17,7 @@ const COUNT_BUCKETS: &[f64] = &[
 /// persistence and the lifecycle of the workers. Every instrument is labelled with the stream `kind`;
 /// ids of streams, users and commands are only available in the traces.
 pub struct StreamMetrics {
-    /// Commands offered to the write path, by outcome (`queued`, `invalid`, `not_subscribed`, `busy`, `failed`).
+    /// Commands a client offered to the write path, by outcome (`queued`, `invalid`, `not_subscribed`, `busy`, `failed`).
     pub commands_pushed: Counter<u64>,
     /// Time a push waited for the inbox to drain, by outcome (`ok`, `timeout`). Only pushes that had to wait.
     pub push_throttle_wait: Histogram<f64>,
@@ -154,5 +155,23 @@ impl StreamMetrics {
                 .with_description("Connections subscribed to a stream worker")
                 .build(),
         }
+    }
+
+    /// A command a client offered to the write path was queued.
+    pub fn command_queued(&self, kind: StreamKind) {
+        self.commands_pushed
+            .add(1, &[kind_label(kind), label("outcome", "queued")]);
+    }
+
+    /// A command a client offered to the write path was refused.
+    pub fn command_refused(&self, kind: StreamKind, reason: CommandFailure) {
+        let outcome = match reason {
+            CommandFailure::NotSubscribed => "not_subscribed",
+            CommandFailure::Invalid => "invalid",
+            CommandFailure::Busy => "busy",
+            CommandFailure::Failed => "failed",
+        };
+        self.commands_pushed
+            .add(1, &[kind_label(kind), label("outcome", outcome)]);
     }
 }

@@ -66,7 +66,7 @@ sequenceDiagram
     participant W as Stream worker
 
     H->>R: push(connection, user, stream, command)
-    alt not open, invalid, too large, inbox stayed full, or push failed
+    alt invalid, not open, inbox stayed full, or push failed
         R-->>H: refusal
     else accepted
         R->>R: wait for the inbox back-pressure
@@ -78,8 +78,8 @@ sequenceDiagram
 
 The checks run in this order, each with its refusal reason:
 
-1. The stream is open for the connection: `notSubscribed`.
-2. The command is at most `MAX_COMMAND_BYTES` (16 KiB) and is the canonical encoding of a well-formed command of the stream's kind, meaning decoding and encoding again gives the same bytes: `invalid`. So the bytes a client sends are the bytes that are stored and hashed.
+1. The command is the canonical encoding of a well-formed command of the stream's kind, meaning decoding and encoding again gives the same bytes: `invalid`. So the bytes a client sends are the bytes that are stored and hashed. It needs no registry state, so it runs before the state lock is taken.
+2. The stream is open for the connection: `notSubscribed`.
 3. The inbox back-pressure admits it: `busy`, see [Back-pressure](#back-pressure).
 4. The inbox push succeeds: `failed`. The command may or may not have been queued.
 
@@ -129,15 +129,15 @@ Frames are JSON text with a camel-case `type`; the `StreamId` carries the kind p
 | to client | `streamCommands` | `streamId`, contiguous optimistic or canonical commands. |
 | to client | `streamCheckpoint` | `streamId`, `version`, `stateHash`; sent after the commands it covers, to compare with the client's own state hash at that version. |
 | to client | `streamUnsynced` | `streamId`; the worker cannot serve the stream now, subscribe again. |
-| to client | `streamNack` | `streamId`, `commandId`, reason `notSubscribed`, `invalid`, `failed` or `busy` (then the connection is dropped). |
+| to client | `streamNack` | `streamId`, `commandId`, reason `notSubscribed`, `failed` or `busy` (then the connection is dropped). |
 | to client | `streamSubscribeFailed` | `streamId`, reason `unauthorized` or `failed`. |
 | to client | `streamReset` | Defined but never sent: a sync alone replaces the state. |
 
-A frame that carries an invalid stream id is ignored without an answer. A valid request that breaks a rule, such as a command that does not decode, gets the matching refusal frame. A socket message over twice `MAX_COMMAND_BYTES` ends the socket.
+A frame that carries an invalid stream id is ignored without an answer. A command that is invalid (it does not decode, is not valid for the kind, or is over `MAX_COMMAND_BYTES`) is ignored the same way, and counted as `invalid` in `ws_messages_received`. A valid request that is refused for another reason gets the matching `streamNack`. A socket message over twice `MAX_COMMAND_BYTES` ends the socket.
 
 ### Command encoding
 
-A command is its **postcard** encoding: the same bytes on the client, in the Redis inbox and in Postgres. JSON frames carry them as base64. The server accepts only the canonical encoding of a well-formed command of the stream's kind and refuses anything else as `invalid`, so the bytes a client sends are the bytes that are stored and hashed.
+A command is its **postcard** encoding: the same bytes on the client, in the Redis inbox and in Postgres. JSON frames carry them as base64. The server accepts only the canonical encoding of a well-formed command of the stream's kind and ignores anything else, so the bytes a client sends are the bytes that are stored and hashed.
 
 Clients build and read commands and snapshots with the generated TypeScript bindings in `client/game-bindings` (`pnpm gen:game-bindings` writes them).
 
@@ -296,7 +296,7 @@ After advancing, the persistence trims the Redis inbox through the latest stored
 
 | Metric | Labels | Measures |
 |---|---|---|
-| `stream_commands_pushed` | outcome: `queued`, `invalid`, `not_subscribed`, `busy`, `failed` | Commands offered to the write path. Tells apart what the websocket metric reports as `refused`. |
+| `stream_commands_pushed` | outcome: `queued`, `invalid`, `not_subscribed`, `busy`, `failed` | Every command a client sends: the hub counts the answer of the write path, the socket counts the ones refused as `invalid` before it (undecodable or over `MAX_COMMAND_BYTES`). Tells apart what the websocket metric reports as `refused` or `invalid`. |
 | `stream_push_throttle_wait` | outcome: `ok`, `timeout` | Time a push waited for the inbox to drain. Only pushes that had to wait are recorded, so the count is the number of throttled pushes. |
 | `stream_inbox_depth` | | Inbox length, sampled by the back-pressure check. |
 | `stream_commands_ingested` | | Commands taken from the inbox and versioned. |

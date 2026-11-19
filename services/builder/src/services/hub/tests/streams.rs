@@ -294,7 +294,7 @@ mod served {
 
         // Before the subscribe.
         assert_eq!(
-            send(&id, TestMessage::new_chat_command("early")).await,
+            send(&id, TestMessage::new_paint_command(1, 1, 1)).await,
             Err(CommandFailure::NotSubscribed)
         );
         test.stream_subscribe(connection, user, &id).await.unwrap();
@@ -307,7 +307,7 @@ mod served {
         // After the unsubscribe, with no waiting for the loop in between.
         hub.unsubscribe_stream(connection, id.clone()).unwrap();
         assert_eq!(
-            send(&id, TestMessage::new_chat_command("late")).await,
+            send(&id, TestMessage::new_paint_command(1, 1, 1)).await,
             Err(CommandFailure::NotSubscribed)
         );
     }

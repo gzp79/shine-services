@@ -12,7 +12,7 @@ use crate::{
         hub_registry::{redis::RedisHubConnectionDb, HubConnection, HubConnectionDb, HubRegistry},
     },
     services::{
-        command_stream::StreamRegistry,
+        command_stream::{stream_metrics, StreamRegistry},
         hub::{
             hub_command::ControlCommand,
             hub_connections::{Connections, DeadConnection, RemovedConnection},
@@ -323,10 +323,15 @@ impl HubService {
             }
             None => Err(CommandFailure::NotSubscribed),
         };
-        if result == Err(CommandFailure::Busy) {
-            if let Err(err) = self.request_drop(user_id, connection_id, DisconnectReason::Busy) {
-                tracing::warn!("[{user_id}] Failed to drop the busy connection (hub stopped): {err:#?}");
+        match result {
+            Ok(()) => stream_metrics().command_queued(stream_id.kind()),
+            Err(CommandFailure::Busy) => {
+                stream_metrics().command_refused(stream_id.kind(), CommandFailure::Busy);
+                if let Err(err) = self.request_drop(user_id, connection_id, DisconnectReason::Busy) {
+                    tracing::warn!("[{user_id}] Failed to drop the busy connection (hub stopped): {err:#?}");
+                }
             }
+            Err(reason) => stream_metrics().command_refused(stream_id.kind(), reason),
         }
         result
     }

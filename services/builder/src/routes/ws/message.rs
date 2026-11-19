@@ -1,4 +1,7 @@
-use crate::models::messages::{CommandFailure, StreamCommand, StreamMessage, SubscribeFailure};
+use crate::{
+    models::messages::{CommandFailure, StreamCommand, StreamMessage, SubscribeFailure},
+    services::MAX_COMMAND_BYTES,
+};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -99,8 +102,16 @@ fn wire_command(command: &StreamCommand) -> WireStreamCommand {
     }
 }
 
+/// Decodes a command of the client; `None` if it is not valid base64 or is over `MAX_COMMAND_BYTES`.
 pub fn decode_wire_command(command: &str) -> Option<Vec<u8>> {
-    STANDARD.decode(command).ok()
+    // Refused by the length of the text before anything is decoded.
+    if command.len() > MAX_COMMAND_BYTES.div_ceil(3) * 4 {
+        return None;
+    }
+    STANDARD
+        .decode(command)
+        .ok()
+        .filter(|command| command.len() <= MAX_COMMAND_BYTES)
 }
 
 fn nack_reason(reason: CommandFailure) -> &'static str {

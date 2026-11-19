@@ -204,30 +204,13 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
         command_id: Uuid,
         command: &[u8],
     ) -> Result<(), CommandFailure> {
-        let result = self
-            .try_push(connection_id, stream_id, user_id, command_id, command)
-            .await;
-        let outcome = match &result {
-            Ok(()) => "queued",
-            Err(CommandFailure::NotSubscribed) => "not_subscribed",
-            Err(CommandFailure::Invalid) => "invalid",
-            Err(CommandFailure::Busy) => "busy",
-            Err(CommandFailure::Failed) => "failed",
-        };
-        stream_metrics()
-            .commands_pushed
-            .add(1, &[kind_label(stream_id.kind()), label("outcome", outcome)]);
-        result
-    }
+        // It should be handled at the api level.
+        assert!(command.len() <= MAX_COMMAND_BYTES);
 
-    async fn try_push(
-        &self,
-        connection_id: Uuid,
-        stream_id: &StreamId,
-        user_id: Uuid,
-        command_id: Uuid,
-        command: &[u8],
-    ) -> Result<(), CommandFailure> {
+        if !self.validate(stream_id.kind(), command) {
+            return Err(CommandFailure::Invalid);
+        }
+
         let backpressure = {
             let state = self.inner.state.lock().unwrap();
             let is_open = state
@@ -239,13 +222,6 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
                 .flatten()
                 .ok_or(CommandFailure::NotSubscribed)?
         };
-
-        let Some(entry) = self.inner.kinds.get(&stream_id.kind()) else {
-            return Err(CommandFailure::Invalid);
-        };
-        if command.len() > MAX_COMMAND_BYTES || !(entry.is_valid_command)(command) {
-            return Err(CommandFailure::Invalid);
-        }
 
         // Only the pushes that had to wait are measured, a free inbox would flood the histogram with zeros.
         let throttled = backpressure.is_blocked();

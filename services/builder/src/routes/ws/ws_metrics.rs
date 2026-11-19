@@ -1,10 +1,11 @@
 use opentelemetry::{global, metrics::Counter};
+use shine_infra::telemetry::label;
 use std::sync::LazyLock;
 
 /// Metrics of the websocket endpoint: what the clients send. Labels have a small fixed set of values.
 pub struct WsMetrics {
     /// Messages received from the clients, by kind and outcome.
-    pub messages_received: Counter<u64>,
+    messages_received: Counter<u64>,
 }
 
 static METRICS: LazyLock<WsMetrics> = LazyLock::new(WsMetrics::new);
@@ -23,5 +24,11 @@ impl WsMetrics {
                 .with_description("Messages received from the websocket clients")
                 .build(),
         }
+    }
+
+    /// A message of the given kind was received, and handled with the given outcome.
+    pub fn message_received(&self, kind: &'static str, outcome: &'static str) {
+        self.messages_received
+            .add(1, &[label("kind", kind), label("outcome", outcome)]);
     }
 }
