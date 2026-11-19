@@ -1,0 +1,22 @@
+
+ Fly toolbox (flyctl + redis-cli). Show this again: fly-help
+
+ Login
+   fly auth login                 (or run with FLY_API_TOKEN set on the host)
+   fly orgs list
+
+ Redis
+   fly redis list
+   fly redis status <name>        shows the private address and password
+   fly redis connect <name>       redis-cli in this terminal only
+
+ Use Redis from the host (port 16379 is published by 'dev.ps1 fly')
+   fly proxy 16379:6379 <private-address> --bind-addr 0.0.0.0
+   then on the host: redis://:<password>@localhost:16379
+
+ Apps
+   fly apps list
+   fly status -a <app>
+   fly logs -a <app>
+   fly ssh console -a <app>
+
