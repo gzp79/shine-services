@@ -6,7 +6,10 @@ use opentelemetry::{
 };
 use shine_game::replica::StreamKind;
 use shine_infra::telemetry::{label, SECONDS_BUCKETS};
-use std::{sync::LazyLock, time::Instant};
+use std::{
+    sync::LazyLock,
+    time::{Duration, Instant},
+};
 
 /// Bucket boundaries of counts of entries (inbox depth, batch size).
 const COUNT_BUCKETS: &[f64] = &[
@@ -173,5 +176,12 @@ impl StreamMetrics {
         };
         self.commands_pushed
             .add(1, &[kind_label(kind), label("outcome", outcome)]);
+    }
+
+    /// A push that had to wait for the inbox to drain, and whether the inbox released it before the timeout.
+    pub fn push_throttled(&self, kind: StreamKind, waited: Duration, released: bool) {
+        let outcome = if released { "ok" } else { "timeout" };
+        self.push_throttle_wait
+            .record(waited.as_secs_f64(), &[kind_label(kind), label("outcome", outcome)]);
     }
 }
