@@ -32,9 +32,9 @@ Severity: **Blocker** = fix before a prod deploy; High / Medium / Low as assesse
 | D7 ✅ | No action | config | Config is trusted; a zero interval already stops start-up |
 | **Stream log correctness** | | | |
 | L1 ✅ | Fixed | soundness | Chain hash ignored `user_id`/`command_id`/`inbox_id`; false "stored" verdict lost a command |
-| L2 | Medium | multi-instance | Persisted-version wakes are ignored; stale instances never reconcile |
-| L3 | Medium | idempotency | No dedup by `command_id`; resends, retries and drain leftovers duplicate commands |
-| L4 | Low | integrity | Replay trusts stored `snapshot.hash` and `command_hash` |
+| L2 | Low / Medium | multi-instance | Persisted-version wakes are ignored; after a missed wake an instance's clients stay stale (Medium with several instances, none with one). No data loss since L1 |
+| L3 ✅ | Intentional | idempotency | No dedup by `command_id`: the id is a client-owned placeholder |
+| L4 ✅ | Fixed | integrity | Replay trusted stored `snapshot.hash` and `command_hash`; both are now recomputed on load |
 | L5 | Low | lifecycle | `is_finished()` true while a worker still drains; replacement overlap; draining worker invisible to `shutdown` |
 | L6 | Low | correctness | Inbox cursor never detects a Redis id regression |
 | L7 | Low | correctness | Inbox trim only after commands are stored; failed trim only warned |
@@ -76,7 +76,7 @@ Severity: **Blocker** = fix before a prod deploy; High / Medium / Low as assesse
 | R21 | Low | perf | Per-connection JSON/base64 serialization |
 | R22 | Low | design | Decisions to make consciously (raw `user_id` in commands) |
 | **Observability** | | | |
-| O1 | Medium | logging | `Problem::log` dumps internals at info/error |
+| O1 ✅ | Accepted | logging | `Problem::log` dumps internals at info/error: a documented exception, the only root-cause info in prod |
 | O2 | Low | logging | Info-level spans/logs on hot paths |
 | O3 | Low | metrics | Start-up self-test lines are counted |
 | O4 | Low | metrics | Metrics gaps; repeated `DropConnection` per stream send |
@@ -122,7 +122,7 @@ Checked and found sound: see [Verified as sound](#verified-as-sound). Test gaps:
 Failure scenario (two instances A and C, both loaded for `chat:global`, log at v10):
 1. User U1 sends "gg" (entry e11), user U2 sends "gg" (e12).
 2. A reads both, appends e11 as v11, trims through e11 (`XTRIM MINID`).
-3. C missed the wake, or was busy (see L2), and polls only after the trim: it sees only e12 and, from its stale head v10, versions it v11. Payload hashes are equal, so the chain hash equals the log's v11. The append returns "covered", C reports `Stored`, applies e12 on its replica and trims the inbox through e12.
+3. C missed the wake (see L2), and polls only after the trim: it sees only e12 and, from its stale head v10, versions it v11. Payload hashes are equal, so the chain hash equals the log's v11. The append returns "covered", C reports `Stored`, applies e12 on its replica and trims the inbox through e12.
 4. U2's message exists nowhere durable. C keeps appending on top of the log (its baseline hash equals the head hash). C's replica now has U2 as author of v11 while the log has U1, so C and A compute different state hashes. Whichever instance stores the next snapshot first wins `try_store_snapshot`; it only checks the snapshot's `chain_hash` against the command row (`pg/snapshot.rs:109-118`), never the state hash against the commands. If C's snapshot lands first the stored snapshot contradicts the log, and after `prune` removes the older commands (`pg/prune.rs`) nobody can detect it.
 
 For `pixel-map` the collision probability is high (16x32x32 distinct payloads, same payload from many users); for chat it needs the same text. Also applies to one user repeating the same payload (double click).
@@ -133,37 +133,80 @@ The chain hash itself now binds the command identity too: `fold_chain_hash(paren
 
 The `InsertCommands` row comparison is kept as a second line of defence for `inbox_id`, which the chain hash does not cover.
 
-Still open: verifying `snapshot.hash` on load and in `try_store_snapshot` is tracked in L4.
+Related: `snapshot.hash` and `command_hash` are now verified on load (L4); `try_store_snapshot` still checks only the snapshot's `chain_hash`.
 
-### L2. Persisted wakes are ignored: stale instances never reconcile (Medium)
+### L2. Persisted wakes are ignored: stale instances never reconcile (Low with one instance, Medium with several)
 
-- `notify_persisted` publishes `<stream>@<version>` (`repositories/command_inbox/redis/wake.rs:15-29`, `stream_persistence.rs:299-301`), but the registry collapses `InboxWake::Stream{persisted}` to `registry.wake()` (`stream_registry.rs:323`), and a wake only runs `process_inbox` (`stream_worker.rs:263`): poll the inbox after `read_index`. `Reconcile` (compare with the durable head) runs only in `preflight` (`stream_worker.rs:206`).
-- Peers trim the inbox as soon as they persist (`stream_log_service.rs:157`). An instance that polls late (lost pub/sub wake, `room == 0` early return in `stream_relay.rs:150-153`, busy loop, or the 10 s recovery poll) finds nothing and keeps serving a stale tail. The recovery poll cannot recover entries that were already trimmed.
+Status: open, analysed, no code changed. Re-read against the code after the L1 fix; by reading only, nothing was run.
 
-Failure scenario: instance C misses the wake of e11 (pub/sub is lossy, `command_inbox_types.rs:76`); A persists and trims it. C's subscribers never receive v11, and a new subscriber on C gets a `Sync` without it. It heals only when the next command reaches C and its append mismatches (reload), so an idle stream stays stale indefinitely. Also feeds L1.
+Severity depends on how many builder instances serve a stream. With one instance there is no peer to trim the inbox, so it cannot happen. With several it is **Medium**: the data is never lost (see "Impact after L1"), but the clients of an instance that missed a wake silently stop receiving commands. They are updated normally by their instance's own worker, which reads each new entry from the inbox on the wake and sends it before it is persisted; persistence is the backup, not the delivery path. After a missed wake nothing tells those clients they are behind: checkpoints are only sent after the instance's own persists, and the web client has no watchdog (C1). They recover when the next command reaches that instance, or when they resubscribe. On a busy stream that is seconds, on a quiet one it can be indefinitely.
 
-Fix: on `persisted: Some(v)` with `v` beyond the worker's confirmed version, schedule a `Reconcile` (cheap `head` read) in the relay loop; also reconcile on the recovery tick when nothing was read.
+#### How the wakes work today
 
-### L3. No command dedup: retries, resends and leftovers duplicate commands (Medium)
+- A push publishes `<stream>` on the wake channel `cmd-inbox-wake`; after an instance persists a batch it publishes `<stream>@<version>` (`notify_persisted`, `repositories/command_inbox/redis/wake.rs:15-29`, called from `stream_persistence.rs:299-301`). Every instance with a worker for the stream hears both.
+- The registry's `listen` handler (`stream_registry.rs:323`) throws the version away: `InboxWake::Stream { stream_id, .. }` becomes `registry.wake(&stream_id)`, which is only `Notify::notify_one` on the worker. A listener reconnect gives `InboxWake::All`, which wakes every worker the same way.
+- A woken worker runs `process_inbox` (`stream_worker.rs:263`): read the Redis inbox after its own `read_index`, version what it finds, submit it to the persistence. It never compares its head with the log.
+- `PersistenceWork::Reconcile` (compare the confirmed head with the durable head, reload on mismatch) is sent from one place only, `preflight` (`stream_worker.rs:206`), once when the worker starts. Otherwise an instance finds out that it is behind only when its own append fails, and that needs a new command to reach it.
 
-- `CommandInboxDb::push` explicitly performs no check; `stream_relay.rs:153-190,266-267` keeps repeats as separate commands; no unique constraint on `(stream, command_id)` in `V1__command_log.sql` (only `(kind,id,inbox_id)`).
-- `CommandFailure::Failed` means "may or may not have been queued" (`models/messages/stream.rs`), and `drain()` reads one inbox page only (`stream_worker.rs:319`), leaving the rest in Redis for up to the 1 h TTL (`app_state.rs:17`) with no signal to the client. The client also resends pending commands after a sync (`crates/shine-game/src/replica/client_stream.rs:198-205`). A client that resends gets two commands: chat `Add` is shown twice with the same message id (`ChatMessage.id = command_id`, `chat.rs:85,166`); `Remove`/`Replace` then touch only the first.
-- `command_id` is client chosen and not checked for uniqueness per stream, so a user can reuse another message's id; clients that key messages by id will merge or overwrite them. Server-side `find_own` prevents unauthorized edits, so impact is presentation/consistency.
+#### Why a missed wake does not heal
 
-Fix: reject or ignore a second command with the same `(user_id, command_id)` at sequencing time (keep a bounded recent-id set per worker, seeded from the log tail on reload, and surviving other instances) or enforce a partial unique key in the log; alternatively put recently folded ids in the sync so the client drops them. Make `drain` loop until the page is short; tell clients when a command is dropped (ack by echo). If A4 (Lua hard limit) is implemented, do the dedup check in the same script so a retry of a stored command is not rejected as `Full`.
+- Peers trim the inbox through the entries they stored as soon as they persist (`stream_log_service.rs:157`).
+- In the normal case instances A and C both read the same entry and both try to append it. One wins, the other sees it covered, and both converge. That is the design.
+- If C misses the wake, A persists and trims. When C looks, the entry is gone from the inbox, so there is nothing to read. The recovery poll (`inbox_recovery_poll_interval`, default 10 s) does not help: it runs the same `process_inbox`, which reads the now empty inbox.
+- The reconnect case has the same hole. `wake_all` after a reconnect only re-reads the inbox, so whatever a peer persisted and trimmed during the outage is invisible.
 
-### L4. Replay trusts stored hashes (Low)
+Failure scenario: instance C misses the wake of entry e11 (Redis pub/sub is lossy by design, `command_inbox_types.rs:76`, for example around a failover or a restart); A persists e11 as v11 and trims it. C's subscribers never receive v11, and a new subscriber on C gets a `Sync` built from C's stale state. An idle stream stays stale indefinitely. When the next command reaches C, C versions it from its stale head and sends that frame to its subscribers at the wrong version; its append then fails (`Behind`), C reloads and resyncs the subscribers. So they see a wrong frame first, then a correction.
 
-- `StreamPersistence::rebuild` (`stream_persistence.rs:195-214`) restores a snapshot with `Replica::from_snapshot(version, state, snapshot.chain_hash)` without checking that `stable_hash(state) == snapshot.hash`.
-- `StoredCommand::to_envelope` (`command_log_types.rs:26-39`) uses the stored `command_hash`; `apply_next` checks only that the chain folds from that stored value, so a row whose `data` does not match its `command_hash` replays silently.
+#### Impact after L1
 
-Fix: recompute `content_hash` from the decoded command and compare; compare `replica.hash()` with `snapshot.hash` on load; treat mismatch as `Corrupt`/reload from an older snapshot. Pairs with L1.
+Before the L1 fix this could also lose a command: C's stale append of identical content was accepted as `Stored`. With the identity check in `InsertCommands` and the ids in the chain hash, that append now fails and takes the reload path. What remains is **staleness and one wrong frame** on the lagging instance, not data loss..
+
+#### Causes that do not hold
+
+The audit named three ways to be late. Only the first is real:
+
+- Lost pub/sub wake: real. This is the cause.
+- `room == 0` early return in `StreamRelay::ingest` (`stream_relay.rs:150-153`): not a cause. While the optimistic tail is full the read is skipped, but the persistence answer (`settle`) calls `notify_one` again, so the entries are read afterwards and nothing is lost.
+- Busy loop: not a cause. `Notify::notify_one` keeps one pending permit while the worker is busy, so a wake that arrives meanwhile is not dropped.
+
+#### Proposed fix
+
+1. **Use the persisted version.** The worker keeps the highest persisted version it has heard of (`AtomicI64::fetch_max`, set by the registry handler, so `wake` carries it). In the relay loop, when that version is above `confirmed_version` and no persistence is in flight, send `PersistenceWork::Reconcile`. That is one cheap `head` read per peer persist; the answer path (`PersistResult::Current` or `Reloaded`) already exists. Do the comparison after `settle`: an instance's own persist announcement arrives before its own state is updated, and would otherwise cause a pointless reconcile.
+2. **Handle the reconnect.** On `InboxWake::All`, flag every worker as needing a reconcile, which closes the trimmed-during-the-outage hole directly.
+3. **No periodic reconcile.** A `head` read every 10 s per stream per instance costs a lot and adds little once 1 and 2 exist. The earlier idea of reconciling on the recovery tick when nothing was read is dropped.
+
+#### Test plan
+
+- Two workers on one inbox and one log. Worker A persists and the inbox is trimmed; C gets only the persisted-version wake (not the command wake). Expect C's subscriber to receive the new commands. Existing worker tests simulate wakes with `worker.wake()` (`stream_worker_test.rs`); the wake would need an optional persisted version.
+- Reconnect: wake every worker with `All` after a peer persisted and trimmed; expect a reconcile and a resync.
+- No-op: a persisted version that is not above `confirmed_version` must not send a `Reconcile`.
+
+#### Open questions
+
+- Where the highest persisted version lives: on `StreamWorker` next to `wake`, read by the relay loop.
+- Whether a reconcile may be sent while a persistence is in flight (the loop currently allows one in-flight request); the proposal waits for it to finish.
+
+### L3 ✅. No command dedup: retries, resends and leftovers duplicate commands (Intentional)
+
+**Intentional, no action.** `command_id` belongs to the client: the server treats it as an opaque placeholder and does not check it for uniqueness. If a client sends the same id twice, that is a client issue, as long as every client interprets it the same way. The log stores each command it is given once per `(stream, version)`, and the chain hash binds the id (L1), so a repeat is a new, ordered command, not a corruption. Consequences accepted with this: a client that resends a pending command after a sync or a `failed` nack can get it applied twice (chat `Add` shown twice with the same message id), and a user can reuse another message's id (`Remove`/`Replace` target the first match; `find_own` still blocks edits of other users' messages). No dedup is added in the relay, the log or the inbox script (A4).
+
+The one part that is not about ids, `drain()` reading a single inbox page on shutdown, moved to L5.
+
+### L4 ✅. Replay trusts stored hashes (Fixed)
+
+**Fixed.** Two hashes were trusted on load, both are now recomputed and a mismatch is `CommandStreamError::Corrupt`:
+- `StoredCommand::to_envelope` (`command_log_types.rs`) hashes the decoded command again (`content_hash()`) and compares it with the stored `command_hash`. Before, `apply_next` only checked that the chain folds from the stored value, so a row whose `data` did not match its `command_hash` replayed silently. This covers every replay: the load and the canonical replay in `StreamPersistence::apply`.
+- `StreamPersistence::rebuild` (`stream_persistence.rs`) compares `replica.hash()` of the restored snapshot state with the stored `snapshot.hash`.
+
+Tests (`stream_persistence_test.rs`): `a_command_whose_data_does_not_match_its_stored_hash_is_corrupt_on_load` (the forged row has a consistent chain, so only the new check catches it) and `a_snapshot_whose_state_does_not_match_its_stored_hash_is_corrupt_on_load`. Both loaded without error before the change. Full workspace suite: green.
+
+Not done: a `Corrupt` load makes the worker give up (`PersistResult::Failed`); falling back to an older snapshot is not implemented. `try_store_snapshot` still checks only the snapshot's `chain_hash` against the command row, not its state hash against an independent replay.
 
 ### L5. Worker replacement overlap and shutdown blind spot (Low)
 
-`run()` calls `receiver.close()` before `drain()` (`stream_worker.rs:271-274`), and `is_finished()` is `messages.is_closed()` (`stream_worker.rs:94`), so the registry replaces the worker while it still drains (`stream_registry.rs:263-270`). Two workers for one stream then run in one process; correctness relies on the CAS and hash checks (and L1 applies to them). The replaced `Arc<StreamWorker>` is gone from `State.streams`, so `shutdown` (`stream_registry.rs:334-344`) never waits for its drain, and the process may exit with commands taken from the inbox but not yet persisted (they stay in Redis, but see L3).
+`run()` calls `receiver.close()` before `drain()` (`stream_worker.rs:271-274`), and `is_finished()` is `messages.is_closed()` (`stream_worker.rs:94`), so the registry replaces the worker while it still drains (`stream_registry.rs:263-270`). Two workers for one stream then run in one process; correctness relies on the CAS and hash checks (and L1 applies to them). The replaced `Arc<StreamWorker>` is gone from `State.streams`, so `shutdown` (`stream_registry.rs:334-344`) never waits for its drain, and the process may exit with commands taken from the inbox but not yet persisted (they stay in Redis for up to the 1 h TTL, `app_state.rs:17`, with no signal to the client). Also, `drain()` reads one inbox page only (`stream_worker.rs:319`), so a longer inbox is left unread on shutdown.
 
-Fix: report finished only when both tasks ended; keep draining workers in a side list that `shutdown` awaits.
+Fix: report finished only when both tasks ended; keep draining workers in a side list that `shutdown` awaits; make `drain` loop until the page is short.
 
 ### L6. Inbox cursor never detects a regression (Low)
 
@@ -262,7 +305,6 @@ return id
 - Hard limit = `inbox_backpressure_high * 1.1`; soft limit (poller) unchanged, so clients get `Busy` early without a Redis call per push.
 - Add a `Full` variant to `RedisCommandInboxError` and map it to the same `Busy` result as backpressure. The command is not stored, so the client follows the existing `Busy` path.
 - One round trip and O(1) `XLEN`, same cost as today. The script touches a single key, so it is Redis Cluster safe.
-- Do the L3 dedup check in the same script if implemented.
 - Test: push up to the hard limit, assert the next push returns `Full` and the stream length is unchanged.
 
 ### A5. No write timeout, idle timeout or keepalive on the socket (Medium)
@@ -409,7 +451,7 @@ Every command carries the sender's raw `user_id` (`routes/ws/message.rs:46`); us
 
 | ID | Finding | Where | Fix |
 |---|---|---|---|
-| O1 | **`Problem::log` dumps internals at info and error**, including Postgres and Redis errors and attacker-controlled `Host`/`Origin`. Every 4xx logs a multi-line dump. | `crates/shine-infra/src/web/responses/problem_detail.rs:150-159` | Log status, type and a short cause at info; the `sensitive` dump only at trace. |
+| O1 ✅ | **Accepted, no action.** `Problem::log` dumps the problem at `error` (5xx) and `info` (4xx), including Postgres and Redis errors and attacker-controlled `Host`/`Origin`, as a multi-line dump per 4xx. This is a documented exception to the "sensitive data: trace only" rule: the dump holds the only root-cause information available in prod (comment in `problem_detail.rs`). `debug` and `trace` are never enabled in prod, but this log is not at those levels, so it is the exception that makes it visible. Revisit when errors carry a safe cause label (for example `pg.connection`, `redis.timeout`), after which the dump can move to `trace`. | `crates/shine-infra/src/web/responses/problem_detail.rs:150-159` | None. |
 | O2 | **Info-level spans and logs on hot paths.** A per-command hub span with the user id, registry spans, and a session-checker warning per connection per tick. | `hub_service.rs:475`; `redis_hub_registry.rs:53,78,150,174,183`; `tasks/session_checker.rs:51` | `debug`; log once per tick with a count. |
 | O3 | **Start-up self-test lines are counted.** Every restart adds two warn and two error events, so alerts on the metric fire on every deploy. | `crates/shine-infra/src/web/web_app.rs:202-213`; `telemetry_service.rs:109-115` | Exclude them from the counter. |
 | O4 | **Metrics gaps.** No queue depth, rejected connects or registry-error metrics; `notify` bypasses the metrics helper; a full connection gets a repeated `DropConnection` per stream send. | `services/hub/hub_metrics.rs`; `hub_status.rs:25-28`; `hub_connections.rs:44-46` | Add the metrics; dedupe in-flight drops. |
@@ -424,7 +466,7 @@ Every command carries the sender's raw `user_id` (`routes/ws/message.rs:46`); us
 |---|---|---|---|
 | C1 | **No watchdog on `waiting` and `syncing`.** A lost `streamSync` strands the client; only `unsynced` has a retry timer, re-armed only by another frame. | `client/web/src/experiments/pixel-map/index.ts:98-103`; `crates/shine-game/src/replica/client_stream.rs:173-176` | Re-send the subscribe with backoff for any non-live status. |
 | C2 | **Backoff resets on every open.** If the server accepts the upgrade and then closes, the client retries every second forever. | `client/web/src/engine/net/websocket-stream-hub.ts:129-131,166` | Reset after the first sync or a minimum open time. |
-| C3 | **A `failed` nack drops the pending command**, although the server says it may have been queued (see L3). | `client_stream.rs:253-257` | Keep it pending and resend (relies on server dedup, L3), or mark it unknown. |
+| C3 | **A `failed` nack drops the pending command**, although the server says it may have been queued. | `client_stream.rs:253-257` | Keep it pending and resend (the server does not dedup, L3, so the client has to accept a possible repeat), or mark it unknown. |
 | C4 | **A persistent checkpoint mismatch loops forever.** Every mismatch resubscribes with no counter. Checkpoints are now sent, so this is live. | `client_stream.rs:235-251` | A counter, then a move to `Unsynced`. |
 | C5 | **Stale state after a reconnect.** The stream is never reset to `Waiting`; paints are not gated by the connection state; `replaced` is never set although the type has it. | `pixel-map/index.ts:46-51,164-184`; `stream-hub.ts:1`; `pixel-map-ui.ts:14` | Reset or resync on reconnect; gate paints; handle `replaced` (no reconnect; needs distinct close codes, R11). |
 | C6 | **Overlapping `Sync` tail records a bad hash.** `on_sync` still calls `apply_wire` and ignores a skipped outcome. The server sends non-overlapping tails today. | `client_stream.rs:189-193,220,305-308` | Honour `ApplyOutcome::Skipped`. |
@@ -442,7 +484,7 @@ Every command carries the sender's raw `user_id` (`routes/ws/message.rs:46`); us
 | Missing fault and race cases: listener failure, `WATCH` conflict, half-open or oversized frames, id regression; fixed sleeps and `tick * N` waits remain. | `services/hub/tests/fault.rs`; `contention.rs:513,582`; `lifecycle.rs:440,479`; `routes/ws/connect_test.rs:294`; `stream_worker_test.rs:120,271` |
 | Mutation blind spots: the close-code test compares the constant to itself, no test drives `AppState` wiring, the `SEND_DRAIN_TIMEOUT` abort is untested. | `routes/ws/connect_test.rs:104-112`; `app_state.rs:56`; `connect.rs:65,228` |
 | Rust, `shine-infra`: the prod TLS check is tested for rejections only (no database needed); there is no test for accepting `sslmode=require` through the pool. | `crates/shine-infra/src/db/postgres/pg_connection.rs` |
-| Rust, builder: a duplicate resent command (L3), `ConnectUser` registry failure (R10), inbox push at the hard limit returns `Full` (A4), and `ensure_stream` (L8). | `services/builder/src/services/command_stream/` |
+| Rust, builder: `ConnectUser` registry failure (R10), inbox push at the hard limit returns `Full` (A4), and `ensure_stream` (L8). | `services/builder/src/services/command_stream/` |
 | Rust, `shine-game` `client_stream`: mid-batch gap, a command that fails to decode, a checkpoint mismatch while `Waiting`, overlapping `Sync` tails, trailing snapshot bytes, `HASH_HISTORY` eviction at 256, a `failed` nack on a known pending command, a command folded into the snapshot but absent from the tail. | `crates/shine-game/tests/replica/client_stream.rs` |
 | TypeScript: only two tests exist for the hub. Missing: stale live after reconnect, a hang in waiting, an immediate close after open with growing delay, `connect()` twice, the `unsynced` timer re-arming, `resync()` while closed or replaced. Nothing tests the pixel map experiment's stream handling. | `client/web/src/engine/net/websocket-stream-hub.test.ts` |
 | `shine-test` panic hook exits the whole run on a background-thread panic; a test that expects a spawned-task panic cannot exist. The fuzz CI job uses an unpinned nightly and an uncached `cargo install`. | `crates/shine-test/src/lib.rs` (~65-84); `.github/workflows/fuzz_ci.yml` |

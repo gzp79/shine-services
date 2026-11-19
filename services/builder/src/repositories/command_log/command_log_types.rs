@@ -1,5 +1,5 @@
 use crate::{models::CommandStreamError, repositories::command_inbox::InboxId};
-use shine_game::replica::{decode_command, CommandEnvelope, CommandHeader, ReplayState};
+use shine_game::replica::{decode_command, Command, CommandEnvelope, CommandHeader, ReplayState};
 use uuid::Uuid;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -22,10 +22,18 @@ pub struct StoredCommand {
 }
 
 impl StoredCommand {
-    /// Reads the stored row as the command envelope a replica is advanced with.
+    /// Reads the stored row as the command envelope a replica is advanced with. The command is hashed
+    /// again: the chain only folds the stored `command_hash`, so a row whose data was replaced would
+    /// replay silently otherwise.
     pub fn to_envelope<S: ReplayState>(&self) -> Result<CommandEnvelope<S::Command>, CommandStreamError> {
         let decoded = decode_command::<S>(&self.data)
             .map_err(|err| CommandStreamError::Corrupt(format!("command {}: {err}", self.version)))?;
+        if decoded.content_hash() != self.command_hash {
+            return Err(CommandStreamError::Corrupt(format!(
+                "command {}: the data does not match its stored hash",
+                self.version
+            )));
+        }
         Ok(CommandEnvelope {
             header: CommandHeader {
                 version: self.version,
