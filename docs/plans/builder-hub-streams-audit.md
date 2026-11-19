@@ -23,14 +23,13 @@ Severity: **Blocker** = fix before a prod deploy; High / Medium / Low as assesse
 | ID | Sev | Area | Finding |
 |----|-----|------|---------|
 | **Prod-deploy blockers** | | | |
-| D1 | Fixed | config | Prod TLS check rejected pool params, prod start-up would abort |
-| D2 | Blocker | config | TLS policy fails open for any stage other than literal `prod` |
-| D3 | Blocker | availability | `panic = "abort"` on the plain release profile |
-| D4 | Blocker | config | Pre-deploy config checks (`sql_cns`, `redisCns`, Redis >= 6.2) |
-| D5 | Blocker | migration | V1 migration replaced instead of added |
-| D6 | Blocker | migration | Service migrations run under the 10 s `statement_timeout` |
-| D7 | High | config | Config is not validated (heartbeat wrap to negative TTL) |
-| D8 | Medium | tooling | Agent git-deny hook removed |
+| D1 ✅ | Fixed | config | Prod TLS check rejected pool params, prod start-up would abort |
+| D2 ✅ | Intentional | config | TLS is required only for the literal `prod` stage |
+| D3 ✅ | Intentional | availability | `panic = "abort"` on the release profile; a panic is a critical bug, not a survivable condition |
+| D4 ✅ | No action | config | Missing config or Redis < 6.2 already stops start-up |
+| D5 ✅ | Intentional | migration | V1 migration replaced instead of added; databases were purged |
+| D6 ✅ | Fixed | migration | Service migrations ran under the 10 s `statement_timeout` |
+| D7 ✅ | No action | config | Config is trusted; a zero interval already stops start-up |
 | **Stream log correctness** | | | |
 | L1 | High | soundness | Chain hash ignores `user_id`/`command_id`/`inbox_id`; false "stored" verdict loses a command |
 | L2 | Medium | multi-instance | Persisted-version wakes are ignored; stale instances never reconcile |
@@ -42,7 +41,7 @@ Severity: **Blocker** = fix before a prod deploy; High / Medium / Low as assesse
 | L8 | Low | perf | `ensure_stream` writes on every worker load |
 | L9 | Low | correctness | Load/prune race yields a `Gap` |
 | L10 | Low | availability | No PG `statement_timeout` on reads/appends |
-| L11 | Low | robustness | Poisoned registry mutex panics every later call |
+| L11 ✅ | Moot | robustness | Poisoned registry mutex (cannot happen under `panic = "abort"`) |
 | L12 | Low | compat | Rolling deploy: old binary cannot decode new command variants |
 | L13 | Low | correctness | Grace timer can starve (last arm of a `biased` select) |
 | L14 | Low | misc | Chat text stored and relayed raw |
@@ -65,7 +64,7 @@ Severity: **Blocker** = fix before a prod deploy; High / Medium / Low as assesse
 | R9 | Low | correctness | Registry listener not awaited, not retried, reconnect ignored |
 | R10 | Low | correctness | `Connected` sent before registration; registration failure closes silently |
 | R11 | Low | correctness | One close code (4000) for every drop; reason lost when the queue is full |
-| R12 | Low | robustness | No drop guard for a cancelled or panicking socket task |
+| R12 | Low | robustness | No drop guard for a cancelled socket task |
 | R13 | Low | perf | Lifecycle events broadcast to every socket (O(N) per event); `UserConnected` carries the session key |
 | R14 | Low | perf | `remove_connection_by_id` is O(N) under the write lock |
 | R15 | Low | correctness | Tracker tick starves lifecycle events |
@@ -102,14 +101,13 @@ Checked and found sound: see [Verified as sound](#verified-as-sound). Test gaps:
 
 | ID | Finding | Where | Fix |
 |---|---|---|---|
-| D1 | **Fixed.** The prod TLS check used to parse the raw connection string, and tokio-postgres refuses `pool_timeout` and `max_size`, so prod start-up would abort. The check now lives in `create_postgres_pool(stage, cns)`, runs after the pool params are taken, and tests `sslmode` with `ConnectionString::check_property`. `check_postgres_tls` is deleted. | `crates/shine-infra/src/db/postgres/pg_connection.rs` (`create_postgres_pool`), `crates/shine-infra/src/db/cns_param.rs` (`check_property`) | None. |
-| D2 | **TLS policy fails open** for any stage other than the literal `prod`. `Prod`, `staging` or a typo accepts `sslmode=disable`. Redis has no TLS check at all for now (fly.io reaches it over WireGuard, which does not support `rediss://`); `create_redis_pool` takes the stage but ignores it. | `pg_connection.rs` (`stage == PROD_STAGE`); `redis_connection.rs` (`create_redis_pool`); `PROD_STAGE`/`TEST_STAGE` in `crates/shine-infra/src/web/config/core_config.rs` | Allowlist the non-TLS stages (`TEST_STAGE`, `local`, `dev`) and require TLS for the rest. |
-| D3 | **`panic = "abort"` on the plain release profile** turns any runtime panic into a process outage. `assert_not_blocking` panics on any pooled `XREAD`/`B*` command; identity has request-path `assert!`s. | `Cargo.toml:152-153`; `services/Dockerfile:36,58`; `redis_commands.rs:91-96`; `auth_handler.rs:461`, `external_login_handler.rs:63` | Scope `abort` to `release-lto` or the wasm build. Make `assert_not_blocking` return an error. |
-| D4 | **Pre-deploy config checks.** `sql_cns` has no default and `server_config.prod.json` has no `db` block; Redis below 6.2 is only noted in a comment (`XRANGE (id`). | `services/builder/src/repositories/db.rs:13`; `services/builder/server_config.prod.json`; `repositories/command_inbox/redis/inbox.rs:67-70`; `redis_check.rs:6` | Confirm Key Vault supplies `sqlCns` (with `sslmode=require`) and `redisCns` (a `rediss://` URL is not required: the Redis TLS check is disabled because fly.io uses WireGuard). Confirm the Azure Redis version is at least 6.2. |
-| D5 | **Migration replaced instead of added.** `V1__commands.sql` deleted, `V1__command_log.sql` added, and V1 was also edited in place. | `services/builder/sql_migrations/` | If any shared database ran main's V1, add a `V2` that drops the old table; otherwise reset those databases. |
-| D6 | **Service migrations run under the 10 s `statement_timeout`.** `PgConnection::migrate` lifts it, but both services call `runner().run_async` directly. A failed `RESET` also masks the migration error. | `services/builder/src/repositories/db.rs:37-42`; `services/identity/src/repositories/db.rs:42-47`; `pg_connection.rs:146-151,313` | Route service migrations through `PgConnection::migrate`. Report the migration error before the `RESET` error. |
-| D7 | **Config is not validated.** A huge heartbeat wraps to a negative TTL and `EXPIRE` with it deletes the key; zero is accepted. | `app_state.rs:56`; `repositories/hub_registry/redis/redis_hub_registry.rs:81,134` | Clamp and validate at start-up; cross-check session check and heartbeat against the TTL. |
-| D8 | **Agent git-deny hook removed.** The `PreToolUse` deny for `git add/commit/push` is gone from `.claude/settings.json` and nothing in `CLAUDE.md` replaces it. | `.claude/settings.json`; `.claude/CLAUDE.md:104-105` | Restore the hook, or state the removal is intended and put the rule in `CLAUDE.md`. |
+| D1 ✅ | **Fixed.** The prod TLS check used to parse the raw connection string, and tokio-postgres refuses `pool_timeout` and `max_size`, so prod start-up would abort. The check now lives in `create_postgres_pool(stage, cns)`, runs after the pool params are taken, and tests `sslmode` with `ConnectionString::check_property`. `check_postgres_tls` is deleted. | `crates/shine-infra/src/db/postgres/pg_connection.rs` (`create_postgres_pool`), `crates/shine-infra/src/db/cns_param.rs` (`check_property`) | None. |
+| D2 ✅ | **Intentional, no action.** Only the literal `prod` stage requires TLS (`sslmode=require` for Postgres). `local` and `test` run against local or CI databases. The stage must match an existing `server_config.<stage>.json` (only `local`, `test` and `prod` exist), so a typo fails at config load instead of skipping the check. Redis has no TLS check for now (fly.io reaches it over WireGuard, which does not support `rediss://`); `create_redis_pool` takes the stage but ignores it. Convention to keep: a new stage that points at a hosted database needs its own TLS check. | `pg_connection.rs` (`stage == PROD_STAGE`); `redis_connection.rs` (`create_redis_pool`); `PROD_STAGE`/`TEST_STAGE` in `crates/shine-infra/src/web/config/core_config.rs` | None. |
+| D3 ✅ | **Intentional, no action.** `panic = "abort"` on the release profile is deliberate: unwinding is risky, and the platform restarts the service. The working assumption is that a panic never happens; one in prod is a critical bug to fix as soon as possible, not a condition to survive. Known panic sites are programmer-error guards (`assert_not_blocking` on a pooled `XREAD`/`B*` command, request-path `assert!`s in identity) and are accepted on that basis. | `Cargo.toml:152-153`; `services/Dockerfile:36,58`; `redis_commands.rs:91-96`; `auth_handler.rs:461`, `external_login_handler.rs:63` | None. Findings that only mattered when a panic is survived are moot (L11) or narrowed (R6, R12). |
+| D4 ✅ | **No action.** `sql_cns` and `redis_cns` have no defaults and `server_config.prod.json` has no `db` block, so they come from Key Vault. A missing value fails config load and the service stops at start-up, so no extra check or test is needed. The Redis minimum version is enforced too: `check_redis` fails start-up below 6.2 (`MIN_REDIS_VERSION`, needed for `XRANGE (id` and `XTRIM MINID`), and the builder calls it in `main.rs`. | `services/builder/src/repositories/db.rs:13`; `services/builder/server_config.prod.json`; `crates/shine-infra/src/db/redis/redis_check.rs` | None. |
+| D5 ✅ | **Intentional, no action.** `V1__commands.sql` was deleted, `V1__command_log.sql` added, and V1 was also edited in place. The databases that ran main's V1 have been purged, so no `V2` that drops the old table is needed. Convention to keep: once a V1 has run on a database that is not purged, change it only with a new migration. | `services/builder/sql_migrations/` | None. |
+| D6 ✅ | **Fixed.** Service migrations ran under the 10 s `statement_timeout` because both services called `runner().run_async` directly. Both now call `PgConnection::run_migrations(runner)`, which lifts the timeout for the run, restores it, and reports the migration error before a failed `RESET`. `PgConnection::migrate(name, sql)` (unused) delegates to it. The services keep their embedded runner, so the `refinery_schema_history` table and version numbers are unchanged; calling `migrate(name, sql)` would have switched to a `__migration__<name>` table and re-run identity's V1-V6. | `crates/shine-infra/src/db/postgres/pg_connection.rs` (`run_migrations`); `services/builder/src/repositories/db.rs`; `services/identity/src/repositories/db.rs` | None. Not covered by a test: it needs a database. |
+| D7 ✅ | **No action.** Config is trusted. The TTL is `heartbeat * 3` with `saturating_mul`; it only wraps to a negative `EXPIRE` for a heartbeat of about 3x10^18 seconds, which no real config has. A zero heartbeat or session check does not run silently: `time::interval(0)` in `connection_tracker.rs:112` panics when the hub starts, and under `panic = "abort"` (D3) that stops the service at start-up. | `app_state.rs:56`; `repositories/hub_registry/redis/redis_hub_registry.rs:81,134`; `services/hub/tasks/connection_tracker.rs:112` | None. |
 
 ---
 
@@ -186,9 +184,9 @@ A malformed entry waits for a later valid store; a failed trim is only warned (`
 
 Only the append transaction sets `lock_timeout`/`idle_in_transaction` (`pg/append.rs:20`). A hung query stalls the persistence task, `in_flight` never resolves, the optimistic tail fills to `relay_max_pending` and pushes go `Busy`. `drain` would also wait forever (bounded only by the registry shutdown timeout). Fix: `statement_timeout` for the stream log connections (see D6 for the migration side).
 
-### L11. Poisoned registry mutex (Low)
+### L11 ✅. Poisoned registry mutex (Moot)
 
-`StreamRegistry` uses `std::sync::Mutex` with `.lock().unwrap()` everywhere and runs `spawn` under it (`stream_registry.rs:267`); a panic while held poisons it and every later call panics, including the Redis wake handler. Fix: do not spawn under the lock; recover from poison or use a non-poisoning lock.
+`StreamRegistry` uses `std::sync::Mutex` with `.lock().unwrap()` everywhere and runs `spawn` under it (`stream_registry.rs:267`). Poisoning needs a panic while the lock is held; under `panic = "abort"` (D3) the process dies instead, so there is no poisoned state to handle. No action.
 
 ### L12. Rolling deploys and command codec (Low)
 
@@ -289,8 +287,7 @@ Fix: default `ping_enabled` to `false`; restrict ping to an operator role; rejec
 
 ### R1. Transient errors escalate to worker death and reload storms (Medium)
 
-- `ingest` errors (a Redis pool timeout) and any `PersistResult::Failed` (PG pool timeout 2 s, `Contention` after 8 attempts, a single failed read) call `give_up` (`stream_worker.rs:287,309,356`): all subscribers get `Unsynced` and are cleared, the worker ends, and the optimistic tail is discarded. No retry/backoff before giving up. A relay-task panic sends no `streamUnsynced` (`stream_worker.rs:99-107,147-152`).
-- Nothing restarts a dead worker: `registry.wake` only wakes an existing worker, and `push` still accepts commands because it checks only `is_open` (`stream_registry.rs:203-236`). Until clients resubscribe, commands pile up in the inbox up to the high mark, then pushers are dropped `Busy`.
+- `ingest` errors (a Redis pool timeout) and any `PersistResult::Failed` (PG pool timeout 2 s, `Contention` after 8 attempts, a single failed read) call `give_up` (`stream_worker.rs:287,309,356`): all subscribers get `Unsynced` and are cleared, the worker ends, and the optimistic tail is discarded. No retry/backoff before giving up.- Nothing restarts a dead worker: `registry.wake` only wakes an existing worker, and `push` still accepts commands because it checks only `is_open` (`stream_registry.rs:203-236`). Until clients resubscribe, commands pile up in the inbox up to the high mark, then pushers are dropped `Busy`.
 - After a Redis/PG blip, every stream on the instance gives up at once and all clients resubscribe together, each worker reloading snapshot plus tail from Postgres (thundering herd; amplifies A1).
 
 Fix: retry transient errors (bounded, jittered) inside the relay/persistence loops and give up only on structural errors (`Corrupt`, `SnapshotDiverged`, repeated failure); have `push`/wake restart a worker for streams with open connections; add jitter to client resubscribe.
@@ -318,7 +315,7 @@ The `(usize,)` parse fails on a nil reply (`redis_hub_registry.rs:99,203`), so t
 - `hub_service.rs:193`: the `StreamDispatcher` join handle is discarded. On `HubEvent::Shutdown` it runs `registry.shutdown(shutdown_timeout)` (default 10 s, `tasks/stream_dispatcher.rs`) to persist pending work, but `shutdown_complete` (`:505`) is signalled without waiting for it.
 - `crates/shine-infra/src/web/web_app.rs:88-110,150-155`: `run_web_app` returns once axum finishes serving. The hub closes every socket during shutdown, so the server finishes quickly and the runtime is dropped, aborting the dispatcher mid-persist. Plain-HTTP mode has no 10 s cap either.
 - `shutdown()` (`hub_service.rs:758-763`) deregisters connections one at a time, each a pool checkout, WATCH transaction and PUBLISH; at 10k connections this is tens of seconds, beyond the 10 s grace window, leaving stale rows for 900 s and publishing N change events to other nodes.
-- `.expect("hub dispatcher dropped its shutdown signal")` (`hub_service.rs:402-406`) panics a caller if the loop task died (R6). A hub dropped without `Shutdown` leaks its tasks.
+- `.expect("hub dispatcher dropped its shutdown signal")` (`hub_service.rs:402-406`) panics a caller if the loop task ended (R6); by D3 that is a process abort, so it is only worth replacing with an error if the loop ending early is considered possible. A hub dropped without `Shutdown` leaks its tasks.
 
 Impact: buffered stream commands not yet persisted to the log can be lost at deploy or restart (the Redis inbox may still hold them; the log append is what is at risk), and registry rows are left until the 900 s TTL.
 
@@ -327,10 +324,11 @@ Fix: keep the dispatcher handle and join it (bounded) before `shutdown_complete.
 ### R6. Unsupervised background tasks (Medium)
 
 - `hub_service.rs:186-195`: `Heartbeat`, `SessionChecker`, the registry listener and `StreamDispatcher` are bare `tokio::spawn`s. Handles are joined only at shutdown (`:497-503`) and the dispatcher's handle is dropped (if it dies, stream subscriptions silently stop while the hub keeps buffering events for it in an unbounded channel).
-- If `SessionChecker` panics, its subscription receiver drops; `Subscribers::publish` (`hub_subscribers.rs:36-46`) prunes it with only an `error!` log. Session revocation then stops being enforced for all live sockets with no alarm (`tasks/connection_tracker.rs:72,85`).
-- If the command loop (`:466-506`) panics, `control_rx` is dropped, every `request_*` returns `SendCommandFailed`, existing sockets stay open and un-cleaned, status stays healthy, and `wait_shutdown_complete` panics.
+- Panics are out of scope (D3: a panic aborts the process and the service restarts). What remains is a task that ends without panicking, for example returning early on an error or a closed channel.
+- If `SessionChecker` ends that way, its subscription receiver drops; `Subscribers::publish` (`hub_subscribers.rs:36-46`) prunes it with only an `error!` log. Session revocation then stops being enforced for all live sockets with no alarm (`tasks/connection_tracker.rs:72,85`).
+- If the command loop (`:466-506`) returns, `control_rx` is dropped, every `request_*` returns `SendCommandFailed`, existing sockets stay open and un-cleaned, and status stays healthy.
 
-Fix: spawn through a supervisor (restart consumers, or trip the health check and exit the process on loop failure); expose `HubStatus` liveness of each task.
+Fix: have the tasks that must live as long as the process (command loop, session checker, dispatcher) exit the process, or trip the health check, when they end unexpectedly; expose `HubStatus` liveness of each task.
 
 ### R7. Session checker is sequential and extends the session TTL (Medium)
 
@@ -360,7 +358,7 @@ Fix: bounded-concurrency checks (`buffer_unordered(32)`) or a batched lookup; re
 
 ### R12. No drop guard (Low)
 
-A cancelled or panicking socket task leaves its entry registered (`routes/ws/connect.rs:117-232`). Fix: a guard that requests disconnection.
+A cancelled socket task (for example when the `serve_socket` future is dropped) leaves its entry registered (`routes/ws/connect.rs:117-232`). A panicking task is not a case here: it aborts the process (D3). Fix: a guard that requests disconnection.
 
 ### R13. Lifecycle events fan out to every socket (Low)
 
@@ -437,11 +435,11 @@ Every command carries the sender's raw `user_id` (`routes/ws/message.rs:46`); us
 
 | Gap | Where |
 |---|---|
-| Stress tests are small (12 to 48 users) and run with heartbeat, session check and dispatcher idle at 3600 s, so scale, cascades, loop panic and Redis flush are untested. | `testing/hub/test_hub.rs:30,44`; `services/hub/tests/contention.rs:128,199,310,524` |
+| Stress tests are small (12 to 48 users) and run with heartbeat, session check and dispatcher idle at 3600 s, so scale, cascades, a command loop that ends early and Redis flush are untested. | `testing/hub/test_hub.rs:30,44`; `services/hub/tests/contention.rs:128,199,310,524` |
 | Missing fault and race cases: listener failure, `WATCH` conflict, half-open or oversized frames, id regression; fixed sleeps and `tick * N` waits remain. | `services/hub/tests/fault.rs`; `contention.rs:513,582`; `lifecycle.rs:440,479`; `routes/ws/connect_test.rs:294`; `stream_worker_test.rs:120,271` |
 | Mutation blind spots: the close-code test compares the constant to itself, no test drives `AppState` wiring, the `SEND_DRAIN_TIMEOUT` abort is untested. | `routes/ws/connect_test.rs:104-112`; `app_state.rs:56`; `connect.rs:65,228` |
-| Rust, `shine-infra`: the prod TLS check is tested for rejections only (no database needed); there is no test for odd stage names (D2) or for accepting `sslmode=require` through the pool. | `crates/shine-infra/src/db/postgres/pg_connection.rs` |
-| Rust, builder: the stale-instance identical-content race (L1), a duplicate resent command (L3), `ConnectUser` registry failure (R10), inbox push at the hard limit returns `Full` (A4), and `ensure_stream` plus migration against a database that has main's V1 (D5). | `services/builder/src/services/command_stream/` |
+| Rust, `shine-infra`: the prod TLS check is tested for rejections only (no database needed); there is no test for accepting `sslmode=require` through the pool. | `crates/shine-infra/src/db/postgres/pg_connection.rs` |
+| Rust, builder: the stale-instance identical-content race (L1), a duplicate resent command (L3), `ConnectUser` registry failure (R10), inbox push at the hard limit returns `Full` (A4), and `ensure_stream` (L8). | `services/builder/src/services/command_stream/` |
 | Rust, `shine-game` `client_stream`: mid-batch gap, a command that fails to decode, a checkpoint mismatch while `Waiting`, overlapping `Sync` tails, trailing snapshot bytes, `HASH_HISTORY` eviction at 256, a `failed` nack on a known pending command, a command folded into the snapshot but absent from the tail. | `crates/shine-game/tests/replica/client_stream.rs` |
 | TypeScript: only two tests exist for the hub. Missing: stale live after reconnect, a hang in waiting, an immediate close after open with growing delay, `connect()` twice, the `unsynced` timer re-arming, `resync()` while closed or replaced. Nothing tests the pixel map experiment's stream handling. | `client/web/src/engine/net/websocket-stream-hub.test.ts` |
 | `shine-test` panic hook exits the whole run on a background-thread panic; a test that expects a spawned-task panic cannot exist. The fuzz CI job uses an unpinned nightly and an uncached `cargo install`. | `crates/shine-test/src/lib.rs` (~65-84); `.github/workflows/fuzz_ci.yml` |

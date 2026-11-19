@@ -42,8 +42,7 @@ pub async fn create_redis_pool(stage: &str, config: &DBConfig) -> Result<RedisCo
 async fn migrate_postgres(postgres: &PgConnectionPool) -> Result<(), PgError> {
     let mut backend = postgres.get().await.map_err(PgError::PoolError)?;
     tracing::trace!("migrations: {:#?}", embedded::migrations::runner().get_migrations());
-    let client = &mut **backend;
-    let report = embedded::migrations::runner().run_async(client).await?;
+    let report = backend.run_migrations(embedded::migrations::runner()).await?;
     let applied = report
         .applied_migrations()
         .iter()

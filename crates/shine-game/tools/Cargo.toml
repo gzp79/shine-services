@@ -4,6 +4,9 @@ version.workspace = true
 edition.workspace = true
 description = "Developer tools of shine-game (code generators). Desktop only, not built for wasm."
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "shine-game-tools"
 path = "src/main.rs"

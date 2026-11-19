@@ -11,7 +11,7 @@ use crate::{
 use async_trait::async_trait;
 use bb8::{ManageConnection, Pool as BB8Pool, PooledConnection, RunError};
 use bb8_postgres::PostgresConnectionManager;
-use refinery::{Migration, Runner};
+use refinery::{Migration, Report, Runner};
 use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -143,14 +143,25 @@ impl PgConnection<PgRawClient> {
         let mut runner = Runner::new(&migrations);
         runner.set_migration_table_name(format!("__migration__{name}"));
 
-        // Migrations can legitimately run longer than the session's statement_timeout; lift
-        // it for the run and restore.
+        self.run_migrations(runner).await?;
+        Ok(())
+    }
+
+    /// Runs the migrations of a (usually embedded) `runner` with its own migration table settings.
+    ///
+    /// Migrations can legitimately run longer than the session's `statement_timeout`, so it is lifted
+    /// for the run and restored afterwards. This is the only place allowed to call the refinery runner
+    /// directly (see `disallowed-methods` in `clippy.toml`).
+    #[allow(clippy::disallowed_methods)]
+    pub async fn run_migrations(&mut self, runner: Runner) -> Result<Report, PgError> {
         self.client.batch_execute("SET statement_timeout = 0").await?;
         let result = runner.run_async(&mut self.client).await;
-        self.client.batch_execute("RESET statement_timeout").await?;
+        let reset = self.client.batch_execute("RESET statement_timeout").await;
 
-        result.map_err(PgError::SqlMigration)?;
-        Ok(())
+        // The migration error is the one that matters, report it before a failed restore.
+        let report = result.map_err(PgError::SqlMigration)?;
+        reset?;
+        Ok(report)
     }
 
     #[inline]
