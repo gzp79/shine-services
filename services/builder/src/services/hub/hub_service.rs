@@ -23,6 +23,7 @@ use crate::{
         StreamAuthorizeService, StreamEgress,
     },
 };
+use futures::{stream, StreamExt};
 use opentelemetry::trace::SpanContext;
 use serde::{Deserialize, Serialize};
 use shine_game::replica::StreamId;
@@ -205,6 +206,12 @@ impl HubServiceBuilder {
         Ok(service)
     }
 }
+
+/// Registry rows removed at the same time on shutdown.
+const SHUTDOWN_REGISTRY_CONCURRENCY: usize = 32;
+
+/// Longest the registry cleanup of a shutdown takes. The rows left behind expire with their TTL.
+const SHUTDOWN_REGISTRY_TIMEOUT: Duration = Duration::from_secs(5);
 
 type ControlMessage = (ControlCommand, SpanContext, Instant);
 
@@ -414,10 +421,9 @@ impl HubService {
     pub async fn wait_shutdown_complete(&self) {
         let mut shutdown_complete = self.inner.shutdown_complete.clone();
         while !*shutdown_complete.borrow_and_update() {
-            shutdown_complete
-                .changed()
-                .await
-                .expect("hub dispatcher dropped its shutdown signal");
+            if shutdown_complete.changed().await.is_err() {
+                return;
+            }
         }
     }
 
@@ -767,15 +773,36 @@ impl HubService {
             .await;
         self.inner.subscribers.clear().await;
 
-        if let Err(err) = self.inner.hub_registry.unlisten_registry_changes().await {
-            tracing::warn!("Failed to stop listening to hub registry changes: {err:#?}");
-        }
+        // The sockets are told first, whatever state the registry is in.
+        let dropped: Vec<(Uuid, Uuid)> = self
+            .inner
+            .connections
+            .remove_all()
+            .await
+            .into_iter()
+            .map(|removed| self.record_drop(removed, DisconnectReason::Shutdown))
+            .collect();
 
-        for removed in self.inner.connections.remove_all().await {
-            let (user_id, connection_id) = self.record_drop(removed, DisconnectReason::Shutdown);
-            if let Err(err) = self.remove_registry_connection(user_id, connection_id).await {
-                tracing::warn!("[{user_id}] Failed to remove hub connection on shutdown (TTL will clean up): {err:#?}");
+        // Side by side and within a time limit: a slow registry would otherwise cost every connection its
+        // own wait one after the other, and the process may be killed before it is done.
+        let cleanup = async {
+            if let Err(err) = self.inner.hub_registry.unlisten_registry_changes().await {
+                tracing::warn!("Failed to stop listening to hub registry changes: {err:#?}");
             }
+            stream::iter(dropped)
+                .for_each_concurrent(SHUTDOWN_REGISTRY_CONCURRENCY, |(user_id, connection_id)| async move {
+                    if let Err(err) = self.remove_registry_connection(user_id, connection_id).await {
+                        tracing::warn!(
+                            "[{user_id}] Failed to remove hub connection on shutdown (TTL will clean up): {err:#?}"
+                        );
+                    }
+                })
+                .await;
+        };
+        if tokio::time::timeout(SHUTDOWN_REGISTRY_TIMEOUT, cleanup).await.is_err() {
+            tracing::warn!(
+                "The registry cleanup did not finish within {SHUTDOWN_REGISTRY_TIMEOUT:?}, TTL will clean up"
+            );
         }
     }
 

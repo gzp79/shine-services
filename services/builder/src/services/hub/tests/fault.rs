@@ -176,3 +176,44 @@ async fn an_outage_keeps_live_connections_and_rejects_new_ones() {
 
     test.cleanup_connection(user, connection).await;
 }
+
+/// A slow registry must not make a shutdown take as long as all the connections added up: the sockets are
+/// told at once and the rows are removed side by side.
+#[test(serial = "hub-service")]
+async fn shutdown_with_a_slow_registry_takes_no_longer_than_one_round_of_removals() {
+    const USERS: usize = 30;
+    const LATENCY_MS: u64 = 300;
+
+    let toxiproxy = Toxiproxy::from_env();
+    let _reset = toxiproxy.reset_guard().await;
+
+    let mut test = TestHub::default_from_env().await;
+    let users: Vec<Uuid> = (0..USERS).map(|_| Uuid::new_v4()).collect();
+    let mut receivers: Vec<_> = users.iter().map(|user| test.connect_ping(*user, 8).1).collect();
+    test.wait_all_commands().await;
+
+    let proxy = toxiproxy.proxy("redis").await;
+    proxy
+        .add_toxic(&Toxic::latency("slow", Stream::Downstream, LATENCY_MS))
+        .await;
+
+    let started = std::time::Instant::now();
+    test.hub.request_shutdown().unwrap();
+    test.wait_for_shutdown_events().await;
+    test.wait_shutdown_complete().await;
+    let took = started.elapsed();
+    proxy.remove_toxic("slow").await;
+
+    assert!(
+        took < Duration::from_secs(5),
+        "the shutdown took {took:?}, the removals ran one after the other ({USERS} x {LATENCY_MS} ms at least)"
+    );
+    for rx in &mut receivers {
+        rx.drain()
+            .assert_closed()
+            .assert_disconnects(&[DisconnectReason::Shutdown]);
+    }
+    for user in users {
+        assert_eq!(test.find_connection_by_user(user).await, None, "a registry row is left");
+    }
+}

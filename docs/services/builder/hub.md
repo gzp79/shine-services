@@ -96,7 +96,7 @@ flowchart LR
 | `DisconnectUser` | Connection API, heartbeat, session checker | Remove the connection if its id still matches (CAS). |
 | `DropConnection` | Egress senders that hit a dead channel | Force-remove the connection by id. |
 | `HubRegistryChanged` | Redis registry-change listener | Recheck the user's active connection against the registry. |
-| `Shutdown` | Connection API (`request_shutdown`) | Publish `Shutdown` and stop the loop. |
+| `Shutdown` | Connection API (`request_shutdown`) | Publish `Shutdown`, close every socket at once, then remove the registry rows side by side (32 at a time) within 5 s; rows left behind expire with their TTL. Stops the loop. |
 
 ### Lifecycle events
 

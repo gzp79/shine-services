@@ -57,7 +57,7 @@ Severity: **Blocker** = fix before a prod deploy; High / Medium / Low as assesse
 | R2 | Medium | availability | Hub command loop does Redis I/O inline; serial, no timeouts, unbounded queue |
 | R3 ✅ | Intentional | availability | Reconnect storm after a Redis flush (missing registry row = inactive) |
 | R4 ✅ | Fixed | correctness | Aborted `EXEC` becomes an error; takeover detection can be skipped |
-| R5 | Medium | shutdown | Shutdown is not awaited; deregistration is serial |
+| R5 ✅ | Fixed | shutdown | Shutdown was not awaited; deregistration was serial |
 | R6 | Medium | task lifecycle | Hub background tasks and dispatcher are unsupervised |
 | R7 | Medium | scalability / revocation | `SessionChecker` is sequential and extends the session TTL |
 | R8 | Medium | availability | Redis pool keeps dead connections |
@@ -327,17 +327,9 @@ Fix: a short hub-level timeout (1-2 s) around every registry call (compare-and-s
 
 An aborted `EXEC` came back as `Err(Incompatible type ... value was nil)` (checked by forcing it), so the registry-change recheck was skipped. **Fixed:** the heartbeat and the removal are single Lua scripts (`HEARTBEAT`, `REMOVE`, `redis_hub_registry.rs`): atomic, no `WATCH`; the batch runs in chunks of 256 and the removal publishes in the same step. Tests in `redis_hub_registry_test.rs`; no race test (the window cannot be placed from the API; a 200-round attempt on the old code never hit it).
 
-### R5. Shutdown is not awaited (Medium)
+### R5 ✅. Shutdown is not awaited (Fixed)
 
-- `main.rs:50-56`: the shutdown hook only calls `request_shutdown()` (fire and forget). `wait_shutdown_complete` is not called in production code (only in tests).
-- `hub_service.rs:193`: the `StreamDispatcher` join handle is discarded. On `HubEvent::Shutdown` it runs `registry.shutdown(shutdown_timeout)` (default 10 s, `tasks/stream_dispatcher.rs`) to persist pending work, but `shutdown_complete` (`:505`) is signalled without waiting for it.
-- `crates/shine-infra/src/web/web_app.rs:88-110,150-155`: `run_web_app` returns once axum finishes serving. The hub closes every socket during shutdown, so the server finishes quickly and the runtime is dropped, aborting the dispatcher mid-persist. Plain-HTTP mode has no 10 s cap either.
-- `shutdown()` (`hub_service.rs:758-763`) deregisters connections one at a time, each a pool checkout, WATCH transaction and PUBLISH; at 10k connections this is tens of seconds, beyond the 10 s grace window, leaving stale rows for 900 s and publishing N change events to other nodes.
-- `.expect("hub dispatcher dropped its shutdown signal")` (`hub_service.rs:402-406`) panics a caller if the loop task ended (R6); by D3 that is a process abort, so it is only worth replacing with an error if the loop ending early is considered possible. A hub dropped without `Shutdown` leaks its tasks.
-
-Impact: buffered stream commands not yet persisted to the log can be lost at deploy or restart (the Redis inbox may still hold them; the log append is what is at risk), and registry rows are left until the 900 s TTL.
-
-Fix: keep the dispatcher handle and join it (bounded) before `shutdown_complete.send_replace(true)`; have the shutdown hook block (`block_in_place` or an async hook) on `wait_shutdown_complete` with a timeout before the server exits; pipeline or batch deregistration with bounded concurrency; return an error instead of `expect`; weak handles in the loops.
+Most of it was fixed already: the shutdown hook awaits `wait_shutdown_complete` (`main.rs`), the hub keeps and joins the stream dispatcher handle, which bounds the workers' last persist by `stream_shutdown_timeout`. **Fixed now:** `HubService::shutdown` told the sockets and removed the registry rows one at a time, so with a slow Redis every connection cost its own wait (30 connections at 300 ms took 9.4 s, and a Redis outage costs a pool wait each). It now closes every socket first, then removes the rows 32 at a time within `SHUTDOWN_REGISTRY_TIMEOUT` (5 s), the rest expires with the TTL. `wait_shutdown_complete` no longer panics (`expect`) if the loop task is gone, it returns. Test: `shutdown_with_a_slow_registry_takes_no_longer_than_one_round_of_removals` (`fault.rs`, toxiproxy latency), failed before with 9.4 s. Not done: the hook itself has no time limit, it relies on the two bounds above.
 
 ### R6. Unsupervised background tasks (Medium)
 
