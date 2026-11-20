@@ -375,11 +375,32 @@ const DEFAULT_STATEMENT_TIMEOUT_MS: u64 = 10_000;
 /// `tcp_user_timeout`.
 const DEFAULT_TCP_USER_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Keepalive probes, applied unless the connection string sets them. An idle connection to a server that is
+/// gone (a failover, a dropped NAT entry) gives no error, and tokio-postgres starts to probe only after 2
+/// hours, so the first query that uses it would wait for the TCP user timeout and fail. With these a dead idle
+/// connection is found, and replaced by the pool, in about a minute.
+const DEFAULT_KEEPALIVE_IDLE: Duration = Duration::from_secs(30);
+const DEFAULT_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(10);
+const DEFAULT_KEEPALIVE_RETRIES: u32 = 3;
+
+/// The idle time tokio-postgres starts with. It cannot be told from one that was set, so a connection string
+/// that sets exactly this keeps the new default.
+const TOKIO_POSTGRES_KEEPALIVE_IDLE: Duration = Duration::from_secs(2 * 60 * 60);
+
 /// Applies the session defaults to `pg_config`, without overriding anything the connection
 /// string already set explicitly.
 fn apply_session_timeouts(pg_config: &mut PgConfig) {
     if pg_config.get_tcp_user_timeout().is_none() {
         pg_config.tcp_user_timeout(DEFAULT_TCP_USER_TIMEOUT);
+    }
+    if pg_config.get_keepalives_idle() == TOKIO_POSTGRES_KEEPALIVE_IDLE {
+        pg_config.keepalives_idle(DEFAULT_KEEPALIVE_IDLE);
+    }
+    if pg_config.get_keepalives_interval().is_none() {
+        pg_config.keepalives_interval(DEFAULT_KEEPALIVE_INTERVAL);
+    }
+    if pg_config.get_keepalives_retries().is_none() {
+        pg_config.keepalives_retries(DEFAULT_KEEPALIVE_RETRIES);
     }
     let statement_timeout = format!("-c statement_timeout={DEFAULT_STATEMENT_TIMEOUT_MS}");
     match pg_config.get_options() {
