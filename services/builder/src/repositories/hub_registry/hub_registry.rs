@@ -18,22 +18,20 @@ pub trait HubRegistry {
         connection_id: Uuid,
     ) -> impl Future<Output = Result<(), HubError>> + Send;
 
-    /// Extends the heartbeat TTL for the user only when the provided connection id matches
-    /// the currently active one.
+    /// Heartbeat for one connection, checked against the registry entry of its user. If the entry holds
+    /// the connection id, its TTL is extended. In any other case (the entry is gone, or holds another
+    /// connection id) nothing is written.
     ///
-    /// Returns `true` when TTL was extended, `false` when no matching active connection exists.
+    /// Returns `true` when the TTL was extended.
     fn heartbeat_connection(
         &mut self,
         user_id: Uuid,
         connection_id: Uuid,
     ) -> impl Future<Output = Result<bool, HubError>> + Send;
 
-    /// Batched heartbeat for a set of locally-tracked connections. Extends the TTL of every
-    /// registry entry that still holds the provided connection id, and reports the connections
-    /// the registry no longer holds as active so the caller can disconnect them.
+    /// Heartbeat for many locally-tracked connections at once, each as in [`Self::heartbeat_connection`].
     ///
-    /// Returns the subset of `connections` whose registry entry is missing or holds a different
-    /// connection id (i.e. the ones to disconnect locally).
+    /// Returns the connections whose TTL was not extended, which the caller disconnects locally.
     fn heartbeat_connections(
         &mut self,
         connections: &[HubConnection],

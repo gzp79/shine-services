@@ -55,8 +55,8 @@ Severity: **Blocker** = fix before a prod deploy; High / Medium / Low as assesse
 | **Availability and robustness** | | | |
 | R1 ✅ | Fixed | availability | Transient Redis/PG errors killed the worker and unsynced all subscribers; the calls are now retried. Resubscribe jitter moved to C8 |
 | R2 | Medium | availability | Hub command loop does Redis I/O inline; serial, no timeouts, unbounded queue |
-| R3 | Medium | availability | Reconnect storm after a Redis flush (missing registry row = inactive) |
-| R4 | Medium | correctness | Aborted `EXEC` becomes an error; takeover detection can be skipped |
+| R3 ✅ | Intentional | availability | Reconnect storm after a Redis flush (missing registry row = inactive) |
+| R4 ✅ | Fixed | correctness | Aborted `EXEC` becomes an error; takeover detection can be skipped |
 | R5 | Medium | shutdown | Shutdown is not awaited; deregistration is serial |
 | R6 | Medium | task lifecycle | Hub background tasks and dispatcher are unsupervised |
 | R7 | Medium | scalability / revocation | `SessionChecker` is sequential and extends the session TTL |
@@ -99,41 +99,25 @@ Checked and found sound: see [Verified as sound](#verified-as-sound). Test gaps:
 
 ## Prod-deploy blockers
 
-| ID | Finding | Where | Fix |
-|---|---|---|---|
-| D1 ✅ | **Fixed.** The prod TLS check used to parse the raw connection string, and tokio-postgres refuses `pool_timeout` and `max_size`, so prod start-up would abort. The check now lives in `create_postgres_pool(stage, cns)`, runs after the pool params are taken, and tests `sslmode` with `ConnectionString::check_property`. `check_postgres_tls` is deleted. | `crates/shine-infra/src/db/postgres/pg_connection.rs` (`create_postgres_pool`), `crates/shine-infra/src/db/cns_param.rs` (`check_property`) | None. |
-| D2 ✅ | **Intentional, no action.** Only the literal `prod` stage requires TLS (`sslmode=require` for Postgres). `local` and `test` run against local or CI databases. The stage must match an existing `server_config.<stage>.json` (only `local`, `test` and `prod` exist), so a typo fails at config load instead of skipping the check. Redis has no TLS check for now (fly.io reaches it over WireGuard, which does not support `rediss://`); `create_redis_pool` takes the stage but ignores it. Convention to keep: a new stage that points at a hosted database needs its own TLS check. | `pg_connection.rs` (`stage == PROD_STAGE`); `redis_connection.rs` (`create_redis_pool`); `PROD_STAGE`/`TEST_STAGE` in `crates/shine-infra/src/web/config/core_config.rs` | None. |
-| D3 ✅ | **Intentional, no action.** `panic = "abort"` on the release profile is deliberate: unwinding is risky, and the platform restarts the service. The working assumption is that a panic never happens; one in prod is a critical bug to fix as soon as possible, not a condition to survive. Known panic sites are programmer-error guards (`assert_not_blocking` on a pooled `XREAD`/`B*` command, request-path `assert!`s in identity) and are accepted on that basis. | `Cargo.toml:152-153`; `services/Dockerfile:36,58`; `redis_commands.rs:91-96`; `auth_handler.rs:461`, `external_login_handler.rs:63` | None. Findings that only mattered when a panic is survived are moot (L11) or narrowed (R6, R12). |
-| D4 ✅ | **No action.** `sql_cns` and `redis_cns` have no defaults and `server_config.prod.json` has no `db` block, so they come from Key Vault. A missing value fails config load and the service stops at start-up, so no extra check or test is needed. The Redis minimum version is enforced too: `check_redis` fails start-up below 6.2 (`MIN_REDIS_VERSION`, needed for `XRANGE (id` and `XTRIM MINID`), and the builder calls it in `main.rs`. | `services/builder/src/repositories/db.rs:13`; `services/builder/server_config.prod.json`; `crates/shine-infra/src/db/redis/redis_check.rs` | None. |
-| D5 ✅ | **Intentional, no action.** `V1__commands.sql` was deleted, `V1__command_log.sql` added, and V1 was also edited in place. The databases that ran main's V1 have been purged, so no `V2` that drops the old table is needed. Convention to keep: once a V1 has run on a database that is not purged, change it only with a new migration. | `services/builder/sql_migrations/` | None. |
-| D6 ✅ | **Fixed.** Service migrations ran under the 10 s `statement_timeout` because both services called `runner().run_async` directly. Both now call `PgConnection::run_migrations(runner)`, which lifts the timeout for the run, restores it, and reports the migration error before a failed `RESET`. `PgConnection::migrate(name, sql)` (unused) delegates to it. The services keep their embedded runner, so the `refinery_schema_history` table and version numbers are unchanged; calling `migrate(name, sql)` would have switched to a `__migration__<name>` table and re-run identity's V1-V6. | `crates/shine-infra/src/db/postgres/pg_connection.rs` (`run_migrations`); `services/builder/src/repositories/db.rs`; `services/identity/src/repositories/db.rs` | None. Not covered by a test: it needs a database. |
-| D7 ✅ | **No action.** Config is trusted. The TTL is `heartbeat * 3` with `saturating_mul`; it only wraps to a negative `EXPIRE` for a heartbeat of about 3x10^18 seconds, which no real config has. A zero heartbeat or session check does not run silently: `time::interval(0)` in `connection_tracker.rs:112` panics when the hub starts, and under `panic = "abort"` (D3) that stops the service at start-up. | `app_state.rs:56`; `repositories/hub_registry/redis/redis_hub_registry.rs:81,134`; `services/hub/tasks/connection_tracker.rs:112` | None. |
+All closed. Kept short: what is left is a convention to keep, not work.
+
+| ID | Finding | Where |
+|---|---|---|
+| D1 ✅ | **Fixed.** The prod TLS check rejected the pool params and would abort start-up; it now runs in `create_postgres_pool` after the params are taken. | `crates/shine-infra/src/db/postgres/pg_connection.rs`, `db/cns_param.rs` |
+| D2 ✅ | **Intentional.** Only the literal `prod` stage requires TLS (a stage typo fails config load). Redis has no TLS check (fly.io WireGuard). A new stage on a hosted database needs its own TLS check. | `pg_connection.rs`, `redis_connection.rs`, `core_config.rs` |
+| D3 ✅ | **Intentional.** `panic = "abort"` on release: a panic is a critical bug, the platform restarts the service. Known panic sites are programmer-error guards. Findings that only matter when a panic is survived are moot (L11) or narrowed (R6, R12). | `Cargo.toml`, `services/Dockerfile` |
+| D4 ✅ | **No action.** Missing config or Redis < 6.2 stops start-up (`check_redis`, `MIN_REDIS_VERSION`). | `builder/src/repositories/db.rs`, `redis_check.rs` |
+| D5 ✅ | **Intentional.** V1 was replaced in place; the databases were purged. Convention: once a V1 has run on a database that is not purged, change it only with a new migration. | `services/builder/sql_migrations/` |
+| D6 ✅ | **Fixed.** Migrations ran under the 10 s `statement_timeout`; both services now call `PgConnection::run_migrations`, which lifts it for the run. No test (needs a database). | `pg_connection.rs`, both `repositories/db.rs` |
+| D7 ✅ | **No action.** Config is trusted; a zero interval panics at start-up, which D3 turns into a stop. | `app_state.rs`, `connection_tracker.rs` |
 
 ---
 
 ## Stream log correctness
 
-### L1 ✅. Chain hash does not bind command identity: false "stored" verdict loses a command (Fixed)
+### L1 ✅. Chain hash did not bind command identity (Fixed)
 
-- `Command::content_hash` is the stable hash of the command payload only (`crates/shine-game/src/replica/state.rs:9`; e.g. `ChatCommand::stable_hash` hashes text, `PixelMapCommand` hashes x/y/color). `fold_chain_hash(parent, version, content_hash)` (`crates/shine-game/src/replica/stable_hash.rs:54`) adds only the version. `user_id`, `command_id` and `inbox_id` are not in any hash.
-- `repositories/command_log/pg/append.rs:112-131` decides an overlap is "covered" purely by `chain_hash` equality at `head.version` and returns `Ok(head)` without writing; `StreamLogService::append` turns that into `AppendOutcome::Stored` when `head.version == last.version && head.chain_hash == last.chain_hash` (`stream_log_service.rs:124`). The only full-field comparison (`stream_persistence.rs:133-138`) runs on the `Behind` path, not on `Stored`.
-- On `Stored`, the persistence advances its replica with its own commands, and `finish` trims the inbox through the batch's max `inbox_id` (`stream_persistence.rs:297-302`, `stream_log_service.rs:157-164`).
-
-Failure scenario (two instances A and C, both loaded for `chat:global`, log at v10):
-1. User U1 sends "gg" (entry e11), user U2 sends "gg" (e12).
-2. A reads both, appends e11 as v11, trims through e11 (`XTRIM MINID`).
-3. C missed the wake (see L2), and polls only after the trim: it sees only e12 and, from its stale head v10, versions it v11. Payload hashes are equal, so the chain hash equals the log's v11. The append returns "covered", C reports `Stored`, applies e12 on its replica and trims the inbox through e12.
-4. U2's message exists nowhere durable. C keeps appending on top of the log (its baseline hash equals the head hash). C's replica now has U2 as author of v11 while the log has U1, so C and A compute different state hashes. Whichever instance stores the next snapshot first wins `try_store_snapshot`; it only checks the snapshot's `chain_hash` against the command row (`pg/snapshot.rs:109-118`), never the state hash against the commands. If C's snapshot lands first the stored snapshot contradicts the log, and after `prune` removes the older commands (`pg/prune.rs`) nobody can detect it.
-
-For `pixel-map` the collision probability is high (16x32x32 distinct payloads, same payload from many users); for chat it needs the same text. Also applies to one user repeating the same payload (double click).
-
-**Fixed.** `InsertCommands` in `repositories/command_log/pg/append.rs` validates every retained overlapping row against the batch, and now also compares `command_id`, `user_id` and `inbox_id`, not only the version and the two hashes. A batch with the same hashes but another command identity makes the validation fail, the append returns `LogDiverged`, and `StreamLogService::append` takes the `Behind` path: it reads the canonical commands, and the persistence reloads when they differ from its own. Test: `a_batch_with_the_same_hashes_but_another_command_identity_is_diverged` (`pg_command_log_db_test.rs`) covers a differing `command_id`, `user_id` and `inbox_id`, for a batch that covers the head, extends past it, and overlaps only the head. It failed before the change with `Ok(StreamHead { version: 3, .. })`. Full workspace suite: green.
-
-The chain hash itself now binds the command identity too: `fold_chain_hash(parent, version, command_id, user_id, content_hash)` in `crates/shine-game/src/replica/stable_hash.rs` folds both ids in. `CommandEnvelope::new`, `Replica::apply_next`, the relay (`stream_relay.rs`, ingest and `reversion_optimistic`) and the consistency check (`pg/consistency.rs`) all pass them. Because of this, a command from another author or under another id has another chain hash, so an overlap that reaches below the pruning horizon is rejected by the hashes too, not only by the retained-row comparison. Tests: `the_same_content_from_another_author_or_command_id_has_another_chain_hash` and `a_command_of_another_author_with_the_chain_hash_of_the_original_is_rejected_as_diverged` (`crates/shine-game/tests/replica/replica.rs`); both failed before the change. It is a breaking change of the hash definition: every stored chain hash and snapshot made with the old one is invalid, so purge the databases (see `docs/plans/purge-databases.sql`) and deploy the server and the web client (`shine-game` wasm) together. The web client treats `chainHash` as an opaque hex string, so no TypeScript changed.
-
-The `InsertCommands` row comparison is kept as a second line of defence for `inbox_id`, which the chain hash does not cover.
-
-Related: `snapshot.hash` and `command_hash` are now verified on load (L4); `try_store_snapshot` still checks only the snapshot's `chain_hash`.
+The chain hash covered only the payload and version, so an append of identical content from another user or id looked "covered", reported `Stored`, and lost the command. **Fixed:** `InsertCommands` also compares `command_id`, `user_id` and `inbox_id` (a mismatch is `LogDiverged`, taking the `Behind` path), and `fold_chain_hash` now folds `command_id` and `user_id` in. Breaking change of the hash: stored chain hashes and snapshots are invalid, purge the databases (`docs/plans/purge-databases.sql`) and deploy server and web client together. Tests: `a_batch_with_the_same_hashes_but_another_command_identity_is_diverged` (`pg_command_log_db_test.rs`), `the_same_content_from_another_author_or_command_id_has_another_chain_hash` and `a_command_of_another_author_with_the_chain_hash_of_the_original_is_rejected_as_diverged` (`crates/shine-game/tests/replica/replica.rs`).
 
 ### L2. Persisted wakes are ignored: stale instances never reconcile (Low with one instance, Medium with several)
 
@@ -186,21 +170,13 @@ The audit named three ways to be late. Only the first is real:
 - Where the highest persisted version lives: on `StreamWorker` next to `wake`, read by the relay loop.
 - Whether a reconcile may be sent while a persistence is in flight (the loop currently allows one in-flight request); the proposal waits for it to finish.
 
-### L3 ✅. No command dedup: retries, resends and leftovers duplicate commands (Intentional)
+### L3 ✅. No command dedup (Intentional)
 
-**Intentional, no action.** `command_id` belongs to the client: the server treats it as an opaque placeholder and does not check it for uniqueness. If a client sends the same id twice, that is a client issue, as long as every client interprets it the same way. The log stores each command it is given once per `(stream, version)`, and the chain hash binds the id (L1), so a repeat is a new, ordered command, not a corruption. Consequences accepted with this: a client that resends a pending command after a sync or a `failed` nack can get it applied twice (chat `Add` shown twice with the same message id), and a user can reuse another message's id (`Remove`/`Replace` target the first match; `find_own` still blocks edits of other users' messages). No dedup is added in the relay, the log or the inbox script (A4).
+`command_id` is a client-owned placeholder; the server does not check it for uniqueness. A repeat is a new, ordered command (the chain hash binds the id, L1). Accepted: a resent pending command can be applied twice, and a user can reuse another message's id (`find_own` still blocks edits of other users' messages). No dedup in the relay, log or inbox script (A4). `drain()` reading one inbox page moved to L5.
 
-The one part that is not about ids, `drain()` reading a single inbox page on shutdown, moved to L5.
+### L4 ✅. Replay trusted stored hashes (Fixed)
 
-### L4 ✅. Replay trusts stored hashes (Fixed)
-
-**Fixed.** Two hashes were trusted on load, both are now recomputed and a mismatch is `CommandStreamError::Corrupt`:
-- `StoredCommand::to_envelope` (`command_log_types.rs`) hashes the decoded command again (`content_hash()`) and compares it with the stored `command_hash`. Before, `apply_next` only checked that the chain folds from the stored value, so a row whose `data` did not match its `command_hash` replayed silently. This covers every replay: the load and the canonical replay in `StreamPersistence::apply`.
-- `StreamPersistence::rebuild` (`stream_persistence.rs`) compares `replica.hash()` of the restored snapshot state with the stored `snapshot.hash`.
-
-Tests (`stream_persistence_test.rs`): `a_command_whose_data_does_not_match_its_stored_hash_is_corrupt_on_load` (the forged row has a consistent chain, so only the new check catches it) and `a_snapshot_whose_state_does_not_match_its_stored_hash_is_corrupt_on_load`. Both loaded without error before the change. Full workspace suite: green.
-
-Not done: a `Corrupt` load makes the worker give up (`PersistResult::Failed`); falling back to an older snapshot is not implemented. `try_store_snapshot` still checks only the snapshot's `chain_hash` against the command row, not its state hash against an independent replay.
+`StoredCommand::to_envelope` now recomputes `command_hash`, and `StreamPersistence::rebuild` compares the restored state hash with `snapshot.hash`; a mismatch is `CommandStreamError::Corrupt`. Tests in `stream_persistence_test.rs`. Not done: a `Corrupt` load gives the worker up (no fallback to an older snapshot), and `try_store_snapshot` still checks only the snapshot's `chain_hash`.
 
 ### L5. Worker replacement overlap and shutdown blind spot (Low)
 
@@ -332,16 +308,7 @@ Fix: default `ping_enabled` to `false`; restrict ping to an operator role; rejec
 
 ### R1 ✅. Transient errors escalate to worker death and reload storms (Fixed)
 
-**Fixed.** A failure that may pass no longer gives the stream up at once:
-- Redis: `StreamRelay::poll_inbox` retries a transient inbox read (`inbox_max_retries`, `inbox_retry_*_delay`). This was already in the tree when the audit was written; the original text was wrong about it.
-- Postgres: `StreamLogService` retries `head`, `load` (the whole read of snapshot and tail) and the `append` call on `CommandStreamError::ServiceUnavailable` (`log_max_retries`, default 8, `log_retry_min_delay` 100 ms, `log_retry_max_delay` 1 s, jittered). Repeating an append is safe, the log finds a batch that already got through covered (`AppendOutcome::Stored`). Snapshot store, prune and trim stay best effort. `Contention` is not retried: the repository already retries it 8 times.
-- While the persistence retries, the relay serves optimistically up to `relay_max_pending`, then pushes get `Busy`.
-
-Tests (`stream_worker_test.rs`, a `FlakyLog` over the real log): `a_log_that_fails_for_a_moment_does_not_end_the_stream` (appends), `a_log_that_fails_for_a_moment_while_loading_does_not_end_the_stream` (reads), `a_log_that_keeps_failing_ends_the_stream_once_the_retries_are_spent` (bound: first try plus `log_max_retries`). The first two failed before the change (`0 commands persisted, expected 1`; `["unsynced"]` instead of `["sync:0"]`). Full builder suite: green.
-
-**Not part of this fix.**
-- A worker that gave up is not restarted by the server on its own, but by the next `subscribe` (`StreamRegistry::subscribe` replaces a finished worker). The subscribers get `Unsynced` and the client resubscribes on its timer, so the commands waiting in the inbox are picked up then. A client that never resubscribes is the watchdog gap of C1/C8.
-- After a longer outage every stream on the instance still gives up together and the clients resubscribe on the same fixed 5 s timer, each worker reloading from Postgres. Jitter and backoff on the resubscribe: C8.
+Redis inbox reads already retried (`poll_inbox`, `inbox_max_retries`). **Fixed:** `StreamLogService` now retries `head`, `load` and `append` on `ServiceUnavailable` (`log_max_retries` 8, `log_retry_min_delay` 100 ms, `log_retry_max_delay` 1 s, jittered); a repeated append is safe because the log finds an already stored batch covered. Snapshot store, prune and trim stay best effort; `Contention` is not retried. Tests in `stream_worker_test.rs` (`FlakyLog`): `a_log_that_fails_for_a_moment_does_not_end_the_stream`, `..._while_loading_...`, `a_log_that_keeps_failing_ends_the_stream_once_the_retries_are_spent`. Left to the client: a given-up worker is replaced on the next `subscribe`, and the resubscribe has no jitter (C8).
 
 ### R2. Hub command loop: inline Redis I/O, serial, no timeouts (Medium)
 
@@ -350,15 +317,15 @@ Tests (`stream_worker_test.rs`, a `FlakyLog` over the real log): `a_log_that_fai
 
 Failure scenario: the pool is exhausted (traffic burst or Redis latency). Each loop command can block up to 30 s, so connects, disconnects and slow-consumer drops queue (A3), stale sockets stay in the map, and `Connections` keeps broadcasting to dead channels. Shutdown pays the stall per connection (R5).
 
-Fix: compare-and-set as Lua (also fixes R4), chunked heartbeat, a short hub-level timeout (1-2 s) around every registry call, bounded queue, and either move registry writes off the loop (the in-memory map is authoritative locally; async write with retry) or give the hub a dedicated small Redis pool.
+Fix: a short hub-level timeout (1-2 s) around every registry call (compare-and-set as Lua and the chunked heartbeat are done, R3/R4), bounded queue, and either move registry writes off the loop (the in-memory map is authoritative locally; async write with retry) or give the hub a dedicated small Redis pool.
 
-### R3. Reconnect storm after a Redis flush (Medium)
+### R3 ✅. Reconnect storm after a Redis flush (Intentional)
 
-A missing registry row is treated as inactive, so the heartbeat drops every healthy connection (`redis_hub_registry.rs:87-89,117-139`, `hub_service.rs:712-736`). Fix: re-create the row (`SET NX` plus TTL); drop only when it holds a different connection id.
+**Intentional, no action.** A missing registry row is inactive: after a Redis flush or failover the next heartbeat drops the node's connections and clients reconnect. Redis is the truth about who holds the user and only a connect writes a row. The proposed `SET NX` re-create was rejected: a heartbeat can write a row back for a connection the hub just removed (phantom row until TTL). A Redis restart is rare; if the storm ever matters, spread the reconnects on the client (C8). Pinned by `redis_hub_registry_test.rs` and the lifecycle heartbeat tests.
 
-### R4. Aborted `EXEC` becomes an error (Medium)
+### R4 ✅. Aborted `EXEC` becomes an error (Fixed)
 
-The `(usize,)` parse fails on a nil reply (`redis_hub_registry.rs:99,203`), so takeover detection can be skipped. Fix: the same Lua rewrite as R2.
+An aborted `EXEC` came back as `Err(Incompatible type ... value was nil)` (checked by forcing it), so the registry-change recheck was skipped. **Fixed:** the heartbeat and the removal are single Lua scripts (`HEARTBEAT`, `REMOVE`, `redis_hub_registry.rs`): atomic, no `WATCH`; the batch runs in chunks of 256 and the removal publishes in the same step. Tests in `redis_hub_registry_test.rs`; no race test (the window cannot be placed from the API; a 200-round attempt on the old code never hit it).
 
 ### R5. Shutdown is not awaited (Medium)
 
@@ -457,7 +424,7 @@ Every command carries the sender's raw `user_id` (`routes/ws/message.rs:46`); us
 
 | ID | Finding | Where | Fix |
 |---|---|---|---|
-| O1 ✅ | **Accepted, no action.** `Problem::log` dumps the problem at `error` (5xx) and `info` (4xx), including Postgres and Redis errors and attacker-controlled `Host`/`Origin`, as a multi-line dump per 4xx. This is a documented exception to the "sensitive data: trace only" rule: the dump holds the only root-cause information available in prod (comment in `problem_detail.rs`). `debug` and `trace` are never enabled in prod, but this log is not at those levels, so it is the exception that makes it visible. Revisit when errors carry a safe cause label (for example `pg.connection`, `redis.timeout`), after which the dump can move to `trace`. | `crates/shine-infra/src/web/responses/problem_detail.rs:150-159` | None. |
+| O1 ✅ | **Accepted.** `Problem::log` dumps the problem (Postgres/Redis errors, attacker-controlled `Host`/`Origin`) at `error`/`info`: a documented exception to "sensitive data: trace only", it is the only root-cause information in prod. Revisit when errors carry a safe cause label. | `crates/shine-infra/src/web/responses/problem_detail.rs:150-159` | None. |
 | O2 | **Info-level spans and logs on hot paths.** A per-command hub span with the user id, registry spans, and a session-checker warning per connection per tick. | `hub_service.rs:475`; `redis_hub_registry.rs:53,78,150,174,183`; `tasks/session_checker.rs:51` | `debug`; log once per tick with a count. |
 | O3 | **Start-up self-test lines are counted.** Every restart adds two warn and two error events, so alerts on the metric fire on every deploy. | `crates/shine-infra/src/web/web_app.rs:202-213`; `telemetry_service.rs:109-115` | Exclude them from the counter. |
 | O4 | **Metrics gaps.** No queue depth, rejected connects or registry-error metrics; `notify` bypasses the metrics helper; a full connection gets a repeated `DropConnection` per stream send. | `services/hub/hub_metrics.rs`; `hub_status.rs:25-28`; `hub_connections.rs:44-46` | Add the metrics; dedupe in-flight drops. |

@@ -165,9 +165,9 @@ Three independent mechanisms detect a connection that should no longer be live a
 
 | Mechanism | Trigger | Action |
 |---|---|---|
-| `Heartbeat` | Every `heartbeat` interval. | Batched `heartbeat_connections`: MGET all tracked entries, pipeline an `EXPIRE` for those still holding this id, and return the rest as stale → `request_disconnection` each. |
+| `Heartbeat` | Every `heartbeat` interval. | Batched `heartbeat_connections`: one script call per 256 tracked entries refreshes the TTL of those holding this id and returns the rest (entry gone or held by another connection) as stale → `request_drop` each. |
 | `SessionChecker` | Every `session_check` interval. | Re-validates each tracked `(user_id, session_key)`. On `SessionExpired`/`SessionCompromised` → `request_disconnection`; transient errors skip the tick. |
-| `HubRegistryChanged` | Redis pub/sub from another instance. | Loop rechecks the user's active connection with a CAS'd `heartbeat_connection`; if the registry no longer holds this id, removes it locally and emits `UserDisconnected`. |
+| `HubRegistryChanged` | Redis pub/sub from another instance. | Loop rechecks the user's active connection with a CAS'd `heartbeat_connection`; if the registry does not hold this id, removes it locally and emits `UserDisconnected`. |
 
 ### Cross-instance registry
 
@@ -176,9 +176,9 @@ The Redis registry (`repositories/hub_registry`) extends last-wins beyond a sing
 | Operation | Redis | Semantics |
 |---|---|---|
 | `create_connection` | `SET key id EX ttl` + `PUBLISH` | Overwrites the active id for the user (last write wins) and notifies other instances. |
-| `heartbeat_connection` | WATCH/GET/`EXPIRE` txn | CAS: extends TTL only when the stored id matches. Returns `false` if not active. |
-| `heartbeat_connections` | `MGET` + pipelined `EXPIRE` | Batched, no per-key CAS; compares in memory and returns the entries no longer holding this id. |
-| `remove_connection_if_active` | WATCH/GET/`DEL` txn + `PUBLISH` | CAS: deletes only when both user and id match, then notifies. |
+| `heartbeat_connection` | Lua script (`GET`, `SET EX` / `EXPIRE`) | Atomic CAS: extends the TTL when the stored id matches, writes nothing and returns `false` otherwise (row gone or held by another id). |
+| `heartbeat_connections` | The same Lua script over many rows | Batched in chunks of 256 rows, one round trip per chunk; returns the entries that do not hold this id. A row lost to a Redis restart drops the node's connections, which reconnect (accepted, R3). |
+| `remove_connection_if_active` | Lua script (`GET`, `DEL`, `PUBLISH`) | Atomic CAS: deletes only when both user and id match, and notifies in the same step. |
 
 ## Metrics
 
