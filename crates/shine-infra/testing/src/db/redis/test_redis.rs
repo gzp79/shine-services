@@ -1,5 +1,8 @@
 use crate::db::redis::{get_redis_cns, get_redis_cns_direct};
-use shine_infra::db::redis::{RedisConnectionPool, create_redis_pool};
+use shine_infra::{
+    db::redis::{RedisConnectionPool, create_redis_pool},
+    web::TEST_STAGE,
+};
 
 /// Redis pools of a test: `pool` for the code under test (may go through a fault-injecting proxy) and
 /// `direct_pool` for the test itself to inspect and damage the data, bypassing any proxy.
@@ -12,10 +15,10 @@ pub struct TestRedis {
 impl TestRedis {
     pub async fn from_env() -> Self {
         let cns = get_redis_cns();
-        let pool = create_redis_pool(&cns).await.unwrap();
+        let pool = create_redis_pool(TEST_STAGE, &cns).await.unwrap();
 
         let cns = get_redis_cns_direct();
-        let direct_pool = create_redis_pool(&cns).await.unwrap();
+        let direct_pool = create_redis_pool(TEST_STAGE, &cns).await.unwrap();
         Self { pool, direct_pool }
     }
 

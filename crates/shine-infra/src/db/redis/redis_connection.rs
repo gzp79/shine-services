@@ -293,7 +293,7 @@ impl StatusProvider for RedisPoolStatus {
 ///   connect and per-command response timeout (default: redis-rs defaults, 1s connect / 500ms response)
 /// - `pool_timeout`: custom parameter in MILLISECONDS for bb8 pool (acquiring connection from pool, including waiting for connection to be established if pool is exhausted)
 /// - `max_size`: custom parameter for the maximum number of pooled connections (default 10)
-pub async fn create_redis_pool(cns: &str) -> Result<RedisConnectionPool, RedisConnectionError> {
+pub async fn create_redis_pool(_stage: &str, cns: &str) -> Result<RedisConnectionPool, RedisConnectionError> {
     let to_redis_err = |e: CnsParamError| {
         RunError::User(RedisRawError::from((
             ErrorKind::InvalidClientConfig,
@@ -365,6 +365,7 @@ pub async fn create_redis_pool(cns: &str) -> Result<RedisConnectionPool, RedisCo
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::web::TEST_STAGE;
 
     // Degenerate pool params are rejected before any network I/O, so these run without a server.
     fn err_kind(err: RedisConnectionError) -> ErrorKind {
@@ -376,26 +377,32 @@ mod test {
 
     #[tokio::test]
     async fn max_size_zero_is_rejected_not_panicked() {
-        let err = create_redis_pool("redis://localhost?max_size=0").await.unwrap_err();
+        let err = create_redis_pool(TEST_STAGE, "redis://localhost?max_size=0")
+            .await
+            .unwrap_err();
         assert_eq!(err_kind(err), ErrorKind::InvalidClientConfig);
     }
 
     #[tokio::test]
     async fn max_size_overflowing_u32_is_rejected() {
         let cns = format!("redis://localhost?max_size={}", u32::MAX as u64 + 1);
-        let err = create_redis_pool(&cns).await.unwrap_err();
+        let err = create_redis_pool(TEST_STAGE, &cns).await.unwrap_err();
         assert_eq!(err_kind(err), ErrorKind::InvalidClientConfig);
     }
 
     #[tokio::test]
     async fn pool_timeout_zero_is_rejected() {
-        let err = create_redis_pool("redis://localhost?pool_timeout=0").await.unwrap_err();
+        let err = create_redis_pool(TEST_STAGE, "redis://localhost?pool_timeout=0")
+            .await
+            .unwrap_err();
         assert_eq!(err_kind(err), ErrorKind::InvalidClientConfig);
     }
 
     #[tokio::test]
     async fn timeout_zero_is_rejected() {
-        let err = create_redis_pool("redis://localhost?timeout=0").await.unwrap_err();
+        let err = create_redis_pool(TEST_STAGE, "redis://localhost?timeout=0")
+            .await
+            .unwrap_err();
         assert_eq!(err_kind(err), ErrorKind::InvalidClientConfig);
     }
 }

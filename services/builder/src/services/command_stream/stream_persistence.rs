@@ -204,7 +204,14 @@ where
             Some(snapshot) => {
                 let state = decode_snapshot::<S>(&snapshot.data)
                     .map_err(|error| CommandStreamError::Corrupt(format!("snapshot {}: {error}", snapshot.version)))?;
-                Replica::from_snapshot(snapshot.version, state, snapshot.chain_hash)
+                let replica = Replica::from_snapshot(snapshot.version, state, snapshot.chain_hash);
+                if replica.hash() != snapshot.hash {
+                    return Err(CommandStreamError::Corrupt(format!(
+                        "snapshot {}: the state does not match its stored hash",
+                        snapshot.version
+                    )));
+                }
+                replica
             }
             None => Replica::new(),
         };

@@ -15,7 +15,6 @@ use repositories::{create_postgres_pool, create_redis_pool};
 use routes::ws::ws_routes;
 use shine_infra::{
     db::{
-        check_postgres_tls, check_redis_tls,
         postgres::PostgresPoolStatus,
         redis::{check_redis, RedisPoolStatus},
     },
@@ -35,12 +34,10 @@ impl WebApplication for Application {
         context: &mut AppBuildContext<'_>,
         router: &mut OpenApiRouter<Self::AppState>,
     ) -> Result<Self::AppState, AnyError> {
-        check_redis_tls(&config.core.stage, &config.feature.db.redis_cns)?;
-        let redis_pool = create_redis_pool(&config.feature.db).await?;
+        let redis_pool = create_redis_pool(&config.core.stage, &config.feature.db).await?;
         check_redis(&redis_pool).await?;
 
-        check_postgres_tls(&config.core.stage, &config.feature.db.sql_cns)?;
-        let postgres_pool = create_postgres_pool(&config.feature.db).await?;
+        let postgres_pool = create_postgres_pool(&config.core.stage, &config.feature.db).await?;
 
         let state = AppState::new(config, &redis_pool, &postgres_pool, context.core_services()).await?;
 

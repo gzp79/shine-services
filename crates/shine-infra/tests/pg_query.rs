@@ -1,5 +1,5 @@
 use postgres_from_row::FromRow;
-use shine_infra::{db::postgres::create_postgres_pool, pg_query};
+use shine_infra::{db::postgres::create_postgres_pool, pg_query, web::TEST_STAGE};
 use shine_infra_testing::db::postgres::get_postgres_cns;
 use shine_test::test;
 
@@ -47,7 +47,7 @@ async fn test_pg_query_struct() {
     let _ = rustls::crypto::ring::default_provider().install_default();
 
     let cns = get_postgres_cns();
-    let pool = create_postgres_pool(&cns).await.unwrap();
+    let pool = create_postgres_pool(TEST_STAGE, &cns).await.unwrap();
 
     let c1 = pool.get().await.unwrap();
     let stmt1 = TestQuery1::new(&c1).await.unwrap();

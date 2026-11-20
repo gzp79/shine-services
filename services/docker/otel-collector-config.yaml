@@ -7,6 +7,8 @@ receivers:
 exporters:
   prometheus:
     endpoint: "0.0.0.0:9464"
+    resource_to_telemetry_conversion:
+      enabled: true
 
 service:
   pipelines:

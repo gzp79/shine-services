@@ -49,11 +49,14 @@ pub fn stable_hash_of<T: StableHash + ?Sized>(value: &T) -> u64 {
     hasher.finish()
 }
 
-/// Folds `version` and `content_hash` (a command's own hash, see `Command::content_hash`) onto
-/// `parent_hash` (the chain through the command before it), giving the chain hash.
-pub fn fold_chain_hash(parent_hash: u64, version: i64, content_hash: u64) -> u64 {
+/// Folds a command onto `parent_hash` (the chain through the command before it), giving the chain
+/// hash: its `version`, who sent it (`command_id`, `user_id`) and its `content_hash` (the command's
+/// own hash, see `Command::content_hash`).
+pub fn fold_chain_hash(parent_hash: u64, version: i64, command_id: Uuid, user_id: Uuid, content_hash: u64) -> u64 {
     let mut hasher = StableHasher::chain(parent_hash);
     version.stable_hash(&mut hasher);
+    command_id.stable_hash(&mut hasher);
+    user_id.stable_hash(&mut hasher);
     content_hash.stable_hash(&mut hasher);
     hasher.finish()
 }

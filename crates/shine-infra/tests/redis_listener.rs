@@ -1,7 +1,10 @@
 use redis::{aio::ConnectionLike, AsyncCommands, Client};
-use shine_infra::db::{
-    redis::{create_redis_pool, RedisError, RedisListener},
-    ListenerStatus,
+use shine_infra::{
+    db::{
+        redis::{create_redis_pool, RedisError, RedisListener},
+        ListenerStatus,
+    },
+    web::TEST_STAGE,
 };
 use shine_infra_testing::{db::redis::get_redis_cns, listener::ListenerEvents};
 use shine_test::test;
@@ -14,7 +17,7 @@ use tokio::{
 #[test(serial = "redis-listener")]
 async fn test_redis_listener_pub_sub() {
     let cns = get_redis_cns();
-    let pool = create_redis_pool(&cns).await.unwrap();
+    let pool = create_redis_pool(TEST_STAGE, &cns).await.unwrap();
     let conn = pool.get().await.unwrap();
 
     let events = ListenerEvents::new();
@@ -30,7 +33,7 @@ async fn test_redis_listener_pub_sub() {
 #[test(serial = "redis-listener")]
 async fn test_redis_listener_shared_connection_multi_channel() {
     let cns = get_redis_cns();
-    let pool = create_redis_pool(&cns).await.unwrap();
+    let pool = create_redis_pool(TEST_STAGE, &cns).await.unwrap();
     let conn = pool.get().await.unwrap();
 
     let received_a = Arc::new(Mutex::new(Vec::<String>::new()));
@@ -124,7 +127,7 @@ async fn count_pubsub_clients<C: ConnectionLike + Send>(conn: &mut C) -> usize {
 #[test(serial = "redis-listener")]
 async fn test_redis_listener_reconnect_signal() {
     let cns = get_redis_cns();
-    let pool = create_redis_pool(&cns).await.unwrap();
+    let pool = create_redis_pool(TEST_STAGE, &cns).await.unwrap();
     let conn = pool.get().await.unwrap();
 
     let events: Arc<Mutex<Vec<Option<String>>>> = Arc::new(Mutex::new(Vec::new()));
@@ -201,7 +204,7 @@ async fn test_redis_listener_closes_connection_on_drop() {
     let cns = get_redis_cns();
     // A separate, independent pool used only to observe CLIENT LIST. It must outlive the
     // pool under test.
-    let observer_pool = create_redis_pool(&cns).await.unwrap();
+    let observer_pool = create_redis_pool(TEST_STAGE, &cns).await.unwrap();
     let mut observer = observer_pool.get().await.unwrap();
 
     // Wait for any pub/sub clients left over from earlier tests to disappear so we get a
@@ -215,7 +218,7 @@ async fn test_redis_listener_closes_connection_on_drop() {
     let baseline = count_pubsub_clients(&mut *observer).await;
 
     {
-        let pool = create_redis_pool(&cns).await.unwrap();
+        let pool = create_redis_pool(TEST_STAGE, &cns).await.unwrap();
         let conn = pool.get().await.unwrap();
 
         conn.listen("shine-test-drop", move |_payload| {}).await.unwrap();
@@ -265,7 +268,7 @@ async fn test_redis_listener_closes_connection_on_drop() {
 #[test(serial = "redis-listener")]
 async fn test_redis_listener_parallel_connect() {
     let cns = get_redis_cns();
-    let pool = create_redis_pool(&cns).await.unwrap();
+    let pool = create_redis_pool(TEST_STAGE, &cns).await.unwrap();
 
     const N: usize = 16;
     let notify = Arc::new(Notify::new());
@@ -377,7 +380,7 @@ async fn test_redis_listener_listen_times_out_when_unreachable() {
 #[test(serial = "redis-listener")]
 async fn test_redis_listener_duplicate_listen_is_rejected() {
     let cns = get_redis_cns();
-    let pool = create_redis_pool(&cns).await.unwrap();
+    let pool = create_redis_pool(TEST_STAGE, &cns).await.unwrap();
     let conn = pool.get().await.unwrap();
 
     conn.listen("shine-test-duplicate", |_| {}).await.unwrap();
@@ -394,7 +397,7 @@ async fn test_redis_listener_duplicate_listen_is_rejected() {
 #[test(serial = "redis-listener")]
 async fn test_redis_listener_status() {
     let cns = get_redis_cns();
-    let pool = create_redis_pool(&cns).await.unwrap();
+    let pool = create_redis_pool(TEST_STAGE, &cns).await.unwrap();
     let conn = pool.get().await.unwrap();
     let mut helper = pool.get().await.unwrap();
 

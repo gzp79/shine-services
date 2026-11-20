@@ -48,6 +48,20 @@ pub struct StreamConfig {
     #[validate(custom(function = "non_zero_duration"))]
     pub inbox_backpressure_timeout: Duration,
 
+    /// How many times a call to the log that fails because Postgres is out of reach is tried again before the
+    /// stream is given up; `0` gives up at once. Only the calls that are safe to repeat are retried: the reads, and
+    /// the append, which the log recognises as already stored if the first try got through.
+    #[serde(default = "consts::u32::<8>")]
+    pub log_max_retries: u32,
+    /// Milliseconds before the first retry of a failing call to the log. The waits double (and are jittered) up
+    /// to `log_retry_max_delay`.
+    #[serde(default = "duration::milliseconds::<100>", with = "duration::milliseconds")]
+    #[validate(custom(function = "non_zero_duration"))]
+    pub log_retry_min_delay: Duration,
+    /// Milliseconds the longest wait between the retries of a failing call to the log lasts.
+    #[serde(default = "duration::milliseconds::<1000>", with = "duration::milliseconds")]
+    #[validate(custom(function = "non_zero_duration"))]
+    pub log_retry_max_delay: Duration,
     /// Most commands read from the log in one page when catching up or loading.
     #[serde(default = "consts::i64::<256>")]
     #[validate(range(min = 1))]
@@ -81,6 +95,10 @@ fn validate_stream_config(config: &StreamConfig) -> Result<(), ValidationError> 
         return Err(ValidationError::new("retryDelays")
             .with_message("inboxRetryMinDelay must not be greater than inboxRetryMaxDelay".into()));
     }
+    if config.log_retry_min_delay > config.log_retry_max_delay {
+        return Err(ValidationError::new("retryDelays")
+            .with_message("logRetryMinDelay must not be greater than logRetryMaxDelay".into()));
+    }
     Ok(())
 }
 
@@ -92,12 +110,14 @@ impl Default for StreamConfig {
 
 impl StreamConfig {
     /// No periodic work: the recovery poll and the unload grace are an hour. The waits between the retries of
-    /// a failing inbox read are a few milliseconds, so a test does not wait for them.
+    /// a failing inbox read or log call are a few milliseconds, so a test does not wait for them.
     pub fn quiet() -> Self {
         StreamConfig {
             inbox_recovery_poll_interval: duration::seconds::<3600>(),
             inbox_retry_min_delay: duration::milliseconds::<1>(),
             inbox_retry_max_delay: duration::milliseconds::<5>(),
+            log_retry_min_delay: duration::milliseconds::<1>(),
+            log_retry_max_delay: duration::milliseconds::<5>(),
             worker_unload_grace: duration::seconds::<3600>(),
             ..Self::default()
         }

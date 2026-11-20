@@ -1,7 +1,10 @@
 use rustls::crypto::ring;
-use shine_infra::db::{
-    postgres::{create_postgres_pool, PgConfig, PgError, PgListener},
-    ListenerStatus,
+use shine_infra::{
+    db::{
+        postgres::{create_postgres_pool, PgConfig, PgError, PgListener},
+        ListenerStatus,
+    },
+    web::TEST_STAGE,
 };
 use shine_infra_testing::{db::postgres::get_postgres_cns, listener::ListenerEvents};
 use shine_test::test;
@@ -17,7 +20,7 @@ async fn test_pg_listener_pub_sub() {
     let _ = ring::default_provider().install_default();
 
     let cns = get_postgres_cns();
-    let pool = create_postgres_pool(&cns).await.unwrap();
+    let pool = create_postgres_pool(TEST_STAGE, &cns).await.unwrap();
     let conn = pool.get().await.unwrap();
 
     let events = ListenerEvents::new();
@@ -38,7 +41,7 @@ async fn test_pg_listener_shared_connection_multi_channel() {
     let _ = ring::default_provider().install_default();
 
     let cns = get_postgres_cns();
-    let pool = create_postgres_pool(&cns).await.unwrap();
+    let pool = create_postgres_pool(TEST_STAGE, &cns).await.unwrap();
     let conn = pool.get().await.unwrap();
 
     let received_a = Arc::new(Mutex::new(Vec::<String>::new()));
@@ -129,7 +132,7 @@ async fn test_pg_listener_reconnect_signal() {
     let _ = ring::default_provider().install_default();
 
     let cns = get_postgres_cns();
-    let pool = create_postgres_pool(&cns).await.unwrap();
+    let pool = create_postgres_pool(TEST_STAGE, &cns).await.unwrap();
     let conn = pool.get().await.unwrap();
     let helper = pool.get().await.unwrap();
 
@@ -199,11 +202,11 @@ async fn test_pg_listener_closes_connection_on_drop() {
     let cns = get_postgres_cns();
     // A separate, independent pool used only to observe pg_stat_activity. It must outlive
     // the pool under test.
-    let observer_pool = create_postgres_pool(&cns).await.unwrap();
+    let observer_pool = create_postgres_pool(TEST_STAGE, &cns).await.unwrap();
     let observer = observer_pool.get().await.unwrap();
 
     let listener_pid = {
-        let pool = create_postgres_pool(&cns).await.unwrap();
+        let pool = create_postgres_pool(TEST_STAGE, &cns).await.unwrap();
         let conn = pool.get().await.unwrap();
 
         conn.listen("shine-test-drop", move |_payload| {}).await.unwrap();
@@ -257,7 +260,7 @@ async fn test_pg_listener_no_duplicate_dispatch_after_reconnect() {
     let _ = ring::default_provider().install_default();
 
     let cns = get_postgres_cns();
-    let pool = create_postgres_pool(&cns).await.unwrap();
+    let pool = create_postgres_pool(TEST_STAGE, &cns).await.unwrap();
     let conn = pool.get().await.unwrap();
     let helper = pool.get().await.unwrap();
 
@@ -344,7 +347,7 @@ async fn test_pg_listener_relisten_all_channels_on_listen_reconnect() {
     let _ = ring::default_provider().install_default();
 
     let cns = get_postgres_cns();
-    let pool = create_postgres_pool(&cns).await.unwrap();
+    let pool = create_postgres_pool(TEST_STAGE, &cns).await.unwrap();
     let conn = pool.get().await.unwrap();
     let helper = pool.get().await.unwrap();
 
@@ -464,7 +467,7 @@ async fn test_pg_listener_channel_name_with_quote() {
     let _ = ring::default_provider().install_default();
 
     let cns = get_postgres_cns();
-    let pool = create_postgres_pool(&cns).await.unwrap();
+    let pool = create_postgres_pool(TEST_STAGE, &cns).await.unwrap();
     let conn = pool.get().await.unwrap();
 
     // Name contains a double quote; PG registers it verbatim (single quote in the name).
@@ -493,7 +496,7 @@ async fn test_pg_listener_parallel_connect() {
     let _ = ring::default_provider().install_default();
 
     let cns = get_postgres_cns();
-    let pool = create_postgres_pool(&cns).await.unwrap();
+    let pool = create_postgres_pool(TEST_STAGE, &cns).await.unwrap();
 
     const N: usize = 16;
     let notify = Arc::new(Notify::new());
@@ -627,7 +630,7 @@ async fn test_pg_listener_duplicate_listen_is_rejected() {
     let _ = ring::default_provider().install_default();
 
     let cns = get_postgres_cns();
-    let pool = create_postgres_pool(&cns).await.unwrap();
+    let pool = create_postgres_pool(TEST_STAGE, &cns).await.unwrap();
     let conn = pool.get().await.unwrap();
 
     conn.listen("shine-test-duplicate", |_| {}).await.unwrap();
@@ -645,7 +648,7 @@ async fn test_pg_listener_status() {
     let _ = ring::default_provider().install_default();
 
     let cns = get_postgres_cns();
-    let pool = create_postgres_pool(&cns).await.unwrap();
+    let pool = create_postgres_pool(TEST_STAGE, &cns).await.unwrap();
     let conn = pool.get().await.unwrap();
     let helper = pool.get().await.unwrap();
 

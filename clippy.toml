@@ -2,3 +2,10 @@ large-error-threshold = 512
 enum-variant-name-threshold = 99
 too-many-arguments-threshold = 8
 type-complexity-threshold = 500
+
+# Migrations must go through `PgConnection::run_migrations`, which lifts the session's statement_timeout.
+disallowed-methods = [
+    { path = "refinery_core::runner::Runner::run_async", reason = "use PgConnection::run_migrations (lifts statement_timeout)" },
+    { path = "refinery_core::runner::Runner::run", reason = "use PgConnection::run_migrations (lifts statement_timeout)" },
+    { path = "refinery_core::runner::Runner::run_iter", reason = "use PgConnection::run_migrations (lifts statement_timeout)" },
+]

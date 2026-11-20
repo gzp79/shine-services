@@ -705,18 +705,14 @@ impl HubService {
         Ok(())
     }
 
-    pub(crate) async fn heartbeat_registry_connection(
-        &self,
-        user_id: Uuid,
-        connection_id: Uuid,
-    ) -> Result<bool, HubError> {
+    pub async fn heartbeat_registry_connection(&self, user_id: Uuid, connection_id: Uuid) -> Result<bool, HubError> {
         let mut context = self.inner.hub_registry.create_context().await?;
         context.heartbeat_connection(user_id, connection_id).await
     }
 
     /// Batched heartbeat over the given connections, returning the ones the registry no longer holds
     /// as active. See [`HubRegistry::heartbeat_connections`] for the reconciliation semantics.
-    pub(crate) async fn heartbeat_registry_connections(
+    pub async fn heartbeat_registry_connections(
         &self,
         connections: &[HubConnection],
     ) -> Result<Vec<HubConnection>, HubError> {

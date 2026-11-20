@@ -244,7 +244,7 @@ where
             taken += 1;
             let command_hash = command.content_hash();
             version += 1;
-            chain_hash = fold_chain_hash(chain_hash, version, command_hash);
+            chain_hash = fold_chain_hash(chain_hash, version, entry.command_id, entry.user_id, command_hash);
             self.optimistic.push(StoredCommand {
                 version,
                 command_id: entry.command_id,
@@ -362,7 +362,13 @@ where
         let mut moved = false;
         for command in &mut self.optimistic {
             version += 1;
-            chain_hash = fold_chain_hash(chain_hash, version, command.command_hash);
+            chain_hash = fold_chain_hash(
+                chain_hash,
+                version,
+                command.command_id,
+                command.user_id,
+                command.command_hash,
+            );
             moved |= command.version != version;
             command.version = version;
             command.chain_hash = chain_hash;

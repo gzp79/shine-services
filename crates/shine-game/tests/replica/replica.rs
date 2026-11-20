@@ -60,6 +60,35 @@ fn a_repeat_is_skipped_before_reaching_the_state() {
     assert_eq!(replica.state().messages.len(), 1, "a repeat must not reach the state");
 }
 
+// The chain hash is what the log, the clients and the snapshots agree on: the same content from
+// another author, or under another command id, has to be another history.
+#[test]
+fn the_same_content_from_another_author_or_command_id_has_another_chain_hash() {
+    let command = || ChatCommand::Add { text: "gg".into() };
+    let original = CommandEnvelope::new(1, command_id(1), user(1), 0, command());
+    let other_author = CommandEnvelope::new(1, command_id(1), user(2), 0, command());
+    let other_command_id = CommandEnvelope::new(1, command_id(2), user(1), 0, command());
+
+    assert_eq!(
+        original.command_hash, other_author.command_hash,
+        "the content is the same"
+    );
+    assert_ne!(original.header.chain_hash, other_author.header.chain_hash);
+    assert_ne!(original.header.chain_hash, other_command_id.header.chain_hash);
+}
+
+#[test]
+fn a_command_of_another_author_with_the_chain_hash_of_the_original_is_rejected_as_diverged() {
+    let command = || ChatCommand::Add { text: "gg".into() };
+    let original = CommandEnvelope::new(1, command_id(1), user(1), 0, command());
+    let mut forged = CommandEnvelope::new(1, command_id(2), user(2), 0, command());
+    forged.header.chain_hash = original.header.chain_hash;
+
+    let mut replica = Replica::<ChatState>::new();
+    assert_eq!(replica.apply_next(&forged), Err(ApplyError::Diverged));
+    assert_eq!(replica.version(), 0, "a diverged command must not reach the state");
+}
+
 #[test]
 fn a_command_with_the_wrong_chain_hash_is_rejected_as_diverged() {
     let mut replica = Replica::<ChatState>::new();

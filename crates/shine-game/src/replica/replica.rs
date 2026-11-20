@@ -28,7 +28,7 @@ impl<C: Command> CommandEnvelope<C> {
     /// (the chain hash through the previous command) to fill in `CommandHeader::chain_hash`.
     pub fn new(version: i64, command_id: Uuid, user_id: Uuid, chain_hash_before: u64, command: C) -> Self {
         let command_hash = command.content_hash();
-        let chain_hash = fold_chain_hash(chain_hash_before, version, command_hash);
+        let chain_hash = fold_chain_hash(chain_hash_before, version, command_id, user_id, command_hash);
         Self {
             header: CommandHeader {
                 version,
@@ -136,7 +136,13 @@ impl<S: ReplayState> Replica<S> {
                 got: header.version,
             });
         }
-        let expected_chain_hash = fold_chain_hash(self.chain_hash, header.version, envelope.command_hash);
+        let expected_chain_hash = fold_chain_hash(
+            self.chain_hash,
+            header.version,
+            header.command_id,
+            header.user_id,
+            envelope.command_hash,
+        );
         if header.chain_hash != expected_chain_hash {
             return Err(ApplyError::Diverged);
         }
