@@ -5,7 +5,7 @@ use crate::{
     models::{messages::StreamMessage, CommandStreamError},
     repositories::{
         command_inbox::{redis::RedisCommandInboxDb, CommandInboxDb, InboxBatch, InboxId, InboxWake},
-        command_log::{pg::PgCommandLogDb, CommandLogDb},
+        command_log::{pg::PgCommandLogDb, CommandLogDb, ConsistencyReport, StoredCommand, StoredSnapshot, StreamHead},
     },
     services::command_stream::{StreamConfig, StreamLogService, StreamWorker},
     testing::{
@@ -642,4 +642,190 @@ async fn a_worker_stopped_over_a_contradicting_log_leaves_its_commands_in_the_in
     wait_finished(&worker).await;
     assert_eq!(h.log.all_commands(&id).await.len(), 4, "the log keeps its own history");
     assert_eq!(h.inbox.len(&id).await, 1, "the command was not lost");
+}
+
+/// A command log that fails the next calls when told to, as a database outage does: `fail_append` is how many
+/// appends and `fail_read` how many loads of the stream's head and history.
+#[derive(Clone)]
+struct FlakyLog {
+    inner: PgCommandLogDb,
+    fail_append: Arc<AtomicUsize>,
+    fail_read: Arc<AtomicUsize>,
+}
+
+impl FlakyLog {
+    fn new(inner: PgCommandLogDb) -> Self {
+        Self {
+            inner,
+            fail_append: Arc::new(AtomicUsize::new(0)),
+            fail_read: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    fn outage(counter: &AtomicUsize) -> Result<(), CommandStreamError> {
+        let failing = counter
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |left| left.checked_sub(1))
+            .is_ok();
+        if failing {
+            return Err(CommandStreamError::service_unavailable(
+                "PostgreSQL",
+                std::io::Error::other("injected failure"),
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl CommandLogDb for FlakyLog {
+    async fn ensure_stream(&self, stream_id: &StreamId) -> Result<StreamHead, CommandStreamError> {
+        Self::outage(&self.fail_read)?;
+        self.inner.ensure_stream(stream_id).await
+    }
+
+    async fn head(&self, stream_id: &StreamId) -> Result<Option<StreamHead>, CommandStreamError> {
+        Self::outage(&self.fail_read)?;
+        self.inner.head(stream_id).await
+    }
+
+    async fn append(
+        &self,
+        stream_id: &StreamId,
+        commands: &[StoredCommand],
+        baseline_hash: u64,
+    ) -> Result<StreamHead, CommandStreamError> {
+        Self::outage(&self.fail_append)?;
+        self.inner.append(stream_id, commands, baseline_hash).await
+    }
+
+    async fn commands_after(
+        &self,
+        stream_id: &StreamId,
+        after: i64,
+        limit: i64,
+    ) -> Result<Vec<StoredCommand>, CommandStreamError> {
+        self.inner.commands_after(stream_id, after, limit).await
+    }
+
+    async fn last_commands(&self, stream_id: &StreamId, count: i64) -> Result<Vec<StoredCommand>, CommandStreamError> {
+        self.inner.last_commands(stream_id, count).await
+    }
+
+    async fn try_store_snapshot(
+        &self,
+        stream_id: &StreamId,
+        snapshot: &StoredSnapshot,
+    ) -> Result<(), CommandStreamError> {
+        self.inner.try_store_snapshot(stream_id, snapshot).await
+    }
+
+    async fn latest_snapshot(
+        &self,
+        stream_id: &StreamId,
+        at_or_before: i64,
+    ) -> Result<Option<StoredSnapshot>, CommandStreamError> {
+        self.inner.latest_snapshot(stream_id, at_or_before).await
+    }
+
+    async fn oldest_snapshot_version(&self, stream_id: &StreamId) -> Result<Option<i64>, CommandStreamError> {
+        self.inner.oldest_snapshot_version(stream_id).await
+    }
+
+    async fn prune(&self, stream_id: &StreamId, kept_snapshot_count: i64) -> Result<Option<i64>, CommandStreamError> {
+        self.inner.prune(stream_id, kept_snapshot_count).await
+    }
+
+    async fn check_consistency(&self, stream_id: &StreamId) -> Result<ConsistencyReport, CommandStreamError> {
+        self.inner.check_consistency(stream_id).await
+    }
+}
+
+impl Harness {
+    /// A worker whose command log is flaky.
+    fn spawn_over_flaky_log(&self, stream: &StreamId, log: FlakyLog) -> Arc<StreamWorker> {
+        self.spawn_over_flaky_log_with(stream, log, StreamConfig::quiet())
+    }
+
+    fn spawn_over_flaky_log_with(&self, stream: &StreamId, log: FlakyLog, config: StreamConfig) -> Arc<StreamWorker> {
+        let service = StreamLogService::new(self.inbox.db.clone(), log, config.clone());
+        StreamWorker::start::<ChatState, _, _, _>(
+            service,
+            self.inbox.db.clone(),
+            self.egress.clone(),
+            stream.clone(),
+            config,
+        )
+    }
+}
+
+#[test]
+async fn a_log_that_fails_for_a_moment_does_not_end_the_stream() {
+    let h = harness().await;
+    let id = TestStreamId::new_chat();
+    let log = FlakyLog::new(h.log.db.clone());
+    let worker = h.spawn_over_flaky_log(&id, log.clone());
+    let connection = h.subscribe(&worker).await;
+
+    log.fail_append.store(3, Ordering::Relaxed);
+    h.send(&id, "a").await;
+    worker.wake();
+
+    h.log.wait_commands(&id, 1).await;
+    assert_eq!(
+        log.fail_append.load(Ordering::Relaxed),
+        0,
+        "the failing appends were all spent"
+    );
+    assert!(!worker.is_finished());
+    assert!(
+        !h.egress
+            .messages(connection)
+            .iter()
+            .any(|m| matches!(**m, StreamMessage::Unsynced { .. })),
+        "the subscriber was not dropped"
+    );
+}
+
+#[test]
+async fn a_log_that_fails_for_a_moment_while_loading_does_not_end_the_stream() {
+    let h = harness().await;
+    let id = TestStreamId::new_chat();
+    let log = FlakyLog::new(h.log.db.clone());
+    log.fail_read.store(3, Ordering::Relaxed);
+    let worker = h.spawn_over_flaky_log(&id, log.clone());
+    let connection = Uuid::new_v4();
+
+    assert!(worker.subscribe(connection));
+
+    h.egress.wait(connection, |m| !m.is_empty()).await;
+    assert_eq!(TestEgress::kinds(&h.egress.messages(connection)), ["sync:0"]);
+    assert!(!worker.is_finished());
+}
+
+#[test]
+async fn a_log_that_keeps_failing_ends_the_stream_once_the_retries_are_spent() {
+    let h = harness().await;
+    let id = TestStreamId::new_chat();
+    let log = FlakyLog::new(h.log.db.clone());
+    let config = StreamConfig {
+        log_max_retries: 2,
+        ..StreamConfig::quiet()
+    };
+    let worker = h.spawn_over_flaky_log_with(&id, log.clone(), config);
+    let connection = h.subscribe(&worker).await;
+
+    log.fail_append.store(usize::MAX, Ordering::Relaxed);
+    h.send(&id, "a").await;
+    worker.wake();
+
+    h.egress
+        .wait(connection, |m| {
+            TestEgress::kinds(m).last().is_some_and(|kind| kind == "unsynced")
+        })
+        .await;
+    wait_finished(&worker).await;
+    assert_eq!(
+        usize::MAX - log.fail_append.load(Ordering::Relaxed),
+        3,
+        "the first append and every retry"
+    );
 }

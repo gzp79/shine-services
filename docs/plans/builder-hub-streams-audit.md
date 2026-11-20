@@ -53,7 +53,7 @@ Severity: **Blocker** = fix before a prod deploy; High / Medium / Low as assesse
 | A5 | Medium | resource leak | ws sink has no write timeout, idle timeout or keepalive (zombie and half-open sockets) |
 | A6 | Medium | authz / amplification | `Ping` broadcast/target; default on |
 | **Availability and robustness** | | | |
-| R1 | Medium | availability | Transient Redis/PG errors kill the worker and unsync all subscribers (reload storm); nothing restarts a dead worker |
+| R1 ✅ | Fixed | availability | Transient Redis/PG errors killed the worker and unsynced all subscribers; the calls are now retried. Resubscribe jitter moved to C8 |
 | R2 | Medium | availability | Hub command loop does Redis I/O inline; serial, no timeouts, unbounded queue |
 | R3 | Medium | availability | Reconnect storm after a Redis flush (missing registry row = inactive) |
 | R4 | Medium | correctness | Aborted `EXEC` becomes an error; takeover detection can be skipped |
@@ -90,7 +90,7 @@ Severity: **Blocker** = fix before a prod deploy; High / Medium / Low as assesse
 | C5 | Medium | client | Stale state after a reconnect; `replaced` never set |
 | C6 | Low | client | Overlapping `Sync` tail records a bad hash |
 | C7 | Low | client | Snapshot decode accepts trailing bytes |
-| C8 | Low | client | `StreamSubscribeFailed` retried every 5 s forever; `new WebSocket` unguarded |
+| C8 | Low | client | `StreamSubscribeFailed` / `unsynced` retried every 5 s forever with no jitter; `new WebSocket` unguarded |
 | C9 | Low | docs | `net/` missing from the `client-web-architecture` skill |
 
 Checked and found sound: see [Verified as sound](#verified-as-sound). Test gaps: see [Tests](#tests).
@@ -330,12 +330,18 @@ Fix: default `ping_enabled` to `false`; restrict ping to an operator role; rejec
 
 ## Availability and robustness
 
-### R1. Transient errors escalate to worker death and reload storms (Medium)
+### R1 ✅. Transient errors escalate to worker death and reload storms (Fixed)
 
-- `ingest` errors (a Redis pool timeout) and any `PersistResult::Failed` (PG pool timeout 2 s, `Contention` after 8 attempts, a single failed read) call `give_up` (`stream_worker.rs:287,309,356`): all subscribers get `Unsynced` and are cleared, the worker ends, and the optimistic tail is discarded. No retry/backoff before giving up.- Nothing restarts a dead worker: `registry.wake` only wakes an existing worker, and `push` still accepts commands because it checks only `is_open` (`stream_registry.rs:203-236`). Until clients resubscribe, commands pile up in the inbox up to the high mark, then pushers are dropped `Busy`.
-- After a Redis/PG blip, every stream on the instance gives up at once and all clients resubscribe together, each worker reloading snapshot plus tail from Postgres (thundering herd; amplifies A1).
+**Fixed.** A failure that may pass no longer gives the stream up at once:
+- Redis: `StreamRelay::poll_inbox` retries a transient inbox read (`inbox_max_retries`, `inbox_retry_*_delay`). This was already in the tree when the audit was written; the original text was wrong about it.
+- Postgres: `StreamLogService` retries `head`, `load` (the whole read of snapshot and tail) and the `append` call on `CommandStreamError::ServiceUnavailable` (`log_max_retries`, default 8, `log_retry_min_delay` 100 ms, `log_retry_max_delay` 1 s, jittered). Repeating an append is safe, the log finds a batch that already got through covered (`AppendOutcome::Stored`). Snapshot store, prune and trim stay best effort. `Contention` is not retried: the repository already retries it 8 times.
+- While the persistence retries, the relay serves optimistically up to `relay_max_pending`, then pushes get `Busy`.
 
-Fix: retry transient errors (bounded, jittered) inside the relay/persistence loops and give up only on structural errors (`Corrupt`, `SnapshotDiverged`, repeated failure); have `push`/wake restart a worker for streams with open connections; add jitter to client resubscribe.
+Tests (`stream_worker_test.rs`, a `FlakyLog` over the real log): `a_log_that_fails_for_a_moment_does_not_end_the_stream` (appends), `a_log_that_fails_for_a_moment_while_loading_does_not_end_the_stream` (reads), `a_log_that_keeps_failing_ends_the_stream_once_the_retries_are_spent` (bound: first try plus `log_max_retries`). The first two failed before the change (`0 commands persisted, expected 1`; `["unsynced"]` instead of `["sync:0"]`). Full builder suite: green.
+
+**Not part of this fix.**
+- A worker that gave up is not restarted by the server on its own, but by the next `subscribe` (`StreamRegistry::subscribe` replaces a finished worker). The subscribers get `Unsynced` and the client resubscribes on its timer, so the commands waiting in the inbox are picked up then. A client that never resubscribes is the watchdog gap of C1/C8.
+- After a longer outage every stream on the instance still gives up together and the clients resubscribe on the same fixed 5 s timer, each worker reloading from Postgres. Jitter and backoff on the resubscribe: C8.
 
 ### R2. Hub command loop: inline Redis I/O, serial, no timeouts (Medium)
 
@@ -471,7 +477,7 @@ Every command carries the sender's raw `user_id` (`routes/ws/message.rs:46`); us
 | C5 | **Stale state after a reconnect.** The stream is never reset to `Waiting`; paints are not gated by the connection state; `replaced` is never set although the type has it. | `pixel-map/index.ts:46-51,164-184`; `stream-hub.ts:1`; `pixel-map-ui.ts:14` | Reset or resync on reconnect; gate paints; handle `replaced` (no reconnect; needs distinct close codes, R11). |
 | C6 | **Overlapping `Sync` tail records a bad hash.** `on_sync` still calls `apply_wire` and ignores a skipped outcome. The server sends non-overlapping tails today. | `client_stream.rs:189-193,220,305-308` | Honour `ApplyOutcome::Skipped`. |
 | C7 | **Snapshot decode accepts trailing bytes.** `decode_snapshot` uses `postcard::from_bytes`; state and chain hashes come from the same frame. | `crates/shine-game/src/replica/codec.rs:15-17,35-41`; `client_stream.rs:280-286` | Canonical check for snapshots; verify the chain hash against a checkpoint. |
-| C8 | **`StreamSubscribeFailed` is retried every 5 s forever**, including permanent reasons; `new WebSocket` is unguarded. | `client_stream.rs:155-159`; `websocket-stream-hub.ts:50` | Stop on permanent reasons; try/catch into the backoff path. |
+| C8 | **`StreamSubscribeFailed` is retried every 5 s forever**, including permanent reasons, and an `unsynced` resubscribe has no jitter, so after a server-side give-up (R1) every client of an instance comes back at once; `new WebSocket` is unguarded. | `client_stream.rs:155-159`; `websocket-stream-hub.ts:50` | Stop on permanent reasons; jittered backoff; try/catch into the backoff path. |
 | C9 | **`net/` is missing from the `client-web-architecture` skill's layout table.** | `.claude/skills/client-web-architecture/SKILL.md:14-25` | Add a row. |
 
 ---
