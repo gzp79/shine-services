@@ -16,6 +16,7 @@ use crate::{
         hub::{
             hub_command::ControlCommand,
             hub_connections::{Connections, DeadConnection, RemovedConnection},
+            hub_control_queue::{ControlMessage, ControlQueue},
             hub_metrics::hub_metrics,
             hub_subscribers::Subscribers,
             tasks::{Heartbeat, SessionChecker, StreamDispatcher},
@@ -24,14 +25,13 @@ use crate::{
     },
 };
 use futures::{stream, StreamExt};
-use opentelemetry::trace::SpanContext;
 use serde::{Deserialize, Serialize};
 use shine_core::tokio::TaskSupervisor;
 use shine_game::replica::StreamId;
 use shine_infra::{
     serde::{consts, duration},
     session::{CurrentUserService, SessionKey},
-    telemetry::{current_span_context, label, link_span},
+    telemetry::link_span,
 };
 use std::collections::VecDeque;
 use std::time::Instant;
@@ -61,7 +61,7 @@ pub struct HubConfig {
     pub session_check: Duration,
     #[serde(default = "duration::seconds::<10>", with = "duration::seconds")]
     pub stream_shutdown_timeout: Duration,
-    #[serde(default = "consts::bool::<true>")]
+    #[serde(default = "consts::bool::<false>")]
     pub ping_enabled: bool,
 }
 
@@ -71,7 +71,7 @@ impl HubConfig {
             heartbeat: duration::seconds::<300>(),
             session_check: duration::seconds::<900>(),
             stream_shutdown_timeout: duration::seconds::<10>(),
-            ping_enabled: true,
+            ping_enabled: false,
         }
     }
 }
@@ -92,7 +92,7 @@ pub enum HubServiceBuilderError {
 pub struct HubServiceBuilder {
     config: HubConfig,
     connections: Arc<Connections>,
-    control_tx: mpsc::UnboundedSender<ControlMessage>,
+    control_queue: ControlQueue,
     control_rx: mpsc::UnboundedReceiver<ControlMessage>,
 
     session_service: Option<Arc<CurrentUserService>>,
@@ -104,11 +104,11 @@ pub struct HubServiceBuilder {
 
 impl HubServiceBuilder {
     fn new(config: HubConfig) -> Self {
-        let (control_tx, control_rx) = mpsc::unbounded_channel();
+        let (control_queue, control_rx) = ControlQueue::new();
         Self {
             config,
             connections: Arc::new(Connections::new()),
-            control_tx,
+            control_queue,
             control_rx,
             session_service: None,
             hub_registry: None,
@@ -144,7 +144,7 @@ impl HubServiceBuilder {
     {
         let stream_egress = HubStreamEgress {
             connections: self.connections.clone(),
-            control_tx: self.control_tx.clone(),
+            control_queue: self.control_queue.clone(),
         };
         self.stream_registry = Some(stream_registry(&stream_egress)?);
         Ok(self)
@@ -163,7 +163,7 @@ impl HubServiceBuilder {
         let Self {
             config,
             connections,
-            control_tx,
+            control_queue,
             control_rx,
             session_service,
             hub_registry,
@@ -180,7 +180,7 @@ impl HubServiceBuilder {
 
         let service = HubService {
             inner: Arc::new(Inner {
-                control_tx,
+                control_queue,
                 shutdown_complete: shutdown_complete_rx,
                 connections,
                 subscribers: Subscribers::new(),
@@ -220,18 +220,24 @@ impl HubServiceBuilder {
     }
 }
 
+/// Counts a failed registry call by operation and passes the result on.
+fn track_registry<T>(operation: &'static str, result: Result<T, HubError>) -> Result<T, HubError> {
+    if result.is_err() {
+        hub_metrics().registry_error(operation);
+    }
+    result
+}
+
 /// Registry rows removed at the same time on shutdown.
 const SHUTDOWN_REGISTRY_CONCURRENCY: usize = 32;
 
 /// Longest the registry cleanup of a shutdown takes. The rows left behind expire with their TTL.
 const SHUTDOWN_REGISTRY_TIMEOUT: Duration = Duration::from_secs(5);
 
-type ControlMessage = (ControlCommand, SpanContext, Instant);
-
 #[derive(Clone)]
 pub struct HubStreamEgress {
     connections: Arc<Connections>,
-    control_tx: mpsc::UnboundedSender<ControlMessage>,
+    control_queue: ControlQueue,
 }
 
 impl StreamEgress for HubStreamEgress {
@@ -243,12 +249,7 @@ impl StreamEgress for HubStreamEgress {
         {
             Ok(queued) => queued,
             Err(DeadConnection { connection_id, reason }) => {
-                let command = ControlCommand::DropConnection { connection_id, reason };
-                if self
-                    .control_tx
-                    .send((command, current_span_context(), Instant::now()))
-                    .is_err()
-                {
+                if self.control_queue.drop_connection(connection_id, reason).is_err() {
                     tracing::warn!("[{connection_id}] Failed to prune a dead stream connection");
                 }
                 false
@@ -258,7 +259,7 @@ impl StreamEgress for HubStreamEgress {
 }
 
 struct Inner {
-    control_tx: mpsc::UnboundedSender<ControlMessage>,
+    control_queue: ControlQueue,
     shutdown_complete: watch::Receiver<bool>,
     connections: Arc<Connections>,
     subscribers: Subscribers,
@@ -363,19 +364,14 @@ impl HubService {
     }
 
     fn send_control(&self, command: ControlCommand) -> Result<(), HubError> {
-        self.inner
-            .control_tx
-            .send((command, current_span_context(), Instant::now()))
-            .map_err(|_| HubError::SendCommandFailed)
+        self.inner.control_queue.send(command)
     }
 
     /// Logs and counts a connection removed by the hub, and tells its socket why.
     fn record_drop(&self, removed: RemovedConnection, reason: DisconnectReason) -> (Uuid, Uuid) {
         let (user_id, connection_id) = (removed.user_id, removed.connection_id);
         tracing::info!("[{user_id}] [{connection_id}] Connection dropped: {reason}");
-        hub_metrics()
-            .connections_dropped
-            .add(1, &[label("reason", reason.as_str())]);
+        hub_metrics().connection_dropped(reason);
         removed.notify(HubEvent::UserDisconnected { user_id, connection_id, reason });
         (user_id, connection_id)
     }
@@ -383,7 +379,7 @@ impl HubService {
     /// Prunes any connection found dead during an egress send.
     fn drop_dead(&self, dead: impl IntoIterator<Item = DeadConnection>) -> Result<(), HubError> {
         for DeadConnection { connection_id, reason } in dead {
-            self.send_control(ControlCommand::DropConnection { connection_id, reason })?;
+            self.inner.control_queue.drop_connection(connection_id, reason)?;
         }
         Ok(())
     }
@@ -506,9 +502,7 @@ impl HubService {
             while let Some((command, origin, queued_at)) = control_rx.recv().await {
                 let name = command.name();
                 let metrics = hub_metrics();
-                metrics
-                    .control_command_queue_delay
-                    .record(queued_at.elapsed().as_secs_f64(), &[label("command", name)]);
+                metrics.control_command_started(name, queued_at.elapsed());
 
                 // Linked, not parented: the queued command must not keep the originating request span open.
                 let span = info_span!(
@@ -521,10 +515,7 @@ impl HubService {
                 link_span(&span, origin);
                 let start = Instant::now();
                 let keep_running = service.process(command).instrument(span).await;
-                metrics.control_commands.add(1, &[label("command", name)]);
-                metrics
-                    .control_command_duration
-                    .record(start.elapsed().as_secs_f64(), &[label("command", name)]);
+                metrics.control_command_finished(name, start.elapsed());
                 if !keep_running {
                     break;
                 }
@@ -664,6 +655,7 @@ impl HubService {
                 true
             }
             ControlCommand::DropConnection { connection_id, reason } => {
+                self.inner.control_queue.drop_processed(connection_id);
                 // A producer found this connection's channel dead during an off-loop send. Prune it
                 // here so all mutation stays on the loop. Force-remove by id (a fresh reconnect that
                 // replaced it has a different id and its channel would not be dead).
@@ -708,8 +700,12 @@ impl HubService {
     }
 
     async fn create_registry_connection(&self, user_id: Uuid, connection_id: Uuid) -> Result<(), HubError> {
-        let mut context = self.inner.hub_registry.create_context().await?;
-        context.create_connection(user_id, connection_id).await
+        let result = async {
+            let mut context = self.inner.hub_registry.create_context().await?;
+            context.create_connection(user_id, connection_id).await
+        }
+        .await;
+        track_registry("create", result)
     }
 
     /// Whether the registry holds `connection_id` as the user's active connection; `false` on a read error.
@@ -718,7 +714,7 @@ impl HubService {
             Ok(mut context) => context.find_connection_by_user(user_id).await,
             Err(err) => Err(err),
         };
-        match found {
+        match track_registry("find", found) {
             Ok(found) => found.is_some_and(|found| found.connection_id == connection_id),
             Err(err) => {
                 tracing::warn!("[{user_id}] Failed to read hub connection: {err:#?}");
@@ -728,14 +724,21 @@ impl HubService {
     }
 
     async fn remove_registry_connection(&self, user_id: Uuid, connection_id: Uuid) -> Result<(), HubError> {
-        let mut context = self.inner.hub_registry.create_context().await?;
-        context.remove_connection_if_active(user_id, connection_id).await?;
-        Ok(())
+        let result = async {
+            let mut context = self.inner.hub_registry.create_context().await?;
+            context.remove_connection_if_active(user_id, connection_id).await
+        }
+        .await;
+        track_registry("remove", result).map(|_| ())
     }
 
     pub async fn heartbeat_registry_connection(&self, user_id: Uuid, connection_id: Uuid) -> Result<bool, HubError> {
-        let mut context = self.inner.hub_registry.create_context().await?;
-        context.heartbeat_connection(user_id, connection_id).await
+        let result = async {
+            let mut context = self.inner.hub_registry.create_context().await?;
+            context.heartbeat_connection(user_id, connection_id).await
+        }
+        .await;
+        track_registry("heartbeat", result)
     }
 
     /// Batched heartbeat over the given connections, returning the ones the registry no longer holds
@@ -744,8 +747,12 @@ impl HubService {
         &self,
         connections: &[HubConnection],
     ) -> Result<Vec<HubConnection>, HubError> {
-        let mut context = self.inner.hub_registry.create_context().await?;
-        context.heartbeat_connections(connections).await
+        let result = async {
+            let mut context = self.inner.hub_registry.create_context().await?;
+            context.heartbeat_connections(connections).await
+        }
+        .await;
+        track_registry("heartbeat", result)
     }
 
     async fn process_registry_change(&self, user_id: Uuid) {

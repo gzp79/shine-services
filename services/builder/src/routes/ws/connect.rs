@@ -5,7 +5,7 @@ use crate::{
         message::{decode_wire_command, stream_message_to_wire, PingRequest, WSMessageRequest, WSMessageResponse},
         ws_metrics::ws_metrics,
     },
-    services::{stream_metrics, HubService, MAX_COMMAND_BYTES},
+    services::{hub_metrics, stream_metrics, HubService, MAX_COMMAND_BYTES},
 };
 use axum::{
     extract::{
@@ -83,6 +83,7 @@ pub async fn connect(
     ws: WebSocketUpgrade,
 ) -> Result<impl IntoResponse, ProblemResponse> {
     if !state.settings().ws.is_allowed_host(target_host.as_str()) {
+        hub_metrics().connect_rejected("host");
         return Err(Problem::forbidden()
             .with_detail("host is not allowed")
             .with_sensitive_str(target_host)
@@ -90,6 +91,7 @@ pub async fn connect(
     }
 
     if !state.settings().ws.is_allowed_origin(origin.as_str()) {
+        hub_metrics().connect_rejected("origin");
         return Err(Problem::forbidden()
             .with_detail("origin is not allowed")
             .with_sensitive_str(origin)
@@ -402,6 +404,7 @@ fn open_connection(
         }
         Err(err) => {
             tracing::warn!("[{user_id}] Failed to register connection: {err:#?}");
+            hub_metrics().connect_rejected("hub_stopped");
             None
         }
     }

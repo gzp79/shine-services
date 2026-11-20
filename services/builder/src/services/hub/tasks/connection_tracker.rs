@@ -2,7 +2,7 @@ use crate::{
     models::messages::{HubEvent, HubMessage, TopicKey},
     services::{hub::hub_metrics::hub_metrics, HubService},
 };
-use shine_infra::{session::SessionKey, telemetry::label};
+use shine_infra::session::SessionKey;
 use std::{collections::HashMap, future::Future, sync::Arc, time::Duration};
 use tokio::{
     sync::{mpsc, Notify},
@@ -100,9 +100,7 @@ async fn run_tick<C: ConnectionConsumer>(consumer: &mut C, tracker: &ConnectionT
     let start = std::time::Instant::now();
     consumer.on_tick(tracker).await;
     let name = consumer_name::<C>();
-    hub_metrics()
-        .tick_duration
-        .record(start.elapsed().as_secs_f64(), &[label("consumer", name)]);
+    hub_metrics().tick_finished(name, start.elapsed());
 }
 
 /// Drives a self-contained loop that event-sources its own [`ConnectionTracker`] from

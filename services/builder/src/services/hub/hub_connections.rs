@@ -2,7 +2,7 @@ use crate::{
     models::messages::{DisconnectReason, HubEvent, HubMessage, ToTopic, TopicKey},
     services::hub::hub_metrics::hub_metrics,
 };
-use shine_infra::{session::SessionKey, telemetry::label};
+use shine_infra::session::SessionKey;
 use std::collections::HashMap;
 use tokio::sync::{
     mpsc::{self, error::TrySendError},
@@ -42,26 +42,8 @@ impl RemovedConnection {
     /// Best-effort delivery of the event that ends the connection, as it is no longer registered to
     /// receive broadcasts; a full or closed channel is ignored.
     pub fn notify(self, event: HubEvent) {
-        let _ = self.tx.try_send(HubMessage::Hub(event));
+        let _ = try_send(&self.tx, HubMessage::Hub(event));
     }
-}
-
-/// Non-blocking send to a connection, recording the outcome. `Err` carries the drop reason of a dead connection.
-fn try_send(tx: &mpsc::Sender<HubMessage>, message: HubMessage) -> Result<(), DisconnectReason> {
-    let kind = match &message {
-        HubMessage::Hub(_) => "hub",
-        HubMessage::Ping(_) => "ping",
-        HubMessage::StreamMessage(_) | HubMessage::StreamEvent(_) => "stream",
-    };
-    let (outcome, result) = match tx.try_send(message) {
-        Ok(()) => ("ok", Ok(())),
-        Err(TrySendError::Full(_)) => ("full", Err(DisconnectReason::SlowConsumer)),
-        Err(TrySendError::Closed(_)) => ("closed", Err(DisconnectReason::DeadChannel)),
-    };
-    hub_metrics()
-        .messages_sent
-        .add(1, &[label("kind", kind), label("outcome", outcome)]);
-    result
 }
 
 /// The registry of addressable, live user connections.
@@ -90,7 +72,7 @@ impl Connections {
             .connections
             .insert(connection_id, Connection { session_key, tx, topics });
         if replaced.is_none() {
-            hub_metrics().connections.add(1, &[]);
+            hub_metrics().connection_added();
         }
     }
 
@@ -130,7 +112,7 @@ impl Connections {
 
     fn take(registry: &mut Registry, user_id: Uuid, connection_id: Uuid) -> Option<RemovedConnection> {
         let connection = registry.connections.remove(&connection_id)?;
-        hub_metrics().connections.add(-1, &[]);
+        hub_metrics().connection_removed();
         Some(RemovedConnection {
             user_id,
             connection_id,
@@ -204,6 +186,22 @@ impl Connections {
     pub async fn len(&self) -> usize {
         self.registry.read().await.users.len()
     }
+}
+
+/// Non-blocking send to a connection, recording the outcome. `Err` carries the drop reason of a dead connection.
+fn try_send(tx: &mpsc::Sender<HubMessage>, message: HubMessage) -> Result<(), DisconnectReason> {
+    let kind = match &message {
+        HubMessage::Hub(_) => "hub",
+        HubMessage::Ping(_) => "ping",
+        HubMessage::StreamMessage(_) | HubMessage::StreamEvent(_) => "stream",
+    };
+    let (outcome, result) = match tx.try_send(message) {
+        Ok(()) => ("ok", Ok(())),
+        Err(TrySendError::Full(_)) => ("full", Err(DisconnectReason::SlowConsumer)),
+        Err(TrySendError::Closed(_)) => ("closed", Err(DisconnectReason::DeadChannel)),
+    };
+    hub_metrics().message_sent(kind, outcome);
+    result
 }
 
 #[cfg(test)]

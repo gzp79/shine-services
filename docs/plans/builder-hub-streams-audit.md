@@ -51,7 +51,7 @@ Severity: **Blocker** = fix before a prod deploy; High / Medium / Low as assesse
 | A3 | Medium | DoS | No per-connection throttle on the hub control queue; no connect throttle or connection cap |
 | A4 | Medium | resource growth | Inbox has no hard size limit (soft backpressure is sampled) |
 | A5 | Medium | resource leak | ws sink has no write timeout, idle timeout or keepalive (zombie and half-open sockets) |
-| A6 | Medium | authz / amplification | `Ping` broadcast/target; default on |
+| A6 ✅ | Fixed (default) | authz / amplification | `Ping` broadcast/target; the default is now off. Role check and rate limit still open |
 | **Availability and robustness** | | | |
 | R1 ✅ | Fixed | availability | Transient Redis/PG errors killed the worker and unsynced all subscribers; the calls are now retried. Resubscribe jitter moved to C8 |
 | R2 | Medium | availability | Hub command loop does Redis I/O inline; serial, no timeouts, unbounded queue |
@@ -78,8 +78,8 @@ Severity: **Blocker** = fix before a prod deploy; High / Medium / Low as assesse
 | **Observability** | | | |
 | O1 ✅ | Accepted | logging | `Problem::log` dumps internals at info/error: a documented exception, the only root-cause info in prod |
 | O2 | Low | logging | Info-level spans/logs on hot paths |
-| O3 | Low | metrics | Start-up self-test lines are counted |
-| O4 | Low | metrics | Metrics gaps; repeated `DropConnection` per stream send |
+| O3 ✅ | Fixed | metrics | Start-up self-test lines were counted |
+| O4 ✅ | Fixed | metrics | Metrics gaps; repeated `DropConnection` per stream send |
 | O5 | Low | perf | Registry notices enqueue commands for users the instance does not hold |
 | O6 | Low | protocol | Protocol gaps (no version/connection id, silent drops, OpenAPI) |
 | **Web client and replica** | | | |
@@ -293,7 +293,9 @@ Failure scenario: one account opens a socket, subscribes to a busy stream, stops
 
 Fix: wrap sends in `tokio::time::timeout` (about 10 s) and exit the send task on failure; abort `recv_task` when the hub removes the connection (have `forward_egress` return when `rx` closes); send periodic ws `Ping` frames and treat a missing `Pong` or no traffic within N intervals as dead; add an idle timeout; optionally set TCP keepalive/user timeout.
 
-### A6. `Ping` is a broadcast and push channel (Medium)
+### A6 ✅. `Ping` is a broadcast and push channel (Default fixed)
+
+**Fixed (default only):** `HubConfig::ping_enabled` now defaults to `false` (`hub_service.rs`), so an environment that omits the key no longer fails open; prod already set it. The test hub still enables it. Still open where ping is enabled: operator-only role, rejecting `userId` for non-admins, rate limit (A2/A3), or deleting the feature.
 
 - `routes/ws/connect.rs:305-322` and `hub_service.rs:427-443`: any logged-in user may send `{"type":"ping","id":"<255 chars>"}` and either `userId: <any uuid>` (`send_to_user`) or no `userId` (`broadcast` to every connection with `TopicKey::Ping`, which is every connection, `connect.rs:393`). No role check and no rate limit. User UUIDs are visible to other users in stream commands (`message.rs` `WireStreamCommand.user_id`).
 - `HubConfig` defaults `ping_enabled: true` (`hub_service.rs:62,72`); `server_config.prod.json:16` sets it false, so this is a fail-open default and a risk on any environment that omits the key.
@@ -413,8 +415,8 @@ Every command carries the sender's raw `user_id` (`routes/ws/message.rs:46`); us
 |---|---|---|---|
 | O1 ✅ | **Accepted.** `Problem::log` dumps the problem (Postgres/Redis errors, attacker-controlled `Host`/`Origin`) at `error`/`info`: a documented exception to "sensitive data: trace only", it is the only root-cause information in prod. Revisit when errors carry a safe cause label. | `crates/shine-infra/src/web/responses/problem_detail.rs:150-159` | None. |
 | O2 | **Info-level spans and logs on hot paths.** A per-command hub span with the user id, registry spans, and a session-checker warning per connection per tick. | `hub_service.rs:475`; `redis_hub_registry.rs:53,78,150,174,183`; `tasks/session_checker.rs:51` | `debug`; log once per tick with a count. |
-| O3 | **Start-up self-test lines are counted.** Every restart adds two warn and two error events, so alerts on the metric fire on every deploy. | `crates/shine-infra/src/web/web_app.rs:202-213`; `telemetry_service.rs:109-115` | Exclude them from the counter. |
-| O4 | **Metrics gaps.** No queue depth, rejected connects or registry-error metrics; `notify` bypasses the metrics helper; a full connection gets a repeated `DropConnection` per stream send. | `services/hub/hub_metrics.rs`; `hub_status.rs:25-28`; `hub_connections.rs:44-46` | Add the metrics; dedupe in-flight drops. |
+| O3 ✅ | **Fixed.** The start-up self-test lines (every restart added two warn and two error events, so alerts fired on every deploy) log with the target `SELF_TEST_TARGET` (`self_test`), which `LogMetricsLayer` skips. | `crates/shine-infra/src/web/web_app.rs`; `telemetry_service.rs`; `telemetry/log_metrics.rs` | None. No test (needs a metrics reader). |
+| O4 ✅ | **Fixed.** `HubMetrics` fields are private and every event is a method. New: `hub_control_queue_depth` (`ControlQueue` counts every producer), `hub_connects_rejected` (reason `host`, `origin`, `hub_stopped`), `hub_registry_errors` (operation `create`, `find`, `remove`, `heartbeat`), `hub_drops_deduplicated`. `RemovedConnection::notify` goes through the counted `try_send`. `ControlQueue::drop_connection` queues one `DropConnection` per connection until the loop processes it (R14's repeated scans shrink with it). Tests in `hub_control_queue.rs`; the metrics themselves are untested. | `services/hub/hub_metrics.rs`, `hub_control_queue.rs`; `hub_service.rs`; `routes/ws/connect.rs` | None. |
 | O5 | **Registry notices enqueue a command for users the instance does not hold.** | `redis_hub_connection_db.rs:55-69`; `hub_service.rs:475-481` | Filter in the listener. |
 | O6 | **Protocol gaps.** No version or connection id in `connected`; bad JSON, binary frames and bad stream ids are dropped silently; no close after repeated invalid frames; OpenAPI documents only `OK`. | `routes/ws/message.rs:55,78-86`; `connect.rs:67-75,188-193,261-263` | Document the schema; consider a close after repeated refusals. |
 

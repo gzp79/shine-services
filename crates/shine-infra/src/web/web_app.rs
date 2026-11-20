@@ -250,16 +250,16 @@ async fn load_app_config<A: WebApplication>() -> Result<WebAppConfig<A::AppConfi
         tracing::dispatcher::set_default(&pre_init_log.into())
     };
 
-    log::trace!("init-trace - log: ok");
-    log::debug!("init-debug - log: ok");
-    log::info!("init-info  - log: ok");
-    log::warn!("init-warn  - log: ok");
-    log::error!("init-error - log: ok");
-    tracing::trace!("init-trace - tracing: ok");
-    tracing::debug!("init-debug - tracing: ok");
-    tracing::info!("init-info  - tracing: ok");
-    tracing::warn!("init-warn  - tracing: ok");
-    tracing::error!("init-error - tracing: ok");
+    log::trace!(target: crate::telemetry::SELF_TEST_TARGET, "init-trace - log: ok");
+    log::debug!(target: crate::telemetry::SELF_TEST_TARGET, "init-debug - log: ok");
+    log::info!(target: crate::telemetry::SELF_TEST_TARGET, "init-info  - log: ok");
+    log::warn!(target: crate::telemetry::SELF_TEST_TARGET, "init-warn  - log: ok");
+    log::error!(target: crate::telemetry::SELF_TEST_TARGET, "init-error - log: ok");
+    tracing::trace!(target: crate::telemetry::SELF_TEST_TARGET, "init-trace - tracing: ok");
+    tracing::debug!(target: crate::telemetry::SELF_TEST_TARGET, "init-debug - tracing: ok");
+    tracing::info!(target: crate::telemetry::SELF_TEST_TARGET, "init-info  - tracing: ok");
+    tracing::warn!(target: crate::telemetry::SELF_TEST_TARGET, "init-warn  - tracing: ok");
+    tracing::error!(target: crate::telemetry::SELF_TEST_TARGET, "init-error - tracing: ok");
 
     let config = WebAppConfig::<A::AppConfig>::load(&stage, None).await?;
     config.feature.validate()?;
