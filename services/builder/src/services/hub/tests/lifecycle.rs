@@ -535,3 +535,34 @@ async fn batched_heartbeat_refreshes_active_and_reports_stale() {
     test.hub.request_disconnection(active_b, conn_b).unwrap();
     test.wait_all_commands().await;
 }
+
+/// Every task ends when the hub shuts down, that is not a failure to report.
+#[test(serial = "hub-service")]
+async fn a_shutdown_does_not_report_the_ending_tasks_as_failed() {
+    let mut test = TestHub::from_env(TestHubOptions {
+        with_streams: Some(crate::services::command_stream::StreamConfig::quiet()),
+        ..Default::default()
+    })
+    .await;
+    let (_connection, _rx) = test.connect_ping(Uuid::new_v4(), 8);
+    test.wait_all_commands().await;
+
+    test.hub.request_shutdown().unwrap();
+    test.wait_for_shutdown_events().await;
+    test.wait_shutdown_complete().await;
+
+    let failed = tokio::time::timeout(Duration::from_millis(300), test.hub.supervisor().wait_failed()).await;
+    assert!(failed.is_err(), "a task was reported failed on a shutdown: {failed:?}");
+}
+
+#[test(serial = "hub-service")]
+async fn a_task_that_ends_while_the_hub_runs_is_reported_as_failed() {
+    let test = TestHub::default_from_env().await;
+    let waiting = tokio::time::timeout(Duration::from_millis(100), test.hub.supervisor().wait_failed()).await;
+    assert!(waiting.is_err(), "a healthy hub reported a failed task: {waiting:?}");
+
+    test.hub.supervisor().task_ended("heartbeat");
+
+    let failed = tokio::time::timeout(Duration::from_secs(5), test.hub.supervisor().wait_failed()).await;
+    assert_eq!(failed, Ok("heartbeat".to_string()));
+}

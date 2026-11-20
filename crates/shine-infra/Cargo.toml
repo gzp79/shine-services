@@ -110,6 +110,7 @@ axum-extra = { workspace = true, features = [
     "typed-header",
 ] }
 
+shine-core = { workspace = true, features = ["tokio"] }
 shine-infra-macros = { workspace = true }
 
 [dev-dependencies]

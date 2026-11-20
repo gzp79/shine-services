@@ -58,7 +58,7 @@ Severity: **Blocker** = fix before a prod deploy; High / Medium / Low as assesse
 | R3 ✅ | Intentional | availability | Reconnect storm after a Redis flush (missing registry row = inactive) |
 | R4 ✅ | Fixed | correctness | Aborted `EXEC` becomes an error; takeover detection can be skipped |
 | R5 ✅ | Fixed | shutdown | Shutdown was not awaited; deregistration was serial |
-| R6 | Medium | task lifecycle | Hub background tasks and dispatcher are unsupervised |
+| R6 ✅ | Fixed | task lifecycle | Hub background tasks and dispatcher were unsupervised |
 | R7 | Medium | scalability / revocation | `SessionChecker` is sequential and extends the session TTL |
 | R8 | Medium | availability | Redis pool keeps dead connections |
 | R9 | Low | correctness | Registry listener not awaited, not retried, reconnect ignored |
@@ -331,14 +331,9 @@ An aborted `EXEC` came back as `Err(Incompatible type ... value was nil)` (check
 
 Most of it was fixed already: the shutdown hook awaits `wait_shutdown_complete` (`main.rs`), the hub keeps and joins the stream dispatcher handle, which bounds the workers' last persist by `stream_shutdown_timeout`. **Fixed now:** `HubService::shutdown` told the sockets and removed the registry rows one at a time, so with a slow Redis every connection cost its own wait (30 connections at 300 ms took 9.4 s, and a Redis outage costs a pool wait each). It now closes every socket first, then removes the rows 32 at a time within `SHUTDOWN_REGISTRY_TIMEOUT` (5 s), the rest expires with the TTL. `wait_shutdown_complete` no longer panics (`expect`) if the loop task is gone, it returns. Test: `shutdown_with_a_slow_registry_takes_no_longer_than_one_round_of_removals` (`fault.rs`, toxiproxy latency), failed before with 9.4 s. Not done: the hook itself has no time limit, it relies on the two bounds above.
 
-### R6. Unsupervised background tasks (Medium)
+### R6 ✅. Unsupervised background tasks (Fixed)
 
-- `hub_service.rs:186-195`: `Heartbeat`, `SessionChecker`, the registry listener and `StreamDispatcher` are bare `tokio::spawn`s. Handles are joined only at shutdown (`:497-503`) and the dispatcher's handle is dropped (if it dies, stream subscriptions silently stop while the hub keeps buffering events for it in an unbounded channel).
-- Panics are out of scope (D3: a panic aborts the process and the service restarts). What remains is a task that ends without panicking, for example returning early on an error or a closed channel.
-- If `SessionChecker` ends that way, its subscription receiver drops; `Subscribers::publish` (`hub_subscribers.rs:36-46`) prunes it with only an `error!` log. Session revocation then stops being enforced for all live sockets with no alarm (`tasks/connection_tracker.rs:72,85`).
-- If the command loop (`:466-506`) returns, `control_rx` is dropped, every `request_*` returns `SendCommandFailed`, existing sockets stay open and un-cleaned, and status stays healthy.
-
-Fix: have the tasks that must live as long as the process (command loop, session checker, dispatcher) exit the process, or trip the health check, when they end unexpectedly; expose `HubStatus` liveness of each task.
+The command loop, heartbeat, session checker, registry listener and stream dispatcher are spawned once and only joined at shutdown, so one that ended on its own (an early return, not a panic, D3) left the hub half alive with a healthy status: no session revocation, sockets never cleaned up, or stream subscriptions silently dead. **Fixed:** `TaskSupervisor` (`shine-core`, `tokio/task_supervisor.rs`, reusable by any service; its `spawn` reports a task that returns) records a task that ends while the hub is not shutting down (`Shutdown` sets the flag first), logging it at `error`. The supervisor is one per service, in `CoreServices` (`shine-infra`, `web_app.rs`), and the hub gets it through `with_task_supervisor` (tasks named `hub ...`); the web app's shutdown signal waits on it next to SIGTERM and `ShutdownHandle` requests, marks the supervisor stopping when any shutdown begins, then runs the hooks and drains the server, so the platform restarts the service. Nothing is needed in a service's `main.rs`. The registry listener counts only when its initial subscribe fails (R9: it returns after subscribing otherwise). Tests: `task_supervisor.rs` (first failure kept, none while stopping, a returned task is reported, an aborted one is not), `lifecycle.rs` (`a_shutdown_does_not_report_the_ending_tasks_as_failed`, with the stream dispatcher running, fails without the flag; `a_task_that_ends_while_the_hub_runs_is_reported_as_failed`), `web_app.rs` (`ShutdownHandle`, a failed task requests the shutdown, none once it started). No test makes a real task end by itself (nothing outside the hub can close its subscriptions).
 
 ### R7. Session checker is sequential and extends the session TTL (Medium)
 

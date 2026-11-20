@@ -25,7 +25,8 @@ impl StreamDispatcher {
     ) -> JoinHandle<()> {
         // Subscribed before the hub's loop starts: an event dispatched before is lost to it for good.
         let mut subscription = service.subscribe(vec![TopicKey::Hub, TopicKey::Stream]).await;
-        tokio::spawn(async move {
+        let supervisor = service.supervisor().clone();
+        supervisor.spawn("hub stream dispatcher", async move {
             let mut purge = time::interval(PURGE_INTERVAL);
             purge.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
             purge.tick().await;

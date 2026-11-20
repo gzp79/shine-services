@@ -96,7 +96,7 @@ flowchart LR
 | `DisconnectUser` | Connection API, heartbeat, session checker | Remove the connection if its id still matches (CAS). |
 | `DropConnection` | Egress senders that hit a dead channel | Force-remove the connection by id. |
 | `HubRegistryChanged` | Redis registry-change listener | Recheck the user's active connection against the registry. |
-| `Shutdown` | Connection API (`request_shutdown`) | Publish `Shutdown`, close every socket at once, then remove the registry rows side by side (32 at a time) within 5 s; rows left behind expire with their TTL. Stops the loop. |
+| `Shutdown` | Connection API (`request_shutdown`), or the service when a hub task ends unexpectedly (Key rules, task supervision) | Publish `Shutdown`, close every socket at once, then remove the registry rows side by side (32 at a time) within 5 s; rows left behind expire with their TTL. Stops the loop. |
 
 ### Lifecycle events
 
@@ -210,6 +210,7 @@ A *control command* is the hub's own input (connect, disconnect, registry change
 | Stale removal | Every removal path is CAS'd on `connection_id` — locally (`remove_connection`) and in Redis (`remove_connection_if_active`) — so a stale removal cannot tear down a fresh reconnect. |
 | Session bound | `SessionChecker` disconnects on definitive session loss, so a connection never outlives its session. |
 | Crashed instance | Registry entries carry a TTL kept alive only by the live instance's heartbeat, so its connections self-clean. |
+| Task supervision | The command loop, heartbeat, session checker, stream dispatcher and the registry listener (when its subscribe fails) live as long as the hub. One that ends before a shutdown is recorded by the service-wide `TaskSupervisor` (`shine-core`, in `CoreServices`; the hub starts its tasks with its `spawn`, named `hub ...`). The web app then runs the shutdown as for a SIGTERM (hooks, then the server drains), so the platform restarts the service instead of leaving it half alive. |
 | Lifecycle delivery | Lossless unbounded subscriber channels, with all subscriptions registered before the loop starts, so internal tasks never miss an event. |
 | Topics | A connection receives only the topics it declared at connect time; a message has exactly one topic. |
 | Identity | The user id and connection id come from the authenticated connection, never from a frame. |

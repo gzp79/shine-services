@@ -69,7 +69,10 @@ pub async fn spawn_connection_loop<C: ConnectionConsumer>(
     // Subscribe synchronously before spawning: an event dispatched before a consumer subscribes is
     // lost to it forever, so every consumer must be subscribed before the command loop dispatches.
     let subscription = service.subscribe(vec![TopicKey::Hub]).await;
-    tokio::spawn(run_connection_loop(subscription, interval, None, consumer))
+    service.supervisor().spawn(
+        format!("hub {}", consumer_name::<C>()),
+        run_connection_loop(subscription, interval, None, consumer),
+    )
 }
 
 /// Like [`spawn_connection_loop`], but the loop also runs an extra `on_tick` whenever `wake` is
@@ -81,7 +84,10 @@ pub async fn spawn_connection_loop_with_wake<C: ConnectionConsumer>(
     consumer: C,
 ) -> JoinHandle<()> {
     let subscription = service.subscribe(vec![TopicKey::Hub]).await;
-    tokio::spawn(run_connection_loop(subscription, interval, Some(wake), consumer))
+    service.supervisor().spawn(
+        format!("hub {}", consumer_name::<C>()),
+        run_connection_loop(subscription, interval, Some(wake), consumer),
+    )
 }
 
 /// Short type name of a consumer, for metric labels and logs.

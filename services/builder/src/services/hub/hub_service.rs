@@ -26,6 +26,7 @@ use crate::{
 use futures::{stream, StreamExt};
 use opentelemetry::trace::SpanContext;
 use serde::{Deserialize, Serialize};
+use shine_core::tokio::TaskSupervisor;
 use shine_game::replica::StreamId;
 use shine_infra::{
     serde::{consts, duration},
@@ -98,6 +99,7 @@ pub struct HubServiceBuilder {
     hub_registry: Option<RedisHubConnectionDb>,
     stream_registry: Option<StreamRegistry<RedisCommandInboxDb, PgCommandLogDb>>,
     stream_authorize_service: Option<StreamAuthorizeService>,
+    supervisor: TaskSupervisor,
 }
 
 impl HubServiceBuilder {
@@ -112,7 +114,16 @@ impl HubServiceBuilder {
             hub_registry: None,
             stream_registry: None,
             stream_authorize_service: None,
+            supervisor: TaskSupervisor::new(),
         }
+    }
+
+    /// Reports the tasks of the hub that end unexpectedly to the given supervisor, which the service shares
+    /// with its other components. Without it the hub watches its tasks on its own.
+    #[must_use]
+    pub fn with_task_supervisor(mut self, supervisor: TaskSupervisor) -> Self {
+        self.supervisor = supervisor;
+        self
     }
 
     #[must_use]
@@ -158,6 +169,7 @@ impl HubServiceBuilder {
             hub_registry,
             stream_registry,
             stream_authorize_service,
+            supervisor,
         } = self;
 
         let session_service = session_service.ok_or(HubServiceBuilderError::MissingSessionService)?;
@@ -176,6 +188,7 @@ impl HubServiceBuilder {
                 stream_registry,
                 stream_authorize_service,
                 ping_enabled: config.ping_enabled,
+                supervisor,
             }),
         };
 
@@ -253,6 +266,7 @@ struct Inner {
     stream_registry: Option<StreamRegistry<RedisCommandInboxDb, PgCommandLogDb>>,
     stream_authorize_service: StreamAuthorizeService,
     ping_enabled: bool,
+    supervisor: TaskSupervisor,
 }
 
 /// Messaging service for connected users.
@@ -268,6 +282,11 @@ impl HubService {
 
     pub fn ping_enabled(&self) -> bool {
         self.inner.ping_enabled
+    }
+
+    /// Watches the tasks that have to live as long as the hub.
+    pub fn supervisor(&self) -> &TaskSupervisor {
+        &self.inner.supervisor
     }
 
     /// Subscribes the connection to a stream (or asks for it to be synced again), as `requested_kind` if the
@@ -482,7 +501,8 @@ impl HubService {
         stream_dispatcher: Option<JoinHandle<()>>,
         shutdown_complete: watch::Sender<bool>,
     ) {
-        tokio::spawn(async move {
+        let supervisor = service.supervisor().clone();
+        supervisor.spawn("hub command loop", async move {
             while let Some((command, origin, queued_at)) = control_rx.recv().await {
                 let name = command.name();
                 let metrics = hub_metrics();
@@ -546,6 +566,7 @@ impl HubService {
                 .await
             {
                 tracing::error!("Failed to listen to hub registry changes: {err:#?}");
+                service.supervisor().task_ended("hub registry listener");
             }
         })
     }
@@ -679,6 +700,7 @@ impl HubService {
                 true
             }
             ControlCommand::Shutdown => {
+                self.inner.supervisor.shutdown_started();
                 self.shutdown().await;
                 false
             }

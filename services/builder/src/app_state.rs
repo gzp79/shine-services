@@ -60,6 +60,7 @@ impl AppState {
         let command_log_db = PgCommandLogDb::new(postgres_pool).await?;
 
         let hub_service = HubService::builder(config.feature.hub.clone())
+            .with_task_supervisor(core_services.task_supervisor.clone())
             .with_session_service(core_services.current_user_service.clone())
             .with_hub_registry(hub_registry)
             .with_stream_registry(|egress| {
