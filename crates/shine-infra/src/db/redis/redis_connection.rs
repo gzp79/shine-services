@@ -14,7 +14,8 @@ use async_trait::async_trait;
 use bb8::{ManageConnection, Pool as BB8Pool, PooledConnection, RunError};
 use redis::{
     aio::{ConnectionLike, MultiplexedConnection},
-    AsyncConnectionConfig, Client, Cmd, ErrorKind, Pipeline, RedisFuture, Value,
+    io::tcp::{socket2::TcpKeepalive, TcpSettings},
+    AsyncConnectionConfig, Client, Cmd, ErrorKind, IntoConnectionInfo, Pipeline, RedisFuture, Value,
 };
 use std::{
     ops::{Deref, DerefMut},
@@ -36,8 +37,8 @@ pub use shine_infra_macros::RedisJsonValue;
 pub struct RedisConnection {
     listener: RedisListener,
     client: MultiplexedConnection,
-    /// Set once a command sees a dropped connection or another unrecoverable error, so `has_broken`
-    /// can report it without an extra PING on every get from the pool.
+    /// Set once a command sees a dropped connection, a timeout or another unrecoverable error, so
+    /// `has_broken` can report it without an extra PING on every get from the pool.
     broken: Arc<AtomicBool>,
 }
 
@@ -61,14 +62,36 @@ impl RedisConnection {
     }
 }
 
+/// Whether the error shows that the connection is no longer usable. A response that times out counts: the
+/// link may be dead without any error (a failover, a dropped NAT entry), and every later command would wait
+/// for its own timeout on it. Replacing a healthy connection that was only slow costs one reconnect.
+fn is_broken(err: &RedisRawError) -> bool {
+    err.is_connection_dropped() || err.is_unrecoverable_error() || err.is_timeout()
+}
+
 /// Marks `broken` when `result` shows the connection is no longer usable, so a later `has_broken`
 /// check can evict it without probing every checkout with a PING.
 fn mark_if_broken<T>(broken: &Arc<AtomicBool>, result: &Result<T, RedisRawError>) {
-    if let Err(err) = result {
-        if err.is_connection_dropped() || err.is_unrecoverable_error() {
-            broken.store(true, Ordering::Relaxed);
-        }
+    if result.as_ref().is_err_and(is_broken) {
+        broken.store(true, Ordering::Relaxed);
     }
+}
+
+/// TCP settings of the connections. A link that died without a reset gives no error, and would hang until the
+/// kernel gives up after minutes. The kernel is asked to notice it sooner: keepalive probes find an idle
+/// connection that is gone (about a minute), and, on Linux, a user timeout finds one that has data nobody
+/// acknowledges.
+fn tcp_settings() -> TcpSettings {
+    let keepalive = TcpKeepalive::new().with_time(Duration::from_secs(30));
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    let keepalive = keepalive.with_interval(Duration::from_secs(10));
+    #[cfg(target_os = "linux")]
+    let keepalive = keepalive.with_retries(3);
+
+    let settings = TcpSettings::default().set_keepalive(keepalive);
+    #[cfg(target_os = "linux")]
+    let settings = settings.set_user_timeout(Duration::from_secs(15));
+    settings
 }
 
 impl ConnectionLike for RedisConnection {
@@ -171,7 +194,8 @@ impl RedisConnectionManager {
         wake_interval: Option<Duration>,
         max_reconnect_backoff: Duration,
     ) -> Result<Self, RedisRawError> {
-        let client = Client::open(raw_cns)?;
+        let info = raw_cns.into_connection_info()?.set_tcp_settings(tcp_settings());
+        let client = Client::open(info)?;
         let listener = RedisListener::new(client.clone(), connect_timeout, wake_interval, max_reconnect_backoff);
         Ok(Self { client, conn_config, listener })
     }
@@ -373,6 +397,21 @@ mod test {
             RunError::User(e) => e.kind(),
             RunError::TimedOut => panic!("expected a config error, got a pool timeout"),
         }
+    }
+
+    #[tokio::test]
+    async fn the_connections_probe_for_a_link_that_died_silently() {
+        let manager = RedisConnectionManager::new(
+            "redis://localhost",
+            AsyncConnectionConfig::new(),
+            Duration::from_secs(1),
+            None,
+            Duration::from_secs(1),
+        )
+        .unwrap();
+
+        let info = manager.client.get_connection_info();
+        assert!(info.tcp_settings().keepalive().is_some());
     }
 
     #[tokio::test]

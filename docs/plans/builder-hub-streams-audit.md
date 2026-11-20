@@ -60,7 +60,7 @@ Severity: **Blocker** = fix before a prod deploy; High / Medium / Low as assesse
 | R5 ✅ | Fixed | shutdown | Shutdown was not awaited; deregistration was serial |
 | R6 ✅ | Fixed | task lifecycle | Hub background tasks and dispatcher were unsupervised |
 | R7 | Medium | scalability / revocation | `SessionChecker` is sequential and extends the session TTL |
-| R8 | Medium | availability | Redis pool keeps dead connections |
+| R8 ✅ | Fixed | availability | Redis pool kept connections whose responses time out (half-open link) |
 | R9 | Low | correctness | Registry listener not awaited, not retried, reconnect ignored |
 | R10 | Low | correctness | `Connected` sent before registration; registration failure closes silently |
 | R11 | Low | correctness | One close code (4000) for every drop; reason lost when the queue is full |
@@ -345,9 +345,9 @@ The command loop, heartbeat, session checker, registry listener and stream dispa
 
 Fix: bounded-concurrency checks (`buffer_unordered(32)`) or a batched lookup; revoke by event (publish on logout) rather than polling only. Cheaper check (allows a short interval again without the cost or the TTL side effect): add a read-only existence check to `CurrentUserService` that only tests the sentinel key (`EXISTS`, or one `MGET`/pipeline for all tracked connections per tick) and does not read the session data or run the `EXPIRE` pipeline. Keep the TTL refresh on the normal request path (and, if needed, a rare refresh in the checker, e.g. every 15 min).
 
-### R8. Redis pool keeps dead connections (Medium)
+### R8 ✅. Redis pool keeps dead connections (Fixed)
 
-`test_on_check_out(false)` and timeouts do not mark a connection broken (`crates/shine-infra/src/db/redis/redis_connection.rs:67,297`), so reused sockets time out for minutes after a failover or idle drop. Fix: flag timeouts and I/O errors as broken, or restore an idle PING.
+The pool no longer pings on checkout and only evicted connections that saw a dropped connection or an unrecoverable error (`mark_if_broken`, `redis_connection.rs`). A response timeout (`io::Error(TimedOut)`) is neither in redis-rs 1.7.1, so after a failover or a half-open link every command on a pooled connection waited for its own timeout until the kernel gave up on the socket (minutes). **Fixed:** (1) `is_broken` also counts a timeout, so the pool replaces that connection; a healthy but slow one costs one reconnect. (2) The connections (and the pub/sub listener's, built from the same client) get TCP settings: keepalive probes after 30 s idle, every 10 s, 3 retries (about a minute), and on Linux a 15 s `TCP_USER_TIMEOUT` for data nobody acknowledges. Not done: no idle `PING` on checkout (a round trip per checkout), no `max_lifetime`. Tests in `redis_connection.rs`: a timeout marks the connection broken, a command error does not, `mark_if_broken` sets the flag only for a broken one, the client carries the keepalive settings. No test with a real half-open link.
 
 ### R9. Registry listener (Low)
 
