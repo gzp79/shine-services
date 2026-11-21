@@ -1,8 +1,10 @@
 use crate::{
+    app_config::{AppConfig, AppConfigEx},
     app_state::AppState,
     models::messages::{CommandFailure, DisconnectReason, HubEvent, HubMessage, PingEvent, StreamMessage, TopicKey},
     routes::ws::{
         message::{decode_wire_command, stream_message_to_wire, PingRequest, WSMessageRequest, WSMessageResponse},
+        ws_config::SocketTimeouts,
         ws_metrics::ws_metrics,
     },
     services::{hub_metrics, stream_metrics, HubService, MAX_COMMAND_BYTES},
@@ -27,7 +29,7 @@ use shine_infra::{
     },
 };
 use std::{fmt::Debug, sync::Arc, time::Duration};
-use tokio::sync::mpsc;
+use tokio::{sync::mpsc, time::MissedTickBehavior};
 use tracing::{
     field::{display, Empty},
     info_span, instrument, Instrument, Span,
@@ -62,9 +64,6 @@ fn close_code(reason: DisconnectReason) -> u16 {
 /// capped at `MAX_COMMAND_BYTES` plus a small envelope. A larger message ends the socket.
 const MAX_WS_MESSAGE_BYTES: usize = 2 * MAX_COMMAND_BYTES;
 
-/// Max wait after a client close for the hub to drop the connection, before the send task is aborted.
-const SEND_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
-
 #[utoipa::path(
     get,
     path = "/api/connect",
@@ -76,13 +75,14 @@ const SEND_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 )]
 pub async fn connect(
     State(state): State<AppState>,
+    Extension(config): Extension<AppConfig>,
     Extension(problem_config): Extension<ProblemConfig>,
     TargetHost(target_host): TargetHost,
     Origin(origin): Origin,
     user: CheckedCurrentUser,
     ws: WebSocketUpgrade,
 ) -> Result<impl IntoResponse, ProblemResponse> {
-    if !state.settings().ws.is_allowed_host(target_host.as_str()) {
+    if !config.is_allowed_host(target_host.as_str()) {
         hub_metrics().connect_rejected("host");
         return Err(Problem::forbidden()
             .with_detail("host is not allowed")
@@ -90,7 +90,7 @@ pub async fn connect(
             .into_response(&problem_config));
     }
 
-    if !state.settings().ws.is_allowed_origin(origin.as_str()) {
+    if !config.is_allowed_origin(origin.as_str()) {
         hub_metrics().connect_rejected("origin");
         return Err(Problem::forbidden()
             .with_detail("origin is not allowed")
@@ -106,7 +106,11 @@ pub async fn connect(
     let ws = ws
         .max_message_size(MAX_WS_MESSAGE_BYTES)
         .max_frame_size(MAX_WS_MESSAGE_BYTES);
-    Ok(ws.on_upgrade(move |socket| handle_socket(socket, user, hub_service, span_context)))
+    Ok(
+        ws.on_upgrade(move |socket| {
+            handle_socket(socket, user, hub_service, span_context, config.ws_config().timeouts)
+        }),
+    )
 }
 
 fn event_to_wire_message(message: HubMessage) -> Option<WSMessageResponse> {
@@ -117,7 +121,13 @@ fn event_to_wire_message(message: HubMessage) -> Option<WSMessageResponse> {
     }
 }
 
-async fn handle_socket(socket: WebSocket, user: CurrentUser, hub_service: HubService, span_context: SpanContext) {
+async fn handle_socket(
+    socket: WebSocket,
+    user: CurrentUser,
+    hub_service: HubService,
+    span_context: SpanContext,
+    timeouts: SocketTimeouts,
+) {
     let (ws_sender, ws_receiver) = socket.split();
     serve_socket(
         ws_sender,
@@ -126,6 +136,7 @@ async fn handle_socket(socket: WebSocket, user: CurrentUser, hub_service: HubSer
         user.key,
         hub_service,
         span_context,
+        timeouts,
     )
     .await
 }
@@ -138,6 +149,7 @@ async fn serve_socket<S, R, E>(
     session_key: SessionKey,
     hub_service: HubService,
     span_context: SpanContext,
+    timeouts: SocketTimeouts,
 ) where
     S: Sink<WsMessage> + Unpin + Send + 'static,
     S::Error: Debug,
@@ -170,7 +182,17 @@ async fn serve_socket<S, R, E>(
     let mut recv_task = {
         let hub_service = hub_service.clone();
         tokio::spawn(async move {
-            while let Some(Ok(message)) = ws_receiver.next().await {
+            loop {
+                // Any frame counts as a sign of life, a `Pong` answering the server's `Ping` included.
+                let message = match tokio::time::timeout(timeouts.idle, ws_receiver.next()).await {
+                    Ok(Some(Ok(message))) => message,
+                    Ok(_) => break,
+                    Err(_) => {
+                        tracing::info!("[{current_user_id}] [{connection_id}] Socket idle, closing");
+                        ws_metrics().socket_timed_out("idle");
+                        break;
+                    }
+                };
                 tracing::debug!("[{current_user_id}] WsMessage received");
                 let WsMessage::Text(text) = message else {
                     continue;
@@ -197,7 +219,7 @@ async fn serve_socket<S, R, E>(
         })
     };
 
-    let mut send_task = tokio::spawn(forward_egress(rx, ws_sender, current_user_id, connection_id));
+    let mut send_task = tokio::spawn(forward_egress(rx, ws_sender, current_user_id, connection_id, timeouts));
 
     let send_exited = tokio::select! {
         rv_a = (&mut send_task) => {
@@ -226,7 +248,7 @@ async fn serve_socket<S, R, E>(
     } else {
         // Keep `rx` open until the hub drops the connection (the send task ends when `rx` closes), so
         // sends in the meantime do not find a closed channel and count a client close as a dead channel.
-        if tokio::time::timeout(SEND_DRAIN_TIMEOUT, &mut send_task).await.is_err() {
+        if tokio::time::timeout(timeouts.send_drain, &mut send_task).await.is_err() {
             send_task.abort();
         }
     }
@@ -335,16 +357,62 @@ async fn handle_stream_request(
     ws_metrics().message_received(kind, outcome);
 }
 
-/// Forwards the hub's messages to the socket, and closes it once the hub ends the connection.
-async fn forward_egress<S>(mut rx: mpsc::Receiver<HubMessage>, mut ws_sender: S, user_id: Uuid, connection_id: Uuid)
+/// Writes a frame within the write timeout. `false` when the socket is not writable any more (the write failed
+/// or timed out): the peer is gone or does not read, and nothing more can be sent to it.
+async fn send_frame<S>(ws_sender: &mut S, frame: WsMessage, user_id: Uuid, write_timeout: Duration) -> bool
 where
     S: Sink<WsMessage> + Unpin,
     S::Error: Debug,
 {
+    match tokio::time::timeout(write_timeout, ws_sender.send(frame)).await {
+        Ok(Ok(())) => true,
+        Ok(Err(err)) => {
+            tracing::debug!("[{user_id}] Failed to send message to the user: {err:#?}");
+            false
+        }
+        Err(_) => {
+            tracing::info!("[{user_id}] Write to the socket timed out, closing");
+            ws_metrics().socket_timed_out("write");
+            false
+        }
+    }
+}
+
+/// Forwards the hub's messages to the socket, and closes it once the hub ends the connection.
+/// Also pings the peer periodically, which keeps the receiving side of the socket from going idle while the
+/// peer is alive, and ends when a frame cannot be written within the write timeout.
+async fn forward_egress<S>(
+    mut rx: mpsc::Receiver<HubMessage>,
+    mut ws_sender: S,
+    user_id: Uuid,
+    connection_id: Uuid,
+    timeouts: SocketTimeouts,
+) where
+    S: Sink<WsMessage> + Unpin,
+    S::Error: Debug,
+{
+    let mut ping = tokio::time::interval_at(
+        tokio::time::Instant::now() + timeouts.ping_interval,
+        timeouts.ping_interval,
+    );
+    ping.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
     // The hub ends the socket by dropping its sender, after the socket's own `UserDisconnected` when it
     // removed the connection itself (the event is lost when the channel is full).
     let mut close_frame = None;
-    while let Some(message) = rx.recv().await {
+    loop {
+        let message = tokio::select! {
+            message = rx.recv() => match message {
+                Some(message) => message,
+                None => break,
+            },
+            _ = ping.tick() => {
+                if !send_frame(&mut ws_sender, WsMessage::Ping(Default::default()), user_id, timeouts.write).await {
+                    return;
+                }
+                continue;
+            }
+        };
         tracing::debug!("[{user_id}] Bus message received");
         if let HubMessage::Hub(HubEvent::UserDisconnected {
             connection_id: closed, reason, ..
@@ -370,15 +438,13 @@ where
                     continue;
                 }
             };
-            if let Err(err) = ws_sender.send(WsMessage::Text(data.into())).await {
-                tracing::debug!("[{user_id}] Failed to send message to the user: {err:#?}");
+            if !send_frame(&mut ws_sender, WsMessage::Text(data.into()), user_id, timeouts.write).await {
+                return;
             }
         }
     }
 
-    if let Err(err) = ws_sender.send(WsMessage::Close(close_frame)).await {
-        tracing::debug!("[{user_id}] Failed to close websocket: {err:#?}");
-    }
+    send_frame(&mut ws_sender, WsMessage::Close(close_frame), user_id, timeouts.write).await;
 }
 
 /// Registers the connection in the hub, now that the upgrade has completed.

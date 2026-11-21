@@ -4,12 +4,11 @@ mod models;
 mod repositories;
 mod routes;
 mod services;
-mod settings;
 
 #[cfg(test)]
 pub mod testing;
 
-use self::{app_config::AppConfig, app_state::AppState, services::HubStatus};
+use self::{app_config::BuilderConfig, app_state::AppState, services::HubStatus};
 use anyhow::Error as AnyError;
 use repositories::{create_postgres_pool, create_redis_pool};
 use routes::ws::ws_routes;
@@ -25,7 +24,7 @@ use utoipa_axum::router::OpenApiRouter;
 struct Application;
 
 impl WebApplication for Application {
-    type AppConfig = AppConfig;
+    type AppConfig = BuilderConfig;
     type AppState = AppState;
 
     async fn create(
@@ -34,10 +33,10 @@ impl WebApplication for Application {
         context: &mut AppBuildContext<'_>,
         router: &mut OpenApiRouter<Self::AppState>,
     ) -> Result<Self::AppState, AnyError> {
-        let redis_pool = create_redis_pool(&config.core.stage, &config.feature.db).await?;
+        let redis_pool = create_redis_pool(&config.core().stage, &config.feature().db).await?;
         check_redis(&redis_pool).await?;
 
-        let postgres_pool = create_postgres_pool(&config.core.stage, &config.feature.db).await?;
+        let postgres_pool = create_postgres_pool(&config.core().stage, &config.feature().db).await?;
 
         let state = AppState::new(config, &redis_pool, &postgres_pool, context.core_services()).await?;
 

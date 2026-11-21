@@ -4,7 +4,6 @@ use crate::{
     session::CurrentUserService,
     telemetry::TelemetryService,
     web::{
-        compile_anchored_bytes,
         middlewares::{PoweredBy, SecurityHeaders},
         responses::ProblemConfig,
         ApiUrl, FeatureConfig, WebAppConfig,
@@ -17,6 +16,7 @@ use axum::{
     Extension,
 };
 use axum_server::Handle;
+use regex::bytes::Regex;
 use serde::de::DeserializeOwned;
 use shine_core::tokio::TaskSupervisor;
 use std::{env, fmt::Debug, fs, future::Future, net::SocketAddr, pin::Pin, time::Duration as StdDuration};
@@ -211,12 +211,7 @@ impl<'a> AppBuildContext<'a> {
     }
 }
 
-fn create_cors_layer(allowed_origins: &[String]) -> Result<CorsLayer, AnyError> {
-    let allowed_origins = allowed_origins
-        .iter()
-        .map(|r| compile_anchored_bytes(r))
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|err| anyhow!("Cors config error: {err}"))?;
+fn create_cors_layer(allowed_origins: Vec<Regex>) -> Result<CorsLayer, AnyError> {
     let cors = CorsLayer::default()
         .allow_origin(AllowOrigin::predicate(move |origin, _| {
             let origin = origin.as_bytes();
@@ -262,7 +257,7 @@ async fn load_app_config<A: WebApplication>() -> Result<WebAppConfig<A::AppConfi
     tracing::error!(target: crate::telemetry::SELF_TEST_TARGET, "init-error - tracing: ok");
 
     let config = WebAppConfig::<A::AppConfig>::load(&stage, None).await?;
-    config.feature.validate()?;
+    config.feature().validate()?;
     tracing::info!("pre-init completed");
 
     Ok(config)
@@ -270,19 +265,19 @@ async fn load_app_config<A: WebApplication>() -> Result<WebAppConfig<A::AppConfi
 
 #[instrument(skip(config, app))]
 async fn create_web_app<A: WebApplication>(
-    config: &WebAppConfig<A::AppConfig>,
+    config: WebAppConfig<A::AppConfig>,
     app: &A,
 ) -> Result<(Router<()>, AppShutdown), AnyError> {
     tracing::trace!("Creating telemetry service...");
-    let telemetry_service = TelemetryService::new(app.feature_name(), &config.telemetry).await?;
+    let telemetry_service = TelemetryService::new(app.feature_name(), config.telemetry()).await?;
     tracing::trace!("Creating health service...");
-    let mut health_service = HealthService::new(app.feature_name(), config)?;
+    let mut health_service = HealthService::new(app.feature_name(), &config)?;
     tracing::trace!("Creating problem service...");
-    let problem_service = ProblemConfig::new(config.service.full_problem_response);
+    let problem_service = ProblemConfig::new(config.service().full_problem_response);
     tracing::trace!("Creating in-flight service...");
     let in_flight_service = crate::health::InFlightService::new();
     tracing::trace!("Creating current user service...");
-    let current_user_service = Arc::new(CurrentUserService::from_config(&config.core.stage, &config.service).await?);
+    let current_user_service = Arc::new(CurrentUserService::from_config(&config.core().stage, config.service()).await?);
     let shutdown_handle = ShutdownHandle::default();
     let task_supervisor = TaskSupervisor::new();
     let core_services = CoreServices {
@@ -291,9 +286,12 @@ async fn create_web_app<A: WebApplication>(
     };
 
     tracing::trace!("Creating layer...");
-    let cors_layer = create_cors_layer(&config.service.allowed_origins)?;
-    let powered_by_layer = if config.service.expose_powered_by {
-        Some(PoweredBy::from_service_info(app.feature_name(), &config.core.version)?)
+    let cors_layer = create_cors_layer(config.service().allowed_origins.clone())?;
+    let powered_by_layer = if config.service().expose_powered_by {
+        Some(PoweredBy::from_service_info(
+            app.feature_name(),
+            &config.core().version,
+        )?)
     } else {
         None
     };
@@ -322,11 +320,11 @@ async fn create_web_app<A: WebApplication>(
         &mut shutdown_hooks,
         shutdown_handle.clone(),
     );
-    let app_state = app.create(config, &mut app_context, &mut router).await?;
+    let app_state = app.create(&config, &mut app_context, &mut router).await?;
 
     tracing::trace!("Setting up open API...");
     let (router, open_api) = router.split_for_parts();
-    let router = if config.service.expose_api_docs {
+    let router = if config.service().expose_api_docs {
         let mut doc = ApiDoc::with_default_components();
         doc.merge(open_api);
 
@@ -346,6 +344,7 @@ async fn create_web_app<A: WebApplication>(
     Ok((
         router
             .layer(Extension(current_user_service))
+            .layer(Extension(config.clone()))
             .layer(problem_service.into_layer())
             .layer(in_flight_service.create_layer())
             .layer(tower::util::option_layer(powered_by_layer))
@@ -363,12 +362,12 @@ async fn create_web_app<A: WebApplication>(
 
 async fn start_web_app<A: WebApplication>(app: A) -> Result<(), AnyError> {
     let config = load_app_config::<A>().await?;
-    let (router, shutdown) = create_web_app(&config, &app).await?;
+    let (router, shutdown) = create_web_app(config.clone(), &app).await?;
     tracing::info!("Starting web app with config...");
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], config.service.port));
+    let addr = SocketAddr::from(([0, 0, 0, 0], config.service().port));
 
-    if let Some(tls_config) = &config.service.tls {
+    if let Some(tls_config) = &config.service().tls {
         tracing::info!("Starting service on https://{addr:?} ...");
         let cert = fs::read(&tls_config.cert)?;
         let key = fs::read(&tls_config.key)?;

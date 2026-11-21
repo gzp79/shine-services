@@ -49,8 +49,8 @@ Severity: **Blocker** = fix before a prod deploy; High / Medium / Low as assesse
 | A1 | High | authz / DoS | Allow-all authorization and uncapped stream creation |
 | A2 | Medium | DoS | No rate limit on ws commands/subscribes; stream-wide backpressure punishes honest users; subscribe spam amplifies into `Sync` |
 | A3 | Medium | DoS | No per-connection throttle on the hub control queue; no connect throttle or connection cap |
-| A4 | Medium | resource growth | Inbox has no hard size limit (soft backpressure is sampled) |
-| A5 | Medium | resource leak | ws sink has no write timeout, idle timeout or keepalive (zombie and half-open sockets) |
+| A4 ✅ | Accepted | resource growth | Inbox has no hard size limit; the soft backpressure limit is enough |
+| A5 ✅ | Fixed | resource leak | ws sink had no write timeout, idle timeout or keepalive (zombie and half-open sockets) |
 | A6 ✅ | Fixed (default) | authz / amplification | `Ping` broadcast/target; the default is now off. Role check and rate limit still open |
 | **Availability and robustness** | | | |
 | R1 ✅ | Fixed | availability | Transient Redis/PG errors killed the worker and unsynced all subscribers; the calls are now retried. Resubscribe jitter moved to C8 |
@@ -259,7 +259,9 @@ Failure scenario: a client spams subscribe/unsubscribe, or one account reconnect
 
 Fix: per-connection token bucket in the receive loop (shared with A2); per-user connect-rate limit before the upgrade; per-instance connection cap; bounded control channel with `try_send` + drop-connection on overflow for client-originated commands (unbounded or reserved lane for internal commands); jittered backoff for clients; expose queue depth as a metric (O4).
 
-### A4. Inbox has no hard size limit (Medium)
+### A4 ✅. Inbox has no hard size limit (Accepted)
+
+**Accepted, no action:** the soft limit in the service keeps the inbox from growing indefinitely. The text below is kept for reference.
 
 `push` (`repositories/command_inbox/redis/inbox.rs:24-45`) is a MULTI/EXEC pipeline of `XADD`, `EXPIRE`, `PUBLISH`. Nothing bounds the stream length at write time. Backpressure is a cached `XLEN` sampled every 250 ms (`stream_registry.rs:152,348`, `:218,222`) with no reservation, so many connections pushing while the cached state is stale can go far past `inbox_backpressure_high`. A stream with no running worker is never drained, and every push re-arms the `EXPIRE` (so under load the key never expires), so the key can grow without bound (16 KB per entry).
 
@@ -283,7 +285,9 @@ return id
 - One round trip and O(1) `XLEN`, same cost as today. The script touches a single key, so it is Redis Cluster safe.
 - Test: push up to the hard limit, assert the next push returns `Full` and the stream length is unchanged.
 
-### A5. No write timeout, idle timeout or keepalive on the socket (Medium)
+### A5 ✅. No write timeout, idle timeout or keepalive on the socket (Fixed)
+
+**Fixed:** `SocketTimeouts` (`routes/ws/socket_timeouts.rs`, config `ws.timeouts`, all keys optional, seconds): `write` 10 s, `pingInterval` 30 s, `idle` 90 s, `sendDrain` 5 s; start-up rejects a zero value or `idle <= pingInterval`. `forward_egress` writes every frame under the `write` timeout and ends when a write fails or times out (no close frame is attempted on a socket that does not take writes); `serve_socket` then closes the connection and aborts the receive task. The server sends a ws `Ping` every `pingInterval`; the receive task ends the socket when no frame at all (a `Pong` counts) arrives within `idle`. Both timeouts count `ws_socket_timeouts{kind=write|idle}`. Tests: `connect_test.rs` (`a_peer_that_does_not_read_...` x2, `a_silent_peer_is_pinged_and_then_closed_as_idle`, `a_peer_that_answers_the_pings_is_not_idle`) and `socket_timeouts.rs`. Not done: TCP keepalive / user timeout on the listener, and no test of the `sendDrain` abort. The text below is the original finding.
 
 - `routes/ws/connect.rs:332-375` (`forward_egress`): `ws_sender.send(...).await` (`:366`) has no timeout. A peer that stops reading (full TCP window) blocks `forward_egress` forever inside `send`.
 - The hub meanwhile removes the connection once its 1000-slot queue fills (`hub_connections.rs:58`, `SlowConsumer`) and drops the sender, releasing the user's slot. But the send task never reaches `rx.recv()` again, so `serve_socket` (`connect.rs:201-231`) never sees `send_task` finish; the drain timeout/abort (`SEND_DRAIN_TIMEOUT`) only applies when the receive side ends first. The receive task stays blocked on a silent peer, so the select never fires. The socket, two tasks and up to 1000 queued messages (big `Sync`s pinned) persist until TCP gives up (possibly never with a non-reading, ACKing peer).

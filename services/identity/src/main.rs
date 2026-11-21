@@ -80,8 +80,8 @@ impl WebApplication for Application {
         context: &mut AppBuildContext<'_>,
         router: &mut OpenApiRouter<Self::AppState>,
     ) -> Result<Self::AppState, AnyError> {
-        let postgres_pool = create_postgres_pool(&config.core.stage, &config.feature.db).await?;
-        let redis_pool = create_redis_pool(&config.core.stage, &config.feature.db).await?;
+        let postgres_pool = create_postgres_pool(&config.core().stage, &config.feature().db).await?;
+        let redis_pool = create_redis_pool(&config.core().stage, &config.feature().db).await?;
         let state = AppState::new(config, &postgres_pool, &redis_pool).await?;
 
         // Register status providers

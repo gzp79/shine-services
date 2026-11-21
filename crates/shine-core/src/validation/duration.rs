@@ -1,5 +1,3 @@
-//! Reusable `#[validate(custom(function = "..."))]` checks.
-
 use std::time::Duration;
 use validator::ValidationError;
 

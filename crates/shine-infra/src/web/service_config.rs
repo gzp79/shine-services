@@ -1,3 +1,4 @@
+use regex::bytes::Regex;
 use serde::{Deserialize, Serialize};
 
 /// The application configuration
@@ -14,8 +15,9 @@ pub struct TlsConfig {
 pub struct ServiceConfig {
     pub tls: Option<TlsConfig>,
     pub port: u16,
-    /// Regular expressions for the allowed origins.
-    pub allowed_origins: Vec<String>,
+    /// Regex patterns for the allowed WebSocket origins.
+    #[serde(default, with = "crate::serde::anchored")]
+    pub allowed_origins: Vec<Regex>,
     /// Indicates if the full problem response should be returned. In production, it should be `false`.
     pub full_problem_response: bool,
     /// The secret for the used captcha solution.
@@ -32,4 +34,10 @@ pub struct ServiceConfig {
     /// Expose Swagger UI and OpenAPI documentation endpoints. Default: false.
     #[serde(default)]
     pub expose_api_docs: bool,
+}
+
+impl ServiceConfig {
+    pub fn is_allowed_origin(&self, origin: &str) -> bool {
+        self.allowed_origins.iter().any(|r| r.is_match(origin.as_bytes()))
+    }
 }

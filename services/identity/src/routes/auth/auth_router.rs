@@ -12,7 +12,7 @@ pub struct AuthRouter {
 
 impl AuthRouter {
     pub async fn new(config: &WebAppConfig<AppConfig>) -> Result<Self, AnyError> {
-        let config_auth = &config.feature.auth;
+        let config_auth = &config.feature().auth;
 
         let auth_session_meta = AuthSessionMeta::new(config)?;
 

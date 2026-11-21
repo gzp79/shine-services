@@ -66,7 +66,7 @@ async fn forwarded(messages: Vec<HubMessage>) -> Vec<WsMessage> {
     }
     drop(tx);
     let (frames_tx, frames_rx) = socket::unbounded();
-    forward_egress(rx, frames_tx, Uuid::nil(), Uuid::nil()).await;
+    forward_egress(rx, frames_tx, Uuid::nil(), Uuid::nil(), SocketTimeouts::default()).await;
     frames_rx.collect().await
 }
 
@@ -140,6 +140,10 @@ struct Client {
 impl Client {
     /// Opens a socket and waits until the hub has registered it.
     async fn open(test: &mut TestHub, user_id: Uuid) -> Self {
+        Self::open_with(test, user_id, SocketTimeouts::default()).await
+    }
+
+    async fn open_with(test: &mut TestHub, user_id: Uuid, timeouts: SocketTimeouts) -> Self {
         let (to_server, server_rx) = socket::unbounded();
         let (server_tx, from_server) = socket::unbounded();
         let server = tokio::spawn(serve_socket(
@@ -149,6 +153,7 @@ impl Client {
             TestSession::new_random_key(),
             test.hub.clone(),
             SpanContext::empty_context(),
+            timeouts,
         ));
         let seen = test
             .wait_event(
@@ -259,6 +264,7 @@ async fn a_forced_drop_and_a_shutdown_close_the_sockets_with_their_reason() {
         TestSession::new_random_key(),
         test.hub.clone(),
         SpanContext::empty_context(),
+        SocketTimeouts::default(),
     )
     .await;
     drop(to_server);
@@ -321,4 +327,120 @@ async fn client_ping_is_broadcast_when_no_target_is_set() {
     assert_eq!(client.finished().await, [WsMessage::Close(None)]);
     let seen = test.wait_all_commands().await;
     assert!(seen.drops().is_empty());
+}
+
+// --- Stuck and silent peers ----------------------------------------------------------------------
+
+/// Short limits, so a stuck socket ends in a blink.
+fn quick_timeouts() -> SocketTimeouts {
+    SocketTimeouts {
+        write: Duration::from_millis(100),
+        ping_interval: Duration::from_millis(40),
+        idle: Duration::from_millis(250),
+        send_drain: Duration::from_secs(1),
+    }
+}
+
+/// A socket of a peer that does not read: no write ever completes.
+struct StuckSink;
+
+impl Sink<WsMessage> for StuckSink {
+    type Error = Infallible;
+
+    fn poll_ready(
+        self: std::pin::Pin<&mut Self>,
+        _: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Infallible>> {
+        std::task::Poll::Pending
+    }
+
+    fn start_send(self: std::pin::Pin<&mut Self>, _: WsMessage) -> Result<(), Infallible> {
+        Ok(())
+    }
+
+    fn poll_flush(
+        self: std::pin::Pin<&mut Self>,
+        _: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Infallible>> {
+        std::task::Poll::Pending
+    }
+
+    fn poll_close(
+        self: std::pin::Pin<&mut Self>,
+        _: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Infallible>> {
+        std::task::Poll::Pending
+    }
+}
+
+#[test]
+async fn a_peer_that_does_not_read_ends_the_egress_at_the_write_timeout() {
+    let (tx, rx) = mpsc::channel(4);
+    tx.try_send(TestMessage::new_ping("1-0")).unwrap();
+
+    // The hub still holds its sender: only the write timeout can end the task.
+    timeout(
+        WAIT_TIMEOUT,
+        forward_egress(rx, StuckSink, Uuid::nil(), Uuid::nil(), quick_timeouts()),
+    )
+    .await
+    .expect("a write that never completes kept the egress alive");
+    drop(tx);
+}
+
+#[test]
+async fn a_peer_that_does_not_read_the_pings_ends_the_egress_too() {
+    let (tx, rx) = mpsc::channel(4);
+
+    timeout(
+        WAIT_TIMEOUT,
+        forward_egress(rx, StuckSink, Uuid::nil(), Uuid::nil(), quick_timeouts()),
+    )
+    .await
+    .expect("an unanswered ping write kept the egress alive");
+    drop(tx);
+}
+
+#[test(serial = "hub-service")]
+async fn a_silent_peer_is_pinged_and_then_closed_as_idle() {
+    let mut test = TestHub::default_from_env().await;
+    let user = Uuid::new_v4();
+    let client = Client::open_with(&mut test, user, quick_timeouts()).await;
+    let connection_id = client.connection_id;
+
+    let frames = client.finished().await;
+    let (close, pings) = frames.split_last().expect("no frames");
+    assert_eq!(close, &WsMessage::Close(None), "{frames:?}");
+    assert!(!pings.is_empty(), "no ping before the socket was closed: {frames:?}");
+    assert!(
+        pings.iter().all(|frame| matches!(frame, WsMessage::Ping(_))),
+        "{frames:?}"
+    );
+
+    let seen = test.wait_all_commands().await;
+    assert_eq!(seen.lifecycle_of(user), [Lifecycle::Disconnected(connection_id)]);
+    assert!(seen.drops().is_empty());
+}
+
+#[test(serial = "hub-service")]
+async fn a_peer_that_answers_the_pings_is_not_idle() {
+    let mut test = TestHub::default_from_env().await;
+    let user = Uuid::new_v4();
+    let mut client = Client::open_with(&mut test, user, quick_timeouts()).await;
+
+    // Three times the idle limit, with a pong every 40 ms.
+    for _ in 0..19 {
+        client
+            .to_server
+            .as_ref()
+            .unwrap()
+            .unbounded_send(Ok(WsMessage::Pong(Default::default())))
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(40)).await;
+    }
+    assert!(!client.server.is_finished(), "a live peer was closed as idle");
+
+    client.leave();
+    let frames = client.finished().await;
+    assert_eq!(frames.last(), Some(&WsMessage::Close(None)), "{frames:?}");
 }

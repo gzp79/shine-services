@@ -1,25 +1,16 @@
 use crate::{
     repositories::DBConfig,
+    routes::ws::WsConfig,
     services::{HubConfig, StreamsConfig},
 };
 use serde::{Deserialize, Serialize};
-use shine_infra::web::FeatureConfig;
+use shine_infra::web::{FeatureConfig, WebAppConfig};
 use validator::Validate;
-
-/// Raw WebSocket configuration loaded from config files.
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WsConfig {
-    /// Regular expressions for allowed WebSocket target hosts.
-    /// Checked against `X-Forwarded-Host`, `Forwarded host=`, then `Host`.
-    #[serde(default)]
-    pub allowed_hosts: Vec<String>,
-}
 
 /// The application configuration
 #[derive(Debug, Serialize, Deserialize, Validate)]
 #[serde(rename_all = "camelCase")]
-pub struct AppConfig {
+pub struct BuilderConfig {
     pub db: DBConfig,
     pub ws: WsConfig,
     #[serde(default = "HubConfig::defaults")]
@@ -29,10 +20,33 @@ pub struct AppConfig {
     pub streams: StreamsConfig,
 }
 
-impl FeatureConfig for AppConfig {
+impl FeatureConfig for BuilderConfig {
     const NAME: &'static str = "builder";
 
     fn validate(&self) -> Result<(), anyhow::Error> {
         Validate::validate(self).map_err(anyhow::Error::from)
+    }
+}
+
+pub type AppConfig = WebAppConfig<BuilderConfig>;
+
+pub trait AppConfigEx {
+    fn ws_config(&self) -> &WsConfig;
+
+    fn is_allowed_host(&self, host: &str) -> bool;
+    fn is_allowed_origin(&self, origin: &str) -> bool;
+}
+
+impl AppConfigEx for WebAppConfig<BuilderConfig> {
+    fn ws_config(&self) -> &WsConfig {
+        &self.feature().ws
+    }
+
+    fn is_allowed_host(&self, host: &str) -> bool {
+        self.ws_config().is_allowed_host(host)
+    }
+
+    fn is_allowed_origin(&self, origin: &str) -> bool {
+        self.service().is_allowed_origin(origin)
     }
 }

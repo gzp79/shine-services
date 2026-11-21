@@ -42,9 +42,9 @@ impl AppState {
         postgres_pool: &PgConnectionPool,
         redis_pool: &RedisConnectionPool,
     ) -> Result<Self, AnyError> {
-        let config_auth = &config.feature.auth;
-        let config_db = &config.feature.db;
-        let config_user_name = &config.feature.name;
+        let config_auth = &config.feature().auth;
+        let config_db = &config.feature().db;
+        let config_user_name = &config.feature().name;
 
         let settings = {
             let allowed_redirect_urls = config_auth
@@ -75,7 +75,7 @@ impl AppState {
             }
         };
 
-        let problem_config = ProblemConfig::new(config.service.full_problem_response);
+        let problem_config = ProblemConfig::new(config.service().full_problem_response);
 
         let tera = {
             let mut tera = Tera::new();
@@ -84,16 +84,16 @@ impl AppState {
             tera
         };
 
-        let captcha_validator = CaptchaValidator::new(&config.service.captcha_secret);
+        let captcha_validator = CaptchaValidator::new(&config.service().captcha_secret);
 
         let session_service = {
-            let ttl_session = Duration::seconds(i64::try_from(config.service.session_ttl)?);
+            let ttl_session = Duration::seconds(i64::try_from(config.service().session_ttl)?);
             let session_db = RedisSessionDb::new(redis_pool, "".to_string(), ttl_session).await?;
             SessionService::new(session_db)
         };
 
         let email_sender = {
-            match &config.feature.mailer {
+            match &config.feature().mailer {
                 MailerConfig::Smtp {
                     email_domain,
                     smtp_url,
