@@ -31,8 +31,8 @@ flowchart LR
     X["Rejected<br/>429, 503, nack, close"]:::red
 
     C -- "GET /api/connect: connect()" --> A
-    A -- "Ok(ConnectionPermit): on_upgrade, serve_socket" --> F
-    A -- "Err(AdmitError): 429 or 503" --> X
+    A -- "Ok(AdmissionPermit): on_upgrade, serve_socket" --> F
+    A -- "Err(AdmissionError): 429 or 503" --> X
     F -- "Verdict::Allow, frame is a subscribe or unsubscribe: ControlQueue::send" --> Q
     F -- "Verdict::Allow, frame is a stream command" --> S
     S -- "StreamRegistry::push" --> B
@@ -74,8 +74,8 @@ flowchart TD
 | Violations | Consecutive denied frames are counted; any granted frame resets the count. At `violation_limit` the socket is dropped as `RateLimited` (close 1008). |
 | Subscribe coalescing | The subscribe bucket is the coalescing rule: repeated subscribes to a stream (each a full `Sync`) are bounded by its refill rate. |
 | Busy inbox | The inbox back-pressure is kept as it is (`inbox.backpressure_high`, `backpressure_low`, `backpressure_poll_period`, `backpressure_timeout`): pushes wait above the high mark and fail `busy` after the timeout. A `busy` push is nacked; the connection stays open and there is no `Busy` disconnect reason. The sender's frame budget limits how fast it can retry. |
-| Connect rate | `KeyedRateLimiter<Uuid>` keyed by `user_id`, before the upgrade. Every authenticated attempt that passes the host and origin checks draws a token, including ones the cap then refuses. It outlives the socket, so a reconnect loop does not reset its budget. Over budget: 429 with `Retry-After`. |
-| Connection cap | A semaphore of `max_connections` permits, owned by `HubService`. `admit(user_id)` checks the rate, then the cap, and returns a `ConnectionPermit` that the socket holds until it ends. Exhausted: 503. |
+| Connect rate | `KeyedRateLimiter<Uuid>` keyed by `user_id`, before the upgrade. Every authenticated attempt that passes the host and origin checks draws a token, including ones the cap then refuses. It outlives the socket, so a reconnect loop does not reset its budget. Over budget: 429 with `retryAfter` seconds in the problem. |
+| Connection cap | `HubService` owns an `Admission<Uuid>` with `max_connections` places. `admit(user_id)` checks the rate, then the cap, and returns an `AdmissionPermit` that the socket holds until it ends. Exhausted: 503. |
 | Client backoff | Clients are expected to back off on a refused connect and on close 1008; that work is the audit items C2 and C8 and is not part of this design. |
 | Command queue | One FIFO without a limit of its own, so a connection's commands run in the order they were sent and none is ever refused. Its size is bounded by what feeds it: one `ConnectUser` per socket and the sockets are capped by `max_connections`; subscribes and unsubscribes by the subscribe bucket of each socket; one disconnect per connection; drops deduplicated per connection; one registry notice per remote connect; one tick of the tasks. A reconnect storm is at most `max_connections` small entries. |
 | Stalled loop | While the loop waits for a registry call the queue grows at the rate above, for as long as the call takes, which the Redis `timeout` and `pool_timeout` bound. The depth metric (`hub_control_commands` queue delay) is the signal to watch. |
@@ -98,14 +98,15 @@ All values are configuration; the defaults below are the starting point. The fra
 
 ## Reusable pieces
 
-Two types in `shine-infra::sync`, next to `ExponentialBackoff`; neither knows about the hub.
+Three types in `shine-infra::sync`, next to `ExponentialBackoff`; none knows about the hub.
 
 | Type | Contract |
 |---|---|
 | `TokenBucket` | `new(capacity, refill_per_second)`; `try_acquire(&mut self) -> bool`, one token per call, lazily refilled from a monotonic clock; `try_acquire_at(now)` and `is_full_at(now)` take the time as a parameter so tests need no sleeps. |
+| `Admission<K>` | `new(rate, places)`; `admit(key) -> Result<AdmissionPermit, AdmissionError>`. A key has to be within its rate (a `KeyedRateLimiter`) and there has to be a place left (a semaphore); every attempt costs a token, a refused one too. The permit holds the place until it is dropped. `AdmissionError` is `RateLimited { retry_after }` or `Full`, with `as_str` for metric labels and, in `shine-infra::web::responses`, a `Problem` conversion: 429 with `retryAfter` seconds, or 503. |
 | `KeyedRateLimiter<K>` | Cloneable handle over a mutex-guarded map of buckets with one shared configuration. `check(key) -> bool` draws a token from the key's bucket, creating it full. Buckets that have refilled to full are idle and are swept lazily, so memory follows the keys active within one refill period. |
 
-Another key shape is another `K` (`(Uuid, Group)`); another rule is another limiter instance with its own configuration. `SocketBudget` is builder-local (`socket_budget.rs`): two `TokenBucket`s and the violation counter behind a `check(budget_kind) -> Verdict` of `Allow`, `Deny` or `Close`, one instance per socket. Admission is not a type: it is the method `HubService::admit`, which combines the `KeyedRateLimiter`, and the connection semaphore.
+Another key shape is another `K` (`(Uuid, Group)`); another rule is another limiter instance with its own configuration. `SocketBudget` is builder-local (`socket_budget.rs`): two `TokenBucket`s and the violation counter behind a `check(budget_kind) -> Verdict` of `Allow`, `Deny` or `Close`, one instance per socket.
 
 ## File map
 
@@ -113,14 +114,16 @@ Another key shape is another `K` (`(Uuid, Group)`); another rule is another limi
 |---|---|
 | `crates/shine-infra/src/sync/token_bucket.rs` | `TokenBucket`. |
 | `crates/shine-infra/src/sync/keyed_rate_limiter.rs` | `KeyedRateLimiter<K>`. |
-| `crates/shine-infra/src/sync/mod.rs` | Exports the two types. |
+| `crates/shine-infra/src/sync/admission.rs` | `Admission<K>`, `AdmissionPermit`, `AdmissionError`. |
+| `crates/shine-infra/src/web/responses/admission.rs` | The `Problem` of an `AdmissionError`. |
+| `crates/shine-infra/src/sync/mod.rs` | Exports the types. |
 | `services/builder/src/routes/ws/socket_budget.rs` | `SocketBudget` and `Verdict`. |
 | `services/builder/src/routes/ws/ws_config.rs` | `SocketLimits` and `WsConfig.limits`, next to `SocketTimeouts`. |
 | `services/builder/src/routes/ws/connect.rs` | `admit` call before the upgrade; `SocketBudget` in the receive loop; answers for denied frames; close code 1008. |
 | `services/builder/src/routes/ws/message.rs` | Wire reason `rateLimited` for nacks and subscribe failures. |
 | `services/builder/src/models/messages/stream.rs` | `CommandFailure::RateLimited`, `SubscribeFailure::RateLimited`. |
 | `services/builder/src/models/messages/hub.rs` | `DisconnectReason::RateLimited`; no `Busy`. |
-| `services/builder/src/services/hub/hub_service.rs` | `admit` and `ConnectionPermit` (connect limiter, semaphore); busy nack without a drop; `HubConfig` fields. |
+| `services/builder/src/services/hub/hub_service.rs` | `HubService::admit` over an `Admission<Uuid>`; busy nack without a drop; `HubConfig` fields. |
 | `services/builder/src/services/hub/hub_metrics.rs` | New refusal reasons. |
 | `crates/shine-game/src/replica/client_stream.rs` | A `rateLimited` nack removes the pending command like any other nack; a `rateLimited` subscribe failure takes the existing subscribe-failure path. No retry of the command. |
 
@@ -150,9 +153,8 @@ Limits are per user: an attacker with many accounts has one budget per account, 
 | 3 | `SocketBudget`: grant, deny, violation count resets on a granted frame, `Close` at the limit | unit |
 | 4 | Denied command nacks `rateLimited` with its `commandId`; denied subscribe fails `rateLimited` | socket test |
 | 5 | Sustained flood closes the socket 1008; honest traffic beside it is untouched | socket test |
-| 6 | Connect loop of one user gets 429; another user is unaffected | route test |
-| 7 | Cap reached gives 503; closing a socket frees its permit | route test |
-| 8 | A quick connect then close leaves nothing registered | hub test |
-| 9 | `busy` nack leaves the connection registered (replaces the tests that expect the busy drop) | hub stream test |
+| 6 | `Admission`: the budget of a key outlives its permits, a refusal for the places still costs a token, the places are limited and a dropped permit frees its place; `AdmissionError` is a 429 with `retryAfter` or a 503 | unit |
+| 7 | A quick connect then close leaves nothing registered | hub test |
+| 8 | `busy` nack leaves the connection registered (replaces the tests that expect the busy drop) | hub stream test |
 
 </details>

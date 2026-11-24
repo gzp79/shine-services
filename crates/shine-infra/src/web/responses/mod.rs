@@ -1,4 +1,5 @@
-mod problem_detail;
-pub use self::problem_detail::*;
+mod admission;
 mod page;
-pub use self::page::*;
+mod problem_detail;
+
+pub use self::{page::*, problem_detail::*};

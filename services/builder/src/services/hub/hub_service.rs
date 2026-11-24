@@ -31,7 +31,7 @@ use shine_game::replica::StreamId;
 use shine_infra::{
     serde::{consts, duration},
     session::{CurrentUserService, SessionKey},
-    sync::RateLimit,
+    sync::{Admission, AdmissionError, AdmissionPermit, RateLimit},
     telemetry::link_span,
 };
 use std::collections::VecDeque;
@@ -187,6 +187,7 @@ impl HubServiceBuilder {
                 hub_registry,
                 stream_registry,
                 ping_enabled: config.ping_enabled,
+                admission: Admission::new(config.connect_rate, config.max_connections),
                 supervisor,
             }),
         };
@@ -275,6 +276,7 @@ struct Inner {
     hub_registry: RedisHubConnectionDb,
     stream_registry: Option<StreamRegistry<RedisCommandInboxDb, PgCommandLogDb>>,
     ping_enabled: bool,
+    admission: Admission<Uuid>,
     supervisor: TaskSupervisor,
 }
 
@@ -296,6 +298,12 @@ impl HubService {
     /// Watches the tasks that have to live as long as the hub.
     pub fn supervisor(&self) -> &TaskSupervisor {
         &self.inner.supervisor
+    }
+
+    /// Admits a connect of the user, before its socket is upgraded. The permit is held for as long as the
+    /// socket is served.
+    pub fn admit(&self, user_id: Uuid) -> Result<AdmissionPermit, AdmissionError> {
+        self.inner.admission.admit(user_id)
     }
 
     /// Subscribes the connection to a stream (or asks for it to be synced again), as `requested_kind` if the

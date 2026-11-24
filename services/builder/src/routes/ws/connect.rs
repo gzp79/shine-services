@@ -25,6 +25,7 @@ use opentelemetry::trace::SpanContext;
 use shine_game::replica::StreamId;
 use shine_infra::{
     session::{CheckedCurrentUser, CurrentUser, SessionKey},
+    sync::AdmissionPermit,
     telemetry::{current_span_context, link_span},
     web::{
         extracts::{Origin, TargetHost},
@@ -105,6 +106,13 @@ pub async fn connect(
     tracing::debug!("[{}] Requesting a connection", user.user_id);
 
     let hub_service = state.hub_service().clone();
+    let permit = match hub_service.admit(user.user_id) {
+        Ok(permit) => permit,
+        Err(reason) => {
+            hub_metrics().connect_rejected(reason.as_str());
+            return Err(reason.into_response(&problem_config));
+        }
+    };
     let span_context = current_span_context();
     let ws = ws
         .max_message_size(MAX_WS_MESSAGE_BYTES)
@@ -118,6 +126,7 @@ pub async fn connect(
             span_context,
             ws_config.timeouts,
             ws_config.limits,
+            permit,
         )
     }))
 }
@@ -137,6 +146,8 @@ async fn handle_socket(
     span_context: SpanContext,
     timeouts: SocketTimeouts,
     limits: SocketLimits,
+    // Held until the socket ends.
+    _permit: AdmissionPermit,
 ) {
     let (ws_sender, ws_receiver) = socket.split();
     serve_socket(
