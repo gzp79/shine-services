@@ -70,9 +70,15 @@ impl Connections {
     ) {
         let mut registry = self.registry.write().await;
         registry.users.insert(user_id, connection_id);
-        let replaced = registry
-            .connections
-            .insert(connection_id, Connection { user_id, session_key, tx, topics });
+        let replaced = registry.connections.insert(
+            connection_id,
+            Connection {
+                user_id,
+                session_key,
+                tx,
+                topics,
+            },
+        );
         if replaced.is_none() {
             hub_metrics().connection_added();
         }
@@ -127,7 +133,11 @@ impl Connections {
         };
         try_send(&data.tx, message)
             .map(|()| true)
-            .map_err(|reason| DeadConnection { user_id: data.user_id, connection_id, reason })
+            .map_err(|reason| DeadConnection {
+                user_id: data.user_id,
+                connection_id,
+                reason,
+            })
     }
 
     /// Sends a message to the user's active connection. `Err` carries the dead connection to prune.

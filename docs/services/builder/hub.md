@@ -39,7 +39,7 @@ flowchart TB
     end
 
     subgraph Streams["Streams"]
-        REG["Stream registry"]:::blue
+        REG["Stream registry<br/>BackPressure"]:::blue
         IB["Redis inbox"]:::green
         W["Stream worker"]:::blue
     end
@@ -47,14 +47,15 @@ flowchart TB
     C -- "frames" --> R
     CN -- "EgressEvent" --> S
     R -- "ControlCommand" --> CQ
-    R -- "subscribe, unsubscribe, command" --> REG
+    R -- "open, close, push" --> REG
     CQ -- "ControlCommand" --> L
     R -- "HubMessage" --> CN
     L -- "register, unregister<br/>DisconnectReason" --> CN
-    L -- "Subscribed, Unsubscribed events<br/>through the dispatcher" --> W
+    L -- "StreamEvent" --> W
     REG --> IB --> W
     W -- "StreamMessage" --> SE
     SE -- "HubMessage" --> CN
+    CN ~~~ SE
     SE -- "ControlCommand" --> CQ    
     S -- "text frames, close frame" --> C
 ```
@@ -74,6 +75,8 @@ flowchart TB
 | to client | `streamNack`, `streamSubscribeFailed` | The answer of a refused request goes from the receive task into the queue; a failed stream is answered by the hub. | Lost with a full queue; that client is dropped anyway. |
 | to client | `ping` | Topic delivery → queue. | As stream data. |
 | to client | close frame | The close slot, see [Ending a connection](#ending-a-connection). | Cannot be full. |
+
+A subscribe has two steps. The registry `open` runs at once on the receive task: it authorizes the stream and refuses with `streamSubscribeFailed`. The `Subscribed` event follows through the control queue, so the loop orders it after the connection's own `ConnectUser`, and drops it when the connection is already gone; the dispatcher then starts or joins the worker. An unsubscribe is the same pair, `close` and `Unsubscribed`.
 
 Hub lifecycle events are published to the internal consumers and to the sockets' topic, but are not forwarded to the client.
 
@@ -99,13 +102,20 @@ sequenceDiagram
         SE-->>W: true
     else queue full or closed
         TX-->>CN: full or closed
-        CN-->>SE: DeadConnection with SlowConsumer or DeadChannel
-        SE->>CQ: DisconnectUser(user_id, connection_id, reason)
+        CN->>TX: close(SlowConsumer or DeadChannel)
+        alt first to close
+            CN-->>SE: DeadConnection(user_id, connection_id, reason)
+            SE->>CQ: DisconnectUser
+            CQ->>L: DisconnectUser
+            L->>CN: unregister_connection, count the drop
+        else already closed
+            CN-->>SE: not queued
+        end
         SE-->>W: false, the worker forgets the subscriber
-        CQ->>L: DisconnectUser
-        L->>TX: close(reason)
     end
 ```
+
+A connection with a full or closed queue is found by every send to it. The sender closes the connection's slot, and `close` tells whether the caller was first: only the first sender queues the disconnect, the others find the connection closed and queue nothing. The close slot is the deduplication; the control queue keeps no state for it.
 
 `notify_failed` queues `StreamFailed` on the same control queue. The loop closes the stream for every connection that has it open and answers each with `streamSubscribeFailed` through this same `send`.
 
@@ -276,7 +286,7 @@ The Redis registry (`repositories/hub_registry`) extends last-wins beyond a sing
 
 ## Ending a connection
 
-Every end of a connection is one `DisconnectReason`, set through `HubEgressSender::close`. The data queue carries no end-of-connection event. `connect.rs · close_code` maps the reason to the code of the close frame; the frame's reason text is `DisconnectReason::as_str`.
+Every end of a connection is one `DisconnectReason`, set through `HubEgressSender::close` by the hub loop, the receive task, or a sender that finds the queue full or closed. The data queue carries no end-of-connection event. `connect.rs · close_code` maps the reason to the code of the close frame; the frame's reason text is `DisconnectReason::as_str`.
 
 | Reason | Set by | Code | Client reaction |
 |---|---|---|---|
@@ -287,8 +297,8 @@ Every end of a connection is one `DisconnectReason`, set through `HubEgressSende
 | `RegistryInactive` | Hub loop, another instance took the user over | 4001 | As `Replaced`. |
 | `SessionInvalid` | Session checker, through the hub | 4002 | Do not reconnect; the user signs in again. |
 | `HeartbeatInactive` | Heartbeat, the registry row is gone | 4000 | Reconnect with backoff. |
-| `SlowConsumer` | Hub loop, the queue is full | 4000 | Reconnect with backoff. |
-| `DeadChannel` | Hub loop, the queue is closed | 4000 | Reconnect with backoff. |
+| `SlowConsumer` | The first send that finds the queue full | 4000 | Reconnect with backoff. |
+| `DeadChannel` | The first send that finds the queue closed | 4000 | Reconnect with backoff. |
 
 A close that no reason explains (a dropped connection, a failed write) carries no code; the client sees 1006 and backs off like for 4000.
 
@@ -361,10 +371,11 @@ A *control command* is the hub's own input (connect, disconnect, registry change
 | Lifecycle delivery | Lossless unbounded subscriber channels, with all subscriptions registered before the loop starts, so internal tasks never miss an event. |
 | Topics | A connection receives only the topics it declared at connect time; a message has exactly one topic. |
 | Identity | The user id and connection id come from the authenticated connection, never from a frame. |
-| Slow connection | Egress never waits: a connection whose queue is full is dropped as `slow_consumer`. |
+| Slow connection | Egress never waits: a connection whose queue is full is dropped as `slow_consumer`, and its socket closes at once. |
 | One endpoint | Everything to a client goes through its `HubEgressSender`: stream data, pings, answers and the close reason. `egress_channel(capacity)` creates the sender and the `HubEgress` together; `HubService::request_connection` takes the sender. |
 | Data and end | The queue is bounded and carries data only. The reason of the end is a separate set-once slot that is not part of the queue, so it cannot be full. |
-| First wins | The slot is set once; later calls are ignored. The receive task and the hub may both close the same connection. |
+| First wins | The slot is set once; later calls are ignored, and `close` returns whether the caller was first. The receive task, the hub loop and the senders may all close the same connection; only the first one acts on it. |
+| Dead connection | A send that finds the queue full or closed closes the connection as `SlowConsumer` or `DeadChannel`. Only the sender that closes it first queues a `DisconnectUser`, so a mass eviction queues one command per connection. |
 | Priority | `next` returns `Close` before queued data. Queued data is not flushed: the peer of a `Client` close has stopped reading, and after `Shutdown` or any drop the client resubscribes and gets a fresh sync; its unconfirmed commands stay pending and go out again with it. |
 | Silent end | The queue closing with no reason is `Gone`: the socket still ends, a warning is logged, and the close frame has no code. It marks a bug, not a case. |
 | Commands skip the loop | A stream command goes from the receive task to the registry; it never waits for the control queue. Only subscribe, unsubscribe and lifecycle commands do, in order, so a socket's connect comes before its disconnect. |
@@ -384,6 +395,7 @@ A *control command* is the hub's own input (connect, disconnect, registry change
 | `services/builder/src/services/hub/hub_service.rs` | Command loop (sole writer); connect/disconnect/drop/registry-change handling; event publish; topic delivery (`send_to_connection`, `send_to_user`, `broadcast`, `subscribe`). |
 | `services/builder/src/services/hub/hub_command.rs` | `ControlCommand` enum — the loop's input vocabulary. |
 | `services/builder/src/services/hub/hub_connections.rs` | Addressable connection registry (`register_connection`, `unregister_connection`); keeps each connection's `HubEgressSender`; dead-connection detection. |
+| `services/builder/src/services/hub/hub_stream_egress.rs` | `HubStreamEgress`: the hub's `StreamEgress` for the stream registry; delivers a worker's messages to connections and disconnects a dead one through the control queue. |
 | `services/builder/src/services/hub/hub_subscribers.rs` | Internal lossless fan-out subscribers. |
 | `services/builder/src/services/hub/hub_status.rs` | Health provider reporting live connection/subscriber counts. |
 | `services/builder/src/services/hub/hub_metrics.rs` | OpenTelemetry instruments of the hub. |
@@ -424,7 +436,9 @@ The `hub-registry-changed` listener treats a `None` payload (Redis reconnect) as
 
 The reason has to arrive exactly when the queue is the problem: a slow consumer has a full queue by definition, and an event queued behind it either does not fit or arrives after the stale data. A slot kept inside the same bounded queue works but needs every sender to leave room for it, which is arithmetic every producer must know. A separate slot, owned by `HubEgress`, keeps the rule in one place: data is data, the reason is the reason, and `next` is the only reader.
 
-`HubEgress` holds an `mpsc::Receiver` for the data and a `watch::Receiver<Option<DisconnectReason>>` for the reason. The sender sets it with `send_if_modified` so only the first writer changes it. `next` has to stay cancel safe because the send task selects on it next to the ping timer: both `recv` and the watch wait are, and a change must keep that true.
+`HubEgress` holds an `mpsc::Receiver` for the data and a `watch::Receiver<Option<DisconnectReason>>` for the reason. The sender sets it with `send_if_modified` so only the first writer changes it, and returns whether that was the caller; the senders use this to queue the disconnect of a dead connection once. `next` has to stay cancel safe because the send task selects on it next to the ping timer: both `recv` and the watch wait are, and a change must keep that true.
+
+The reason that wins the slot can differ from the one the loop records for the same connection: a sender may close it as `SlowConsumer` just before the loop replaces it. The client sees the first reason, `hub_connections_dropped` counts the loop's.
 
 A watch whose senders are all dropped without a reason is the `Gone` case; the hub keeps its sender until the connection is removed, so `Gone` after a registered connection means a path closed a connection without telling it why.
 
@@ -451,5 +465,6 @@ A watch whose senders are all dropped without a reason is the `Gone` case; the h
 | 7 | The replaced socket of the real service closes 4001 `replaced` | Playwright (`ws_connect.ts`) |
 | 8 | Hub client: stops on 4001 and 4002, backs off with jitter, resets only after a sync, a throwing socket takes the backoff path | vitest |
 | 9 | `ClientStream`: `unauthorized` is `Rejected`, other failures `Unsynced` | Rust unit |
+| 10 | Many sends to one full or closed queue queue one `DisconnectUser`; a replaced connection is not removed by a late one | unit, hub test |
 
 </details>

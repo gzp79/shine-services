@@ -18,6 +18,7 @@ use crate::{
             hub_connections::{Connections, DeadConnection, RemovedConnection},
             hub_control_queue::{ControlMessage, ControlQueue},
             hub_metrics::hub_metrics,
+            hub_stream_egress::HubStreamEgress,
             hub_subscribers::Subscribers,
             tasks::{Heartbeat, SessionChecker, StreamDispatcher},
         },
@@ -154,10 +155,7 @@ impl HubServiceBuilder {
     where
         F: FnOnce(&HubStreamEgress) -> Result<StreamRegistry<RedisCommandInboxDb, PgCommandLogDb>, CommandStreamError>,
     {
-        let stream_egress = HubStreamEgress {
-            connections: self.connections.clone(),
-            control_queue: self.control_queue.clone(),
-        };
+        let stream_egress = HubStreamEgress::new(self.connections.clone(), self.control_queue.clone());
         self.stream_registry = Some(stream_registry(&stream_egress)?);
         Ok(self)
     }
@@ -233,40 +231,6 @@ const SHUTDOWN_REGISTRY_CONCURRENCY: usize = 32;
 
 /// Longest the registry cleanup of a shutdown takes. The rows left behind expire with their TTL.
 const SHUTDOWN_REGISTRY_TIMEOUT: Duration = Duration::from_secs(5);
-
-#[derive(Clone)]
-pub struct HubStreamEgress {
-    connections: Arc<Connections>,
-    control_queue: ControlQueue,
-}
-
-impl StreamEgress for HubStreamEgress {
-    async fn send(&self, connection_id: Uuid, message: Arc<StreamMessage>) -> bool {
-        match self
-            .connections
-            .send_to_connection(connection_id, HubMessage::StreamMessage(message))
-            .await
-        {
-            Ok(queued) => queued,
-            Err(DeadConnection { user_id, connection_id, reason }) => {
-                if self.control_queue.disconnect(user_id, connection_id, reason).is_err() {
-                    tracing::warn!("[{connection_id}] Failed to prune a dead stream connection");
-                }
-                false
-            }
-        }
-    }
-
-    async fn notify_failed(&self, stream_id: &StreamId) {
-        if self
-            .control_queue
-            .send(ControlCommand::StreamFailed { stream_id: stream_id.clone() })
-            .is_err()
-        {
-            tracing::warn!("[{stream_id}] Failed to queue the stream failure");
-        }
-    }
-}
 
 struct Inner {
     control_queue: ControlQueue,

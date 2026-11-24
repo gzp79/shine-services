@@ -257,7 +257,10 @@ async fn remove_connection_cas_ignores_stale_id() {
         .await;
 
     // stale id → no-op
-    assert!(users.unregister_connection(user_id, Some(Uuid::new_v4())).await.is_none());
+    assert!(users
+        .unregister_connection(user_id, Some(Uuid::new_v4()))
+        .await
+        .is_none());
     assert_eq!(
         users
             .unregister_connection(user_id, Some(conn_id))

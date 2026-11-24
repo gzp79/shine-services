@@ -4,6 +4,7 @@ mod hub_control_queue;
 mod hub_metrics;
 mod hub_service;
 mod hub_status;
+mod hub_stream_egress;
 mod hub_subscribers;
 mod tasks;
 

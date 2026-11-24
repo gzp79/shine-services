@@ -15,8 +15,7 @@ use uuid::Uuid;
 /// A queued command with the span it was queued from and the time it was queued.
 pub type ControlMessage = (ControlCommand, SpanContext, Instant);
 
-/// The queue of the hub's command loop, sender side. Every producer goes through it, so the depth is
-/// counted in one place.
+/// The queue of the hub's command loop, sender side.
 #[derive(Clone)]
 pub struct ControlQueue {
     tx: mpsc::UnboundedSender<ControlMessage>,
