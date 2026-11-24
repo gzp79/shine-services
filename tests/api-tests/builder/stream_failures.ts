@@ -11,10 +11,7 @@ const newStreamId = (prefix: string) => `chat:${prefix}-${randomUUID().replace(/
 const add = addCommand;
 
 test.describe('Builder stream failure tests', { tag: '@infrastructure' }, () => {
-    // Injected toxics affect every service, hence these tests must never overlap with others.
     test.describe.configure({ mode: 'serial' });
-    // The builder gives up on a database call after several seconds, and the recovery waits on its pools.
-    test.setTimeout(90_000);
 
     let mint: SessionMint;
     let user: MintedSession;
@@ -41,7 +38,7 @@ test.describe('Builder stream failure tests', { tag: '@infrastructure' }, () => 
         return session;
     };
 
-    test('Subscribing while Postgres is down shall be told the stream is unsynced and work again after', async ({
+    test('Subscribing while Postgres is permanently down shall be told the subscription failed', async ({
         homeUrl,
         builderWSUrl,
         infraOutage
@@ -51,22 +48,47 @@ test.describe('Builder stream failure tests', { tag: '@infrastructure' }, () => 
 
         await infraOutage.stopPostgres();
 
-        // The stream cannot be loaded, so the worker gives up and tells the subscriber who was waiting for it.
+        // Each retry includes the pool acquisition timeout as well as the backoff.
         a.send({ type: 'streamSubscribe', streamId });
-        await a.waitFrame('streamUnsynced', (f) => f.streamId === streamId, 20_000);
+
+        const failed = await a.waitFrame('streamSubscribeFailed', (f) => f.streamId === streamId, 40_000);
+        expect(failed.streamId).toBe(streamId);
+        expect(failed.reason).toBe('failed');
+
+        const refused = randomUUID();
+        a.command(streamId, refused, add('after failure'));
+        expect(await a.waitFrame('streamNack', (f) => f.commandId === refused)).toMatchObject({
+            streamId,
+            reason: 'notSubscribed'
+        });
+
+        const isConnected = await Promise.race([
+            a.closed.then(() => false),
+            new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 1000))
+        ]);
+        expect(isConnected).toBe(true);
 
         await infraOutage.startPostgres();
+        expect(await a.subscribe(streamId)).toMatchObject({ type: 'streamSync', streamId, commands: [] });
+    });
 
-        // The next subscribe starts the stream again; the pools of the builder may need a try to drop the
-        // connections that were cut.
-        const sync = await waitForCondition(
-            async () => {
-                a.send({ type: 'streamSubscribe', streamId });
-                return await a.waitFrame('streamSync', (f) => f.streamId === streamId, 8000);
-            },
-            { timeout: 40_000, interval: 500, errorMessage: 'The stream did not come back after Postgres' }
-        );
+    test('Subscribing while Postgres is temporarily down shall resume after recovery', async ({
+        homeUrl,
+        builderWSUrl,
+        infraOutage
+    }) => {
+        const a = await connect(homeUrl, builderWSUrl);
+        const streamId = newStreamId('room');
+
+        await infraOutage.stopPostgres();
+
+        a.send({ type: 'streamSubscribe', streamId });
+        const synced = a.waitFrame('streamSync', (f) => f.streamId === streamId, 20_000);
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        await infraOutage.startPostgres();
+        const sync = await synced;
         expect(sync.commands).toEqual([]);
+        await a.expectNoFrame('streamSubscribeFailed', (f) => 'streamId' in f && f.streamId === streamId);
     });
 
     test('Command while Redis is down shall be refused as failed and the stream shall carry on after', async ({

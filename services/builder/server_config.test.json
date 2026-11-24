@@ -13,7 +13,8 @@
   "builder": {
     "hub": {
       "heartbeat": 300,
-      "sessionCheck": 2
+      "sessionCheck": 2,
+      "pingEnabled": true
     },
     "streams": {
       "chat": {

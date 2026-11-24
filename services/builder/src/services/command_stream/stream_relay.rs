@@ -95,15 +95,6 @@ where
         self.remove_subscriber(&connection_id);
     }
 
-    /// Forgets every subscriber: the stream ends or cannot be served any more.
-    pub fn release_subscribers(&mut self) {
-        let count = self.subscribers.len();
-        self.subscribers.clear();
-        if count > 0 {
-            stream_metrics().subscribers.add(-(count as i64), &[self.kind_label()]);
-        }
-    }
-
     fn remove_subscriber(&mut self, connection_id: &Uuid) {
         if self.subscribers.remove(connection_id).is_some() {
             stream_metrics().subscribers.add(-1, &[self.kind_label()]);
@@ -300,13 +291,11 @@ where
         }
     }
 
-    /// The stream cannot be served: the subscribers are dropped and have to subscribe again.
+    /// The stream cannot be served: the egress is told, it closes the stream for every connection that
+    /// has it open and has them subscribe again.
     pub async fn give_up(&mut self) {
-        let message = Arc::new(StreamMessage::Unsynced {
-            stream_id: self.stream_id.clone(),
-        });
-        self.broadcast(message).await;
-        self.release_subscribers();
+        tracing::error!("Giving up on stream: {}", self.stream_id);
+        self.egress.notify_failed(&self.stream_id).await;
     }
 
     /// The version and chain hash of the last command the relay shows, optimistic ones included.
@@ -452,6 +441,7 @@ where
     async fn broadcast(&mut self, message: Arc<StreamMessage>) {
         for connection_id in self.subscribers.keys().copied().collect::<Vec<_>>() {
             if !self.egress.send(connection_id, message.clone()).await {
+                tracing::debug!("[{connection_id}] Failed to send message to subscriber, removing.");
                 self.remove_subscriber(&connection_id);
             }
         }
@@ -462,6 +452,20 @@ where
             self.subscribers.insert(connection_id, Some(version));
         } else {
             self.remove_subscriber(&connection_id);
+        }
+    }
+}
+
+impl<S, I, E> Drop for StreamRelay<S, I, E>
+where
+    S: ReplayState,
+    I: CommandInboxDb,
+    E: StreamEgress,
+{
+    fn drop(&mut self) {
+        let count = self.subscribers.len();
+        if count > 0 {
+            stream_metrics().subscribers.add(-(count as i64), &[self.kind_label()]);
         }
     }
 }

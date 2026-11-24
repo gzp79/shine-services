@@ -256,6 +256,16 @@ impl StreamEgress for HubStreamEgress {
             }
         }
     }
+
+    async fn notify_failed(&self, stream_id: &StreamId) {
+        if self
+            .control_queue
+            .send(ControlCommand::StreamFailed { stream_id: stream_id.clone() })
+            .is_err()
+        {
+            tracing::warn!("[{stream_id}] Failed to queue the stream failure");
+        }
+    }
 }
 
 struct Inner {
@@ -691,6 +701,28 @@ impl HubService {
                 }
                 true
             }
+            ControlCommand::StreamFailed { stream_id } => {
+                // The registry is closed first: a client that subscribes again on the failure finds it clean.
+                let connections = self
+                    .inner
+                    .stream_registry
+                    .as_ref()
+                    .map(|registry| registry.close_stream(&stream_id))
+                    .unwrap_or_default();
+                for connection_id in connections {
+                    self.publish_internal(StreamEvent::Unsubscribed {
+                        connection_id,
+                        stream_id: stream_id.clone(),
+                    })
+                    .await;
+                    let message = StreamMessage::SubscribeFailed {
+                        stream_id: stream_id.clone(),
+                        reason: SubscribeFailure::Failed,
+                    };
+                    StreamEgress::send(self, connection_id, Arc::new(message)).await;
+                }
+                true
+            }
             ControlCommand::Shutdown => {
                 self.inner.supervisor.shutdown_started();
                 self.shutdown().await;
@@ -883,6 +915,12 @@ impl StreamEgress for HubService {
                 tracing::warn!("[{connection_id}] Failed to send a stream message: {err:#?}");
                 false
             }
+        }
+    }
+
+    async fn notify_failed(&self, stream_id: &StreamId) {
+        if let Err(err) = self.send_control(ControlCommand::StreamFailed { stream_id: stream_id.clone() }) {
+            tracing::warn!("[{stream_id}] Failed to queue the stream failure: {err:#?}");
         }
     }
 }

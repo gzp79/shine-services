@@ -52,6 +52,7 @@ The `StreamRegistry` is built with the supported replay kinds (`stream_kinds.rs`
 | `subscribe` | Stream dispatcher, on the `Subscribed` event | Joins the stream's worker, starting one if there is none or it has ended. Ignored if the stream is no longer open for the connection. |
 | `push` | Hub, on a command | The write path, below. |
 | `close`, `disconnect` | Hub | Removes the open stream (all of them on disconnect) and unsubscribes from the worker. |
+| `close_stream` | Hub, on `StreamFailed` | Removes the stream from every connection that has it open, drops its state and returns those connections. |
 | `wake` | Inbox listener | Wakes the worker named by an inbox wake; a listener that reconnected may have missed wakes and wakes every worker. |
 | `purge` | Stream dispatcher, every 60 s | Forgets streams that nobody has open and whose worker has ended. |
 | `shutdown` | Stream dispatcher, on the hub's shutdown | Has every worker persist what is waiting and end, for up to the shutdown timeout. |
@@ -199,7 +200,7 @@ sequenceDiagram
         A->>A: clear every cursor and drop the pending checkpoint
     else Failed
         P-->>A: error
-        A-->>C: streamUnsynced, the worker ends
+        A-->>C: reports the stream failed through the egress, the worker ends
     end
     A->>A: wake itself
     Note over A,C: the next pass syncs the cleared subscribers, sends the others their commands, then the checkpoint, and submits what piled up
@@ -210,19 +211,20 @@ sequenceDiagram
 ```mermaid
 stateDiagram-v2
     [*] --> Loading: first subscribe
-    Loading --> Serving: reconciled with Postgres
-    Loading --> Ended: load failed
+    Loading --> Serving: reconciliation succeeded
+    Loading --> Ended: reconciliation failed
     Serving --> Draining: stop, or no subscriber for the grace period
-    Serving --> Ended: a pass or the persistence failed
+    Serving --> Ended: persistence failed
     Draining --> Ended: nothing is waiting
     Ended --> [*]
 ```
 
-- **Loading:** the relay starts empty and touches neither inbox nor subscribers until the persistence has reconciled it with the log (a `Reloaded` result).
+- **Loading:** the relay starts empty. Reconciliation with Postgres begins immediately via the persistence task (seeking a `Reloaded` result). Inbox polling and subscriber message processing remain guarded by `in_flight.is_none()`: subscriptions queue in the channel unprocessed, and inbox reads are skipped. Once `in_flight` resolves—either `Reloaded` (success) or `Failed` (Postgres unavailable or error)—the relay accepts the result. A `Failed` result ends the worker immediately; `Reloaded` or other success transitions to Serving.
+- **Serving:** the relay is live and processes subscribers and inbox concurrently. Work is submitted for persistence only when `in_flight` is idle (no outstanding request). A `Failed` persistence result ends the worker.
 - **Draining:** a final inbox pass, then the tail is persisted until nothing is waiting, then the request channel closes. Proposals that arrive later stay in Redis for the next worker. A returning subscriber cancels the grace countdown before it ends.
 - **Inbox read retried:** a read that fails because Redis is out of reach (`CommandStreamError::ServiceUnavailable`: no pooled connection, a refused, dropped or timed out connection, a server that is still loading) is tried again inside the pass, at most `inbox_max_retries` (default 8, `0` turns it off) times, with jittered waits doubling from `inbox_retry_min_delay` (100 ms) to `inbox_retry_max_delay` (1 s), about three to five seconds in all by default. Any other error is not retried. The read changes nothing until it succeeds, so repeating it is safe. The subscribers stay and are not told anything. The worker does nothing else meanwhile: subscribes and persistence answers wait for the pass. When the retries are spent, the failure ends the worker as below.
 - **Log calls retried:** the persistence retries a call to Postgres the same way when it fails because the database is out of reach (`CommandStreamError::ServiceUnavailable`: pool timeout, refused or dropped connection): the head read, the load of the history and the append, at most `log_max_retries` (default 8, `0` turns it off) times, with jittered waits doubling from `log_retry_min_delay` (100 ms) to `log_retry_max_delay` (1 s). Repeating is safe: reads change nothing, and an append that got through the first time is found covered by the log. Meanwhile the relay keeps serving the subscribers optimistically until `relay_max_pending` is reached, then the pushes get `Busy`. Snapshot storing, pruning and the inbox trim are best effort and are not retried. `Contention`, `Corrupt` and the other errors are not retried.
-- **Ended by failure:** queued and registered subscribers get `streamUnsynced` and subscribe again. Commands that were not made durable stay in the Redis inbox for whoever serves the stream next.
+- **Ended by failure:** the worker reports the stream failed through `StreamEgress::notify_failed`, which the hub handles as `ControlCommand::StreamFailed` in its loop: the registry closes the stream for every connection that has it open (including ones whose subscribe has not arrived yet), a `StreamEvent::Unsubscribed` is published for each, and then each gets `streamSubscribeFailed` and subscribes again. Closing before telling keeps a resubscribe from being closed by the failure. Commands that were not made durable stay in the Redis inbox for whoever serves the stream next.
 
 A worker reconciles with Postgres at startup. After that a peer's advance is found by the next persistence, whose baseline no longer matches; a quiet worker is not checked periodically.
 
@@ -332,7 +334,7 @@ After advancing, the persistence trims the Redis inbox through the latest stored
 | Back-pressure | Write side: pushes wait above `inbox_backpressure_high`, then fail `busy`. Read side: `relay_max_pending` stops inbox reads. |
 | Duplicates | Stored inbox positions suppress durable proposals; client command ids are correlation values, not uniqueness constraints. |
 | Drift | Persistence reloads on a baseline, replay or canonical disagreement. |
-| Failure | A failed pass or persistence sends `streamUnsynced` and ends the worker. An inbox read that fails because Redis is out of reach is tried again first (`ServiceUnavailable` only), see worker lifecycle. |
+| Failure | A failed pass or persistence ends the worker and reports the stream failed; the hub closes it for all its connections and sends them `streamSubscribeFailed`. An inbox read that fails because Redis is out of reach is tried again first (`ServiceUnavailable` only), see worker lifecycle. |
 | Redis loss | Unsequenced proposals may be lost; canonical Postgres history stays valid. |
 | Isolation | A slow or failing stream does not block another stream's tasks. |
 | Slow subscriber | `StreamEgress::send` never waits; when it cannot queue, the relay forgets the subscriber. |
@@ -357,8 +359,8 @@ After advancing, the persistence trims the Redis inbox through the latest stored
 | `services/builder/src/services/command_stream/stream_log_service.rs` | Durable repository operations used by the persistence. |
 | `services/builder/src/services/command_stream/stream_metrics.rs` | OpenTelemetry instruments of the streams. |
 | `services/builder/src/services/command_stream/stream_config.rs` | Poll, back-pressure, pending, snapshot, recovery and unload-grace limits. |
-| `services/builder/src/services/command_stream/stream_egress.rs` | Transport-independent worker-to-connection delivery interface. |
-| `services/builder/src/services/hub/hub_service.rs` | Stream side of the hub: authorized subscribe, unsubscribe, command submission, busy-connection drop; `StreamEgress` implementation. |
+| `services/builder/src/services/command_stream/stream_egress.rs` | Transport-independent worker-to-connection delivery interface: `send` and `notify_failed`. |
+| `services/builder/src/services/hub/hub_service.rs` | Stream side of the hub: authorized subscribe, unsubscribe, command submission, busy-connection drop, `StreamFailed` handling; `StreamEgress` implementation. |
 | `services/builder/src/services/hub/tasks/stream_dispatcher.rs` | Applies ordered subscribe events to the registry, purges ended workers, shuts the registry down. |
 | `services/builder/src/services/stream_authorize/stream_authorize_service.rs` | Decides whether a user may use a stream. |
 | `services/builder/src/models/messages/stream.rs` | Internal stream messages, events and failures. |

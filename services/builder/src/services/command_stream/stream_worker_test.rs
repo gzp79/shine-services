@@ -316,7 +316,7 @@ async fn commands_waiting_in_the_inbox_are_persisted_before_the_worker_unloads()
 }
 
 #[test]
-async fn a_subscriber_queued_while_the_worker_ends_is_told_to_start_again() {
+async fn a_subscriber_queued_while_the_worker_stops_is_not_served() {
     let h = harness().await;
     let id = TestStreamId::new_chat();
     let worker = h.spawn(&id, 100, StreamConfig::quiet());
@@ -324,12 +324,11 @@ async fn a_subscriber_queued_while_the_worker_ends_is_told_to_start_again() {
     let late = Uuid::new_v4();
 
     assert!(worker.stop());
-    let queued = worker.subscribe(late);
+    worker.subscribe(late);
 
     wait_finished(&worker).await;
-    if queued {
-        h.egress.wait(late, |m| TestEgress::kinds(m) == ["unsynced"]).await;
-    }
+    assert!(h.egress.messages(late).is_empty());
+    assert!(h.egress.failed().is_empty(), "stopping is not a stream failure");
 }
 
 #[test]
@@ -414,11 +413,9 @@ async fn a_stream_that_cannot_be_loaded_tells_the_waiting_subscribers_and_ends()
     let connection = Uuid::new_v4();
     assert!(worker.subscribe(connection));
 
-    h.egress
-        .wait(connection, |m| TestEgress::kinds(m) == ["unsynced"])
-        .await;
-
     wait_finished(&worker).await;
+    assert_eq!(h.egress.failed(), [id]);
+    assert!(h.egress.messages(connection).is_empty());
     assert!(!worker.subscribe(Uuid::new_v4()));
 }
 
@@ -506,10 +503,9 @@ async fn a_stream_that_fails_is_given_up_and_its_subscribers_are_told() {
 
     fail.store(usize::MAX, Ordering::Relaxed);
 
-    h.egress
-        .wait(connection, |m| TestEgress::kinds(m) == ["sync:0", "unsynced"])
-        .await;
     wait_finished(&worker).await;
+    assert_eq!(h.egress.failed(), [id]);
+    assert_eq!(TestEgress::kinds(&h.egress.messages(connection)), ["sync:0"]);
     assert!(!worker.subscribe(Uuid::new_v4()));
 }
 
@@ -532,10 +528,9 @@ async fn a_subscriber_is_told_to_retry_without_a_sync_when_the_inbox_read_fails(
 
     assert!(worker.subscribe(connection));
 
-    h.egress
-        .wait(connection, |m| TestEgress::kinds(m) == ["unsynced"])
-        .await;
     wait_finished(&worker).await;
+    assert_eq!(h.egress.failed(), [id]);
+    assert!(h.egress.messages(connection).is_empty());
 }
 
 #[test]
@@ -560,13 +555,7 @@ async fn an_inbox_that_fails_for_a_moment_does_not_end_the_stream() {
     h.egress.wait(connection, |m| TestEgress::versions(m, &id) == [1]).await;
     assert_eq!(fail.load(Ordering::Relaxed), 0, "the failing reads were all spent");
     assert!(!worker.is_finished());
-    assert!(
-        !h.egress
-            .messages(connection)
-            .iter()
-            .any(|m| matches!(**m, StreamMessage::Unsynced { .. })),
-        "the subscriber was not dropped"
-    );
+    assert!(h.egress.failed().is_empty(), "the subscriber was not dropped");
 }
 
 /// How many times the inbox is read until a worker over an inbox that always fails (an outage) gives up.
@@ -590,10 +579,9 @@ async fn reads_until_given_up(h: &Harness, max_retries: u32) -> usize {
 
     assert!(worker.subscribe(connection));
 
-    h.egress
-        .wait(connection, |m| TestEgress::kinds(m) == ["unsynced"])
-        .await;
     wait_finished(&worker).await;
+    assert_eq!(h.egress.failed(), [id]);
+    assert!(h.egress.messages(connection).is_empty());
     usize::MAX - fail.load(Ordering::Relaxed)
 }
 
@@ -776,13 +764,7 @@ async fn a_log_that_fails_for_a_moment_does_not_end_the_stream() {
         "the failing appends were all spent"
     );
     assert!(!worker.is_finished());
-    assert!(
-        !h.egress
-            .messages(connection)
-            .iter()
-            .any(|m| matches!(**m, StreamMessage::Unsynced { .. })),
-        "the subscriber was not dropped"
-    );
+    assert!(h.egress.failed().is_empty(), "the subscriber was not dropped");
 }
 
 #[test]
@@ -811,18 +793,14 @@ async fn a_log_that_keeps_failing_ends_the_stream_once_the_retries_are_spent() {
         ..StreamConfig::quiet()
     };
     let worker = h.spawn_over_flaky_log_with(&id, log.clone(), config);
-    let connection = h.subscribe(&worker).await;
+    h.subscribe(&worker).await;
 
     log.fail_append.store(usize::MAX, Ordering::Relaxed);
     h.send(&id, "a").await;
     worker.wake();
 
-    h.egress
-        .wait(connection, |m| {
-            TestEgress::kinds(m).last().is_some_and(|kind| kind == "unsynced")
-        })
-        .await;
     wait_finished(&worker).await;
+    assert_eq!(h.egress.failed(), [id]);
     assert_eq!(
         usize::MAX - log.fail_append.load(Ordering::Relaxed),
         3,

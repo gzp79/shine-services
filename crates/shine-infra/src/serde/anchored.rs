@@ -45,7 +45,7 @@ mod tests {
 
     #[test]
     fn deserialize_valid_anchored_patterns() {
-        let json = r#"{"patterns": ["^https://example\.com$", "^ws\.example\.com(:443)?$"]}"#;
+        let json = r#"{"patterns": ["^https://example\\.com$", "^ws\\.example\\.com(:443)?$"]}"#;
         let config: TestConfig = serde_json::from_str(json).expect("should deserialize valid patterns");
         assert_eq!(config.patterns.len(), 2);
     }
@@ -59,14 +59,14 @@ mod tests {
 
     #[test]
     fn deserialize_unanchored_pattern_fails() {
-        let json = r#"{"patterns": ["https://example\.com"]}"#;
+        let json = r#"{"patterns": ["https://example\\.com"]}"#;
         let result: Result<TestConfig, _> = serde_json::from_str(json);
         assert!(result.is_err());
     }
 
     #[test]
     fn serialize_patterns() {
-        let json = r#"{"patterns": ["^https://example\.com$"]}"#;
+        let json = r#"{"patterns": ["^https://example\\.com$"]}"#;
         let config: TestConfig = serde_json::from_str(json).expect("should deserialize");
         let serialized = serde_json::to_string(&config).expect("should serialize");
         let re_deserialized: TestConfig = serde_json::from_str(&serialized).expect("should re-deserialize");

@@ -176,6 +176,24 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
         state.unsubscribe_worker(connection_id, stream_id);
     }
 
+    /// Closes stream for every connection that has it open and returns the
+    /// connections.
+    pub fn close_stream(&self, stream_id: &StreamId) -> Vec<Uuid> {
+        let mut state = self.inner.state.lock().unwrap();
+        let mut closed = Vec::new();
+        state.connections.retain(|connection_id, streams| {
+            if streams.remove(stream_id) {
+                closed.push(*connection_id);
+            }
+            !streams.is_empty()
+        });
+        for connection_id in &closed {
+            state.unsubscribe_worker(*connection_id, stream_id);
+        }
+        state.streams.remove(stream_id);
+        closed
+    }
+
     /// The connection is gone: closes all its streams.
     pub fn disconnect(&self, connection_id: Uuid) {
         let mut state = self.inner.state.lock().unwrap();
@@ -241,6 +259,7 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
     /// Subscribes the connection to the stream's worker. If there is no worker, it starts a new one to process
     /// the commands for the stream in the background.
     pub fn subscribe(&self, connection_id: Uuid, stream_id: &StreamId) -> Result<(), CommandStreamError> {
+        tracing::info!("[{}] Subscribing connection {}", stream_id, connection_id);
         let entry = self
             .inner
             .kinds
@@ -257,6 +276,11 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
                 .is_some_and(|streams| streams.contains(stream_id));
 
             let Some(stream) = state.streams.get_mut(stream_id).filter(|_| is_open) else {
+                tracing::info!(
+                    "[{}] Stream not open for connection {}, returning early",
+                    stream_id,
+                    connection_id
+                );
                 return Ok(());
             };
             stream
@@ -267,11 +291,13 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
         let subscribed = running.is_some_and(|worker| worker.subscribe(connection_id));
         if !subscribed {
             // Start a new worker for the stream.
+            tracing::debug!("[{}] Starting new worker for connection {}", stream_id, connection_id);
             let worker = (entry.spawn)(stream_id.clone());
             worker.subscribe(connection_id);
             stream.worker = Some(worker);
         }
 
+        tracing::info!("[{}] Successfully subscribed connection {}", stream_id, connection_id);
         Ok(())
     }
 

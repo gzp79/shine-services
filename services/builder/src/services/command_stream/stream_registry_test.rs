@@ -439,6 +439,37 @@ async fn ended_workers_are_not_running_and_a_purge_forgets_them() {
 }
 
 #[test]
+async fn a_failed_stream_is_closed_for_every_connection_that_has_it_open() {
+    let h = harness(StreamConfig::quiet()).await;
+    let (failed, other) = (TestStreamId::new_chat(), TestStreamId::new_chat());
+    let (first, second) = (Uuid::new_v4(), Uuid::new_v4());
+    h.registry.open(first, &failed).unwrap();
+    h.registry.open(first, &other).unwrap();
+    // Opened, its subscribe is not there yet.
+    h.registry.open(second, &failed).unwrap();
+
+    let mut closed = h.registry.close_stream(&failed);
+    closed.sort();
+    let mut expected = vec![first, second];
+    expected.sort();
+
+    assert_eq!(closed, expected);
+    assert!(h.registry.close_stream(&failed).is_empty());
+    let data = TestMessage::new_chat_command("hi");
+    assert_eq!(
+        h.registry
+            .push(first, &failed, Uuid::nil(), Uuid::new_v4(), &data)
+            .await,
+        Err(CommandFailure::NotSubscribed)
+    );
+    assert_eq!(
+        h.registry.close_stream(&other),
+        vec![first],
+        "the other streams stay open"
+    );
+}
+
+#[test]
 async fn a_subscribe_of_a_stream_closed_since_it_was_opened_starts_no_worker() {
     let h = harness(StreamConfig::quiet()).await;
     let (closed, gone) = (TestStreamId::new_chat(), TestStreamId::new_chat());

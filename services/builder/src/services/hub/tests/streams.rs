@@ -160,6 +160,72 @@ mod served {
     }
 
     #[test(serial = "hub-service")]
+    async fn a_failed_stream_is_closed_for_all_subscribers_without_closing_their_connections() {
+        let mut test = create_test_hub().await;
+        let user = Uuid::new_v4();
+        let other_user = Uuid::new_v4();
+        let (failed, kept) = (TestStreamId::new_chat(), TestStreamId::new_chat());
+        let (first, mut first_socket) = test.connect_ping(user, 32);
+        let (second, mut second_socket) = test.connect_ping(other_user, 32);
+        test.wait_all_commands().await;
+        test.stream_subscribe(first, user, &failed).await.unwrap();
+        next_stream_message(&mut first_socket).await;
+        test.stream_subscribe(first, user, &kept).await.unwrap();
+        next_stream_message(&mut first_socket).await;
+        test.stream_subscribe(second, other_user, &failed).await.unwrap();
+        next_stream_message(&mut second_socket).await;
+        let mut internal = test.hub.subscribe(vec![TopicKey::Stream]).await;
+
+        test.hub.notify_failed(&failed).await;
+        test.wait_all_commands().await;
+
+        for socket in [&mut first_socket, &mut second_socket] {
+            assert_eq!(
+                *next_stream_message(socket).await,
+                StreamMessage::SubscribeFailed {
+                    stream_id: failed.clone(),
+                    reason: SubscribeFailure::Failed,
+                }
+            );
+            assert!(matches!(socket.try_recv(), Err(TryRecvError::Empty)));
+        }
+        assert_eq!(drain_messages(&mut internal), vec![format!("unsubscribed:{failed}"); 2]);
+
+        let command_id = Uuid::new_v4();
+        assert_eq!(
+            test.hub
+                .send_stream_command(
+                    first,
+                    user,
+                    &failed,
+                    command_id,
+                    &TestMessage::new_chat_command("closed")
+                )
+                .await,
+            Err(CommandFailure::NotSubscribed)
+        );
+        test.hub
+            .send_stream_command(
+                first,
+                user,
+                &kept,
+                Uuid::new_v4(),
+                &TestMessage::new_chat_command("kept"),
+            )
+            .await
+            .unwrap();
+        assert!(matches!(
+            &*next_stream_message(&mut first_socket).await,
+            StreamMessage::Commands { stream_id, .. } if *stream_id == kept
+        ));
+        test.stream_subscribe(second, other_user, &failed).await.unwrap();
+        assert!(matches!(
+            &*next_stream_message(&mut second_socket).await,
+            StreamMessage::Sync { stream_id, .. } if *stream_id == failed
+        ));
+    }
+
+    #[test(serial = "hub-service")]
     async fn a_connection_subscribes_through_the_hub_and_gets_the_commands_of_two_kinds() {
         let mut test = create_test_hub().await;
         let user = Uuid::new_v4();

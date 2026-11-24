@@ -368,7 +368,7 @@ async fn a_reload_sends_the_subscribers_a_new_sync() {
 }
 
 #[test]
-async fn giving_up_tells_the_subscribers_and_forgets_them() {
+async fn giving_up_reports_the_failed_stream_and_sends_nothing() {
     let inbox = TestInbox::from_env().await;
     let log = TestLog::from_env().await;
     let stream_id = TestStreamId::new_chat();
@@ -379,18 +379,10 @@ async fn giving_up_tells_the_subscribers_and_forgets_them() {
 
     relay.give_up().await;
 
+    assert_eq!(relay.egress().failed(), [stream_id.clone()]);
     for connection in [first, second] {
-        assert_eq!(
-            relay
-                .egress()
-                .messages(connection)
-                .iter()
-                .map(|m| (**m).clone())
-                .collect::<Vec<_>>(),
-            [StreamMessage::Unsynced { stream_id: stream_id.clone() }]
-        );
+        assert!(relay.egress().messages(connection).is_empty(), "the egress tells them");
     }
-    assert!(relay.subscribers.is_empty(), "they have to subscribe again");
 }
 
 #[test]

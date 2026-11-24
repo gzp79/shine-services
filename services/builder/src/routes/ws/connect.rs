@@ -236,12 +236,12 @@ async fn serve_socket<S, R, E>(
         }
     };
 
-    let reason = if send_exited {
-        "send task exited"
+    if send_exited {
+        tracing::info!("[{current_user_id}] [{connection_id}] Disconnecting from hub: send task exited");
     } else {
-        "receive task exited"
-    };
-    tracing::info!("[{current_user_id}] [{connection_id}] Disconnecting from hub: {reason}");
+        tracing::info!("[{current_user_id}] [{connection_id}] Disconnecting from hub: receive task exited");
+    }
+
     close_connection(&hub_service, current_user_id, connection_id);
     if send_exited {
         recv_task.abort();

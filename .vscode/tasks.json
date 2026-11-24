@@ -247,10 +247,11 @@
       "id": "env-task",
       "description": "Select env task",
       "options": [
-        { "label": "start", "value": "up" },
-        { "label": "start (with trace dashboard)", "value": "up-observe" },
-        { "label": "stop", "value": "down" },
-        { "label": "status", "value": "status" }
+        { "label": "up", "value": "up" },
+        { "label": "up with observer", "value": "up-observe" },
+        { "label": "down", "value": "down" },
+        { "label": "status", "value": "status" },
+        { "label": "stop", "value": "stop all" }
       ],
       "default": "up-observe"
     }

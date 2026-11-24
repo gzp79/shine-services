@@ -35,6 +35,10 @@ pub enum ControlCommand {
         connection_id: Uuid,
         stream_id: StreamId,
     },
+    /// The stream cannot be served any more: it is closed for every connection that has it open.
+    StreamFailed {
+        stream_id: StreamId,
+    },
     Shutdown,
 }
 
@@ -48,6 +52,7 @@ impl ControlCommand {
             ControlCommand::HubRegistryChanged { .. } => "hub_registry_changed",
             ControlCommand::SubscribeStream { .. } => "subscribe_stream",
             ControlCommand::UnsubscribeStream { .. } => "unsubscribe_stream",
+            ControlCommand::StreamFailed { .. } => "stream_failed",
             ControlCommand::Shutdown => "shutdown",
         }
     }
@@ -61,6 +66,7 @@ impl ControlCommand {
             ControlCommand::DropConnection { .. }
             | ControlCommand::SubscribeStream { .. }
             | ControlCommand::UnsubscribeStream { .. }
+            | ControlCommand::StreamFailed { .. }
             | ControlCommand::Shutdown => None,
         }
     }
@@ -73,7 +79,9 @@ impl ControlCommand {
             | ControlCommand::DropConnection { connection_id, .. }
             | ControlCommand::SubscribeStream { connection_id, .. }
             | ControlCommand::UnsubscribeStream { connection_id, .. } => Some(*connection_id),
-            ControlCommand::HubRegistryChanged { .. } | ControlCommand::Shutdown => None,
+            ControlCommand::HubRegistryChanged { .. }
+            | ControlCommand::StreamFailed { .. }
+            | ControlCommand::Shutdown => None,
         }
     }
 }

@@ -17,6 +17,7 @@ const WAIT_TIMEOUT: Duration = Duration::from_secs(5);
 struct EgressInner {
     received: HashMap<Uuid, Vec<Arc<StreamMessage>>>,
     dead: HashSet<Uuid>,
+    failed: Vec<StreamId>,
 }
 
 /// Records what is sent to each connection; a connection can be made dead.
@@ -34,9 +35,18 @@ impl StreamEgress for TestEgress {
         inner.received.entry(connection_id).or_default().push(message);
         true
     }
+
+    async fn notify_failed(&self, stream_id: &StreamId) {
+        self.inner.lock().unwrap().failed.push(stream_id.clone());
+    }
 }
 
 impl TestEgress {
+    /// The streams reported as failed, in order.
+    pub fn failed(&self) -> Vec<StreamId> {
+        self.inner.lock().unwrap().failed.clone()
+    }
+
     pub fn messages(&self, connection_id: Uuid) -> Vec<Arc<StreamMessage>> {
         self.inner
             .lock()
