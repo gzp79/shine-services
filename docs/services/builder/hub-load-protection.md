@@ -1,6 +1,6 @@
 # Hub Load Protection
 
-*Per-instance limits that keep one misbehaving client from exhausting the hub: admission at connect, a budget per socket, and a time limit on the loop's Redis calls.*
+*Per-instance limits that keep one misbehaving client from exhausting the hub: admission at connect and a budget per socket.*
 
 ## Problem
 
@@ -27,7 +27,7 @@ flowchart LR
     I["Redis inbox"]:::green
     Q["Command queue<br/>FIFO"]:::green
     IN["Hub internal commands<br/>disconnect, drop, registry change"]:::orange
-    L["Command loop<br/>registry calls with timeout"]:::blue
+    L["Command loop"]:::blue
     X["Rejected<br/>429, 503, nack, close"]:::red
 
     C -- "GET /api/connect: connect()" --> A
@@ -78,15 +78,15 @@ flowchart TD
 | Connection cap | A semaphore of `max_connections` permits, owned by `HubService`. `admit(user_id)` checks the rate, then the cap, and returns a `ConnectionPermit` that the socket holds until it ends. Exhausted: 503. |
 | Client backoff | Clients are expected to back off on a refused connect and on close 1008; that work is the audit items C2 and C8 and is not part of this design. |
 | Command queue | One FIFO without a limit of its own, so a connection's commands run in the order they were sent and none is ever refused. Its size is bounded by what feeds it: one `ConnectUser` per socket and the sockets are capped by `max_connections`; subscribes and unsubscribes by the subscribe bucket of each socket; one disconnect per connection; drops deduplicated per connection; one registry notice per remote connect; one tick of the tasks. A reconnect storm is at most `max_connections` small entries. |
-| Stalled loop | While the loop waits for a registry call the queue grows at the rate above, for at most `registry_timeout` per call. The depth metric (`hub_control_commands` queue delay) is the signal to watch. |
-| Registry timeout | Every call to the hub connection registry (create, find, remove, heartbeat, from the loop and the tasks) is wrapped in `registry_timeout`. The stream registry has its own limits (`backpressure_timeout`) and is untouched. The limit covers the whole call, the pool checkout wait included (30 s by default); the Redis client's own response timeout already cuts a call to a server that does not answer. A timeout is an error like any other registry error (counted as `timeout`); `ConnectUser` already re-reads the registry after a failed write, so a timed-out write that landed is accepted. |
+| Stalled loop | While the loop waits for a registry call the queue grows at the rate above, for as long as the call takes, which the Redis `timeout` and `pool_timeout` bound. The depth metric (`hub_control_commands` queue delay) is the signal to watch. |
+| Registry calls | The hub adds no timeout of its own to its calls to the hub connection registry. Each call is bounded by the Redis connection string: `timeout` (connect and per-command response, 500 ms by default) and `pool_timeout` (checkout wait, 30 s by default). Set `pool_timeout` for the builder to seconds, as `mock.json` does (5000), so a starved pool cannot hold the loop for long. A failed call is an error like any other, counted in the registry error counter; `ConnectUser` already re-reads the registry after a failed write, so a write that landed is accepted. |
 | Ping | A ping frame is an ordinary frame: it draws a frame token. |
 | Close codes | `RateLimited` 1008, the rest as in [Hub](hub.md#wire-protocol). |
-| Metrics | Refused connects count in `hub_connect_rejected` (`rate_limited`, `capacity`); drops in `hub_connections_dropped` by reason; denied frames in `ws_messages_received` with outcome `rate_limited`; timed-out registry calls in the registry error counter. |
+| Metrics | Refused connects count in `hub_connect_rejected` (`rate_limited`, `capacity`); drops in `hub_connections_dropped` by reason; denied frames in `ws_messages_received` with outcome `rate_limited`. |
 
 ### Limits
 
-All values are configuration; the defaults below are the starting point. The frame and subscribe limits are per socket (`WsConfig.limits`); the connect rate, the connection cap and the registry timeout are hub settings (`HubConfig`).
+All values are configuration; the defaults below are the starting point. The frame and subscribe limits are per socket (`WsConfig.limits`); the connect rate and the connection cap are hub settings (`HubConfig`).
 
 | Setting | Default | Meaning |
 |---|---|---|
@@ -95,7 +95,6 @@ All values are configuration; the defaults below are the starting point. The fra
 | `violation_limit` | 20 | Consecutive denied frames before the drop. |
 | `connect_rate` | burst 5, 1 per 10 s | Connects per user. |
 | `max_connections` | 10 000 | Sockets per instance, from upgrade to close. |
-| `registry_timeout` | 2 s | Per registry call in the hub. |
 
 ## Reusable pieces
 
@@ -121,7 +120,7 @@ Another key shape is another `K` (`(Uuid, Group)`); another rule is another limi
 | `services/builder/src/routes/ws/message.rs` | Wire reason `rateLimited` for nacks and subscribe failures. |
 | `services/builder/src/models/messages/stream.rs` | `CommandFailure::RateLimited`, `SubscribeFailure::RateLimited`. |
 | `services/builder/src/models/messages/hub.rs` | `DisconnectReason::RateLimited`; no `Busy`. |
-| `services/builder/src/services/hub/hub_service.rs` | `admit` and `ConnectionPermit` (connect limiter, semaphore); registry calls with timeout; busy nack without a drop; `HubConfig` fields. |
+| `services/builder/src/services/hub/hub_service.rs` | `admit` and `ConnectionPermit` (connect limiter, semaphore); busy nack without a drop; `HubConfig` fields. |
 | `services/builder/src/services/hub/hub_metrics.rs` | New refusal reasons. |
 | `crates/shine-game/src/replica/client_stream.rs` | A `rateLimited` nack removes the pending command like any other nack; a `rateLimited` subscribe failure takes the existing subscribe-failure path. No retry of the command. |
 
@@ -137,7 +136,7 @@ The queue is one unbounded FIFO because a socket's `ConnectUser` must be process
 <details data-agent="security">
 <summary>What this does not cover</summary>
 
-Limits are per user: an attacker with many accounts has one budget per account, and `max_connections` is the backstop. There is no per-IP limit (it needs trusted proxy headers, see the audit item R17), no budget shared between instances, and no per-user quota inside the stream inbox. The loop still awaits registry calls inline; the timeout and the bounded producers limit the damage of a slow Redis, they do not remove it.
+Limits are per user: an attacker with many accounts has one budget per account, and `max_connections` is the backstop. There is no per-IP limit (it needs trusted proxy headers, see the audit item R17), no budget shared between instances, and no per-user quota inside the stream inbox. The loop still awaits registry calls inline; the Redis timeouts and the bounded producers limit the damage of a slow Redis, they do not remove it.
 
 </details>
 
@@ -154,7 +153,6 @@ Limits are per user: an attacker with many accounts has one budget per account, 
 | 6 | Connect loop of one user gets 429; another user is unaffected | route test |
 | 7 | Cap reached gives 503; closing a socket frees its permit | route test |
 | 8 | A quick connect then close leaves nothing registered | hub test |
-| 9 | With the Redis pool exhausted, a connect is rejected after the registry timeout and the loop serves the next user | hub fault test |
-| 10 | `busy` nack leaves the connection registered (replaces the tests that expect the busy drop) | hub stream test |
+| 9 | `busy` nack leaves the connection registered (replaces the tests that expect the busy drop) | hub stream test |
 
 </details>

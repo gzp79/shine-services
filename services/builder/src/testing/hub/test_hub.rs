@@ -33,7 +33,6 @@ pub struct TestHubOptions {
     pub heartbeat: Duration,
     pub session_check: Duration,
     pub ping_enabled: bool,
-    pub registry_timeout: Duration,
     pub with_streams: Option<StreamConfig>,
 }
 
@@ -43,7 +42,6 @@ impl Default for TestHubOptions {
             heartbeat: IDLE,
             session_check: IDLE,
             ping_enabled: true,
-            registry_timeout: HubConfig::defaults().registry_timeout,
             with_streams: None,
         }
     }
@@ -75,7 +73,6 @@ impl TestHub {
             session_check: options.session_check,
             stream_shutdown_timeout: Duration::from_secs(10),
             ping_enabled: options.ping_enabled,
-            registry_timeout: options.registry_timeout,
             ..HubConfig::defaults()
         };
 

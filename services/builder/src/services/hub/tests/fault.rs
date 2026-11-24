@@ -8,10 +8,7 @@ use shine_test::{
     test,
     toxiproxy::{Stream, Toxic, Toxiproxy},
 };
-use std::{
-    collections::HashMap,
-    time::{Duration, Instant},
-};
+use std::{collections::HashMap, time::Duration};
 use uuid::Uuid;
 
 /// Upstream bytes of a registry write on a pooled connection: the checkout PING (14), the SET (127),
@@ -178,42 +175,6 @@ async fn an_outage_keeps_live_connections_and_rejects_new_ones() {
         .await;
 
     test.cleanup_connection(user, connection).await;
-}
-
-/// With every pooled connection taken, a registry call waits for the pool (30 s by default). The loop gives up
-/// after the registry timeout per call: the connect is rejected soon and the loop serves the next user.
-#[test(serial = "hub-service")]
-async fn an_exhausted_pool_holds_the_loop_for_the_registry_timeout_only() {
-    let mut test = TestHub::from_env(TestHubOptions {
-        registry_timeout: Duration::from_millis(200),
-        ..Default::default()
-    })
-    .await;
-
-    let pool = test.redis.pool.clone();
-    let mut held = Vec::new();
-    while let Ok(Ok(connection)) = tokio::time::timeout(Duration::from_millis(300), pool.get()).await {
-        held.push(connection);
-    }
-    let started = Instant::now();
-    let user = Uuid::new_v4();
-    let (_rejected, mut rejected_rx) = test.connect_ping(user, 8);
-    let rejected = rejected_rx.next().await;
-    let took = started.elapsed();
-    drop(held);
-
-    assert!(rejected.is_none(), "the connect is rejected: {rejected:?}");
-    assert!(took < Duration::from_secs(3), "the loop waited {took:?} for the pool");
-
-    let other = Uuid::new_v4();
-    let (connection, mut other_rx) = test.connect_ping(other, 8);
-    let seen = test.wait_all_commands().await;
-    assert_eq!(seen.lifecycle_of(other), [Lifecycle::Connected(connection)]);
-    other_rx.drain().assert_open();
-    test.assert_consistent([user, other], &HashMap::from([(other, connection)]))
-        .await;
-
-    test.cleanup_connection(other, connection).await;
 }
 
 /// A slow registry must not make a shutdown take as long as all the connections added up: the sockets are
