@@ -274,6 +274,71 @@ mod served {
     }
 
     #[test(serial = "hub-service")]
+    async fn subscribing_again_syncs_the_connection_again_from_the_start() {
+        let mut test = create_test_hub().await;
+        let (user, id) = (Uuid::new_v4(), TestStreamId::new_chat());
+        let (connection, mut socket) = test.connect_ping(user, 32);
+        test.wait_all_commands().await;
+        let send = |text: &str| {
+            let hub = test.hub.clone();
+            let (id, command) = (id.clone(), TestMessage::new_chat_command(text));
+            async move {
+                hub.send_stream_command(connection, user, &id, Uuid::new_v4(), &command)
+                    .await
+            }
+        };
+
+        test.stream_subscribe(connection, user, &id).await.unwrap();
+        assert!(
+            matches!(&*next_stream_message(&mut socket).await, StreamMessage::Sync { commands, .. } if commands.is_empty())
+        );
+        send("first").await.unwrap();
+        assert!(
+            matches!(&*next_stream_message(&mut socket).await, StreamMessage::Commands { commands, .. } if commands.len() == 1)
+        );
+
+        // The second subscribe is a request for a new sync: the whole history again, then only what is new.
+        test.stream_subscribe(connection, user, &id).await.unwrap();
+        let message = next_stream_message(&mut socket).await;
+        assert!(
+            matches!(&*message, StreamMessage::Sync { commands, .. } if commands.len() == 1 && commands[0].version == 1),
+            "{message:?}"
+        );
+        send("second").await.unwrap();
+        let message = next_stream_message(&mut socket).await;
+        assert!(
+            matches!(&*message, StreamMessage::Commands { commands, .. } if commands.len() == 1 && commands[0].version == 2),
+            "{message:?}"
+        );
+    }
+
+    #[test(serial = "hub-service")]
+    async fn a_command_id_is_the_clients_own_so_a_repeated_one_gets_a_version_each() {
+        let mut test = create_test_hub().await;
+        let (user, id, command_id) = (Uuid::new_v4(), TestStreamId::new_chat(), Uuid::new_v4());
+        let (connection, mut socket) = test.connect_ping(user, 32);
+        test.wait_all_commands().await;
+        test.stream_subscribe(connection, user, &id).await.unwrap();
+        next_stream_message(&mut socket).await;
+
+        let command = TestMessage::new_chat_command("same");
+        for _ in 0..2 {
+            test.hub
+                .send_stream_command(connection, user, &id, command_id, &command)
+                .await
+                .unwrap();
+        }
+
+        let mut received = Vec::new();
+        while received.len() < 2 {
+            if let StreamMessage::Commands { commands, .. } = &*next_stream_message(&mut socket).await {
+                received.extend(commands.iter().map(|c| (c.version, c.command_id)));
+            }
+        }
+        assert_eq!(received, [(1, command_id), (2, command_id)]);
+    }
+
+    #[test(serial = "hub-service")]
     async fn the_hub_shutdown_completes_after_the_workers_made_the_commands_durable() {
         let test = create_test_hub().await;
         let user = Uuid::new_v4();

@@ -53,6 +53,7 @@ Method: static reading only. Line numbers drift, treat them as pointers.
 | R21 | Low | perf | Per-connection JSON/base64 serialization |
 | R22 | Low | design | Raw `user_id` in commands |
 | R23 | Low | resource leak | No TCP keepalive / user timeout on the ws listener |
+| R24 | Low | lifecycle | The 1008 close frame of a budget drop is lost when the hub loop is stalled |
 | O2 | Low | logging | Info-level spans/logs on hot paths |
 | O5 | Low | perf | Registry notices enqueue commands for users the instance does not hold |
 | O6 | Low | protocol | Protocol gaps (no version/connection id, silent drops, OpenAPI) |
@@ -226,6 +227,10 @@ Every command carries the sender's raw `user_id` (`routes/ws/message.rs`); user 
 ### R23. No TCP keepalive / user timeout on the ws listener (Low)
 
 The socket write, ping and idle timeouts exist; the listener itself sets no TCP keepalive or user timeout, and the `sendDrain` abort has no test. Fix: set them on the accepted socket.
+
+### R24. The close frame of a budget drop needs the hub loop (Low)
+
+A socket over its frame budget asks the hub to drop it (`request_drop(RateLimited)`, `connect.rs`) and ends its receive task. The 1008 close frame is written by the send task only once the hub loop has handled the drop and queued `UserDisconnected` on the egress channel. If the loop is stalled for longer than `send_drain` (5 s), for example on a Redis call while `pool_timeout` is at its 30 s default, the send task is aborted and the client sees 1006 without a reason; a client that backs off on 1008 (C8) does not. A full egress queue loses the notice the same way (R11). Fix: hand the close reason to the socket's own send task through a side channel (a `oneshot` or `watch`) instead of through the hub, as proposed for R11.
 
 ---
 

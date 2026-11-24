@@ -19,12 +19,16 @@ use crate::{
 };
 use shine_game::replica::StreamId;
 use shine_infra::session::{CurrentUserService, SessionKey};
-use shine_infra_testing::db::redis::TestRedis;
+use shine_infra_testing::db::{postgres::TestPg, redis::TestRedis};
 use std::{collections::HashMap, sync::Arc, time::Duration, vec};
 use tokio::{sync::mpsc, time::timeout};
 use uuid::Uuid;
 
 pub(super) const BARRIER_TIMEOUT: Duration = Duration::from_secs(30);
+/// A call to a Redis that is gone fails after 300 ms, and the pool gives up after as much.
+const FAST_REDIS: &str = "timeout=300&pool_timeout=300";
+/// A call to a Postgres that is gone fails after a second (the parameters are in seconds).
+const FAST_PG: &str = "connect_timeout=1&pool_timeout=1";
 const IDLE: Duration = Duration::from_secs(3600);
 
 /// Hub configuration of a test. The background consumers idle unless a test shortens their interval, and
@@ -33,6 +37,9 @@ pub struct TestHubOptions {
     pub heartbeat: Duration,
     pub session_check: Duration,
     pub ping_enabled: bool,
+    /// The inbox and the log of the streams give up on a Redis or a Postgres that is gone within a second,
+    /// instead of waiting for the pools. For tests that break them.
+    pub fast_failing_stores: bool,
     pub with_streams: Option<StreamConfig>,
 }
 
@@ -42,6 +49,7 @@ impl Default for TestHubOptions {
             heartbeat: IDLE,
             session_check: IDLE,
             ping_enabled: true,
+            fast_failing_stores: false,
             with_streams: None,
         }
     }
@@ -91,8 +99,14 @@ impl TestHub {
             .with_session_service(session_service)
             .with_hub_registry(registry.clone());
         if let Some(config) = options.with_streams {
-            let si = TestInbox::new(redis.clone(), 60).await;
-            let sl = TestLog::from_env().await;
+            let (si, sl) = if options.fast_failing_stores {
+                (
+                    TestInbox::new(TestRedis::from_env_with(FAST_REDIS).await, 60).await,
+                    TestLog::new(TestPg::from_env_with(FAST_PG).await).await,
+                )
+            } else {
+                (TestInbox::new(redis.clone(), 60).await, TestLog::from_env().await)
+            };
             hub_builder = hub_builder
                 .with_stream_registry(|egress| {
                     let sr = standard_registry(si.db.clone(), sl.db.clone(), egress, StreamsConfig::uniform(config))?;

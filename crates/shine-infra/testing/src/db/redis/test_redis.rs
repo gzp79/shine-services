@@ -1,4 +1,7 @@
-use crate::db::redis::{get_redis_cns, get_redis_cns_direct};
+use crate::db::{
+    redis::{get_redis_cns, get_redis_cns_direct},
+    with_params,
+};
 use shine_infra::{
     db::redis::{RedisConnectionPool, create_redis_pool},
     web::TEST_STAGE,
@@ -14,7 +17,13 @@ pub struct TestRedis {
 
 impl TestRedis {
     pub async fn from_env() -> Self {
-        let cns = get_redis_cns();
+        Self::from_env_with("").await
+    }
+
+    /// Like [`from_env`](Self::from_env), with extra connection string parameters for the pool under test, for
+    /// example short timeouts so that an outage fails a call soon.
+    pub async fn from_env_with(params: &str) -> Self {
+        let cns = with_params(&get_redis_cns(), params);
         let pool = create_redis_pool(TEST_STAGE, &cns).await.unwrap();
 
         let cns = get_redis_cns_direct();

@@ -5,11 +5,14 @@ use super::*;
 use crate::{
     models::messages::{DisconnectReason, HubEvent},
     routes::ws::ws_config::SocketLimits,
+    services::StreamConfig,
     testing::{
-        hub::{HubEvents, Lifecycle, TestHub, TestSession},
+        command_stream::TestStreamId,
+        hub::{HubEvents, Lifecycle, TestHub, TestHubOptions, TestSession},
         TestMessage,
     },
 };
+use base64::{engine::general_purpose::STANDARD, Engine};
 use futures::channel::mpsc as socket;
 use serde::Deserialize;
 use shine_infra::sync::RateLimit;
@@ -439,6 +442,70 @@ async fn ping_and_pong_frames_are_not_charged() {
     client.send(&command_frame(command_id));
     assert_eq!(text_json(&client.next_frame().await), nack(command_id, "notSubscribed"));
     assert!(!client.server.is_finished());
+}
+
+#[test(serial = "hub-service")]
+async fn frames_that_are_not_valid_requests_are_ignored_without_an_answer() {
+    let mut test = TestHub::default_from_env().await;
+    let mut client = Client::open(&mut test, Uuid::new_v4()).await;
+    let command = |stream_id: &str, command: &str| {
+        serde_json::json!({
+            "type": "streamCommand", "streamId": stream_id, "commandId": Uuid::new_v4(), "command": command
+        })
+        .to_string()
+    };
+    let over_the_size_of_a_command = STANDARD.encode(vec![0u8; MAX_COMMAND_BYTES + 1]);
+
+    for frame in [
+        serde_json::json!({"type": "streamSubscribe", "streamId": "has spaces"}).to_string(),
+        serde_json::json!({"type": "streamSubscribe", "streamId": ""}).to_string(),
+        serde_json::json!({"type": "streamUnsubscribe", "streamId": "has spaces"}).to_string(),
+        serde_json::json!({"type": "streamSubscribe"}).to_string(),
+        serde_json::json!({"type": "streamCommand", "streamId": "chat:s"}).to_string(),
+        serde_json::json!({"type": "unknown"}).to_string(),
+        command("has spaces", "AA=="),
+        command("chat:s", "!!not base64!!"),
+        command("chat:s", &over_the_size_of_a_command),
+    ] {
+        client.send(&frame);
+    }
+    client.send_frame(WsMessage::Binary(Default::default()));
+    client.send(r#"{"type":"ping","id":"after"}"#);
+
+    // The frames of a socket are handled in order: an answer to one of the above would come before this.
+    assert_eq!(ping_frame(&client.next_frame().await), PingEvent { id: "after".into() });
+    assert!(!client.server.is_finished(), "the socket was ended");
+}
+
+#[test(serial = "hub-service")]
+async fn a_command_the_kind_does_not_accept_is_ignored_without_an_answer() {
+    let mut test = TestHub::from_env(TestHubOptions {
+        with_streams: Some(StreamConfig::test_default()),
+        ..TestHubOptions::default()
+    })
+    .await;
+    let mut client = Client::open(&mut test, Uuid::new_v4()).await;
+    // A stream of its own: the log is shared between the runs of the tests.
+    let stream_id = TestStreamId::new_pixel_map().to_string();
+    let paint = |x: u8, y: u8, color: u8| {
+        serde_json::json!({
+            "type": "streamCommand", "streamId": stream_id, "commandId": Uuid::new_v4(),
+            "command": STANDARD.encode(TestMessage::new_paint_command(x, y, color))
+        })
+        .to_string()
+    };
+    client.send(&serde_json::json!({"type": "streamSubscribe", "streamId": stream_id}).to_string());
+    assert_eq!(text_json(&client.next_frame().await)["type"], "streamSync");
+
+    // A paint off the map and one with a color outside the palette, then a good one.
+    client.send(&paint(99, 0, 1));
+    client.send(&paint(0, 0, 200));
+    client.send(&paint(1, 1, 1));
+
+    // The ignored commands used no version, and no answer came before the delivery of the good one.
+    let delivered = text_json(&client.next_frame().await);
+    assert_eq!(delivered["type"], "streamCommands");
+    assert_eq!(delivered["commands"][0]["version"], 1);
 }
 
 // --- Stuck and silent peers ----------------------------------------------------------------------
