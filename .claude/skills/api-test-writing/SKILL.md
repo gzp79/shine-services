@@ -6,8 +6,10 @@ description: >
   writing a new test scenario, adding a mock, or deciding whether a test needs a real
   logged-in user vs a minted session — including when a brand new service is added to
   the workspace and needs its own test folder wired in. Covers folder layout, available
-  mocks, session minting limitations, service isolation rules, resiliency/infrastructure
-  test taxonomy, and happy-path/edge-case conventions.
+  mocks, session minting limitations, service isolation rules, which scenarios belong in
+  Playwright vs Rust tests, resiliency/infrastructure test taxonomy, and
+  happy-path/edge-case conventions. Also use when deciding whether to keep, move or
+  delete an existing API test that Rust tests also cover.
 ---
 
 # API Test Writing
@@ -129,6 +131,38 @@ Fault-injection tests that deliberately break Redis/Postgres via `toxiproxy` (e.
 `identity/redis_failures.ts`) are tagged `{ tag: ['@infrastructure'] }` at the
 `describe` level to mark them as a distinct category from ordinary API tests.
 
+## Playwright or Rust — where a test belongs
+
+Playwright is only for a running service through its public interface (HTTP/WebSocket).
+Anything that tests a component on its own (a function, type, library, repository or
+other internal module, in any crate) is a Rust test, whatever it is called, and never
+belongs here.
+
+For a scenario that is reachable through a service's public interface, the two suites
+answer different questions, so it lives in exactly one of them (plus, at most, a single
+smoke-level echo in the other):
+
+| Playwright (`tests/api-tests/`) | Rust (crate/service `*_test.rs`, `tests/` dirs) |
+|---|---|
+| **Contract**: do the real binary, real config, wiring and wire format work together as a client sees them? | **Behavior**: is the logic correct in every state? |
+| One happy path per feature, plus the gates that exist only at the HTTP/config layer: Origin, auth, CORS, headers, request validation. | Edge cases, invalid-input tables of the logic, ordering, races, limits, drop/close reasons, retry and backoff. |
+| Real mocks (SMTP, OIDC), real cookies, minted or real sessions. | Fake clocks, tiny timeouts, stalled loops, injected faults, in-process fakes. |
+
+Tie-breakers when it is not obvious:
+1. Only observable through a timing window, retry count or race → **Rust**.
+2. Would still pass with the HTTP layer stubbed out → **Rust**.
+3. Breaks only when config, wiring or serialization differs from the test harness →
+   **Playwright**.
+4. Needs more than a second or two of real waiting, or stops shared infrastructure
+   (docker Postgres/Redis) → **Rust** (toxiproxy proxies, not containers).
+
+Keep a Playwright test that is also covered in Rust only when it adds a real-wire
+check the Rust harness cannot make (real close code over a real socket, real config
+values). Say so in a comment, and point at the Rust test that holds the edge cases.
+
+Before adding a Playwright test, look for the Rust one; before deleting a Playwright
+test, confirm the Rust one asserts the same outcome.
+
 ## Resiliency tests — a distinct category, add where it's clean
 
 Beyond feature happy-path/edge-case tests, the suite has a separate taxonomy for
@@ -142,7 +176,10 @@ proxy is restored.
 Add a resiliency test whenever a new endpoint has a clear, deterministic failure contract
 against its infra dependency — e.g. "if Redis is down, this returns 503" or "if Postgres
 is unreachable, this returns 503 and recovers once it's back." That's a real API
-contract worth locking in.
+contract worth locking in. Keep it to one such test per dependency and endpoint (or
+stream/socket) kind: how the service behaves during the outage (retries, partial
+recovery, what is queued or refused, per-scenario variants) is Rust territory, see
+"Playwright or Rust" above.
 
 **Don't** force a resiliency test where the only way to observe the behavior is a timing
 window without a clear API signal — e.g. asserting on exact retry counts, backoff
@@ -168,9 +205,11 @@ Conventions observed throughout `api-tests/`:
   typically checks several facets of one flow together (cookies, response body/problem
   shape, follow-on `getUserInfo` for both `'fast'` and `'full'`) rather than splitting
   each assertion into its own test.
-- **Cover edge cases as parametrized tables** where the same assertion applies across
-  several inputs: `for (const invalidEmail of invalidEmails) { test(...) }`. Interpolate
-  the input into the title so a failure immediately shows which case broke.
+- **Cover HTTP-boundary edge cases as parametrized tables** where the same assertion
+  applies across several inputs: `for (const invalidEmail of invalidEmails) { test(...) }`.
+  Interpolate the input into the title so a failure immediately shows which case broke.
+  Limit these to what the route/config layer decides (request validation, auth, origin);
+  edge cases of the logic behind it belong in Rust.
 - **Use `test.step('<label>', ...)`** to break one test into named sequential steps when
   a single scenario has multiple ordered stages (e.g. login with a token, twice).
 - **Capture async side effects before triggering them**: `const mailPromise =
@@ -191,11 +230,12 @@ For any new endpoint or flow, aim to cover both:
 - **Happy path**: the intended flow succeeds and every observable side effect is
   correct — status code, response body/problem shape, cookies set/cleared, any email
   sent, and a follow-up `getUserInfo` reflecting the change.
-- **Edge cases**: invalid input (malformed values, missing fields, wrong captcha),
-  security-relevant boundaries (CORS origin variants, header checks), and failure modes
-  the handler is specifically supposed to guard against (e.g. rejecting a request kind
-  the endpoint doesn't support). Table-drive these where the assertion shape repeats
-  across inputs.
+- **Edge cases at the HTTP boundary**: invalid input (malformed values, missing fields,
+  wrong captcha), security-relevant boundaries (CORS origin variants, header checks),
+  and failure modes the handler is specifically supposed to guard against (e.g.
+  rejecting a request kind the endpoint doesn't support). Table-drive these where the
+  assertion shape repeats across inputs. Deeper edge cases (state, ordering, limits,
+  faults) go to Rust, see "Playwright or Rust".
 
 Look at `api-tests/identity/login_email.ts` for a file that does both well — plenty of
 edge-case tables up front, then thorough parametrized happy-path coverage.

@@ -20,8 +20,6 @@ type WsHoldResult = {
     settled: Promise<WsCloseOutcome>;
 };
 
-type WsPing = { type: 'ping'; id: string };
-
 async function connectWs(url: string, options: WsConnectOptions): Promise<WsOutcome> {
     return await new Promise<WsOutcome>((resolve) => {
         const timeoutMs = options.timeoutMs ?? 5000;
@@ -133,88 +131,6 @@ function openAndWaitClose(url: string, options: WsHoldOptions): WsHoldResult {
     return { opened, settled };
 }
 
-type WsPingSession = {
-    waitPing: (predicate: (ping: WsPing) => boolean, timeoutMs?: number) => Promise<WsPing>;
-    sendPing: (id: string, userId?: string) => void;
-    sendPingAndWait: (id: string, timeoutMs?: number) => Promise<WsPing>;
-    sendRaw: (frame: string) => void;
-    close: () => void;
-};
-
-async function openPingSession(url: string, options: WsConnectOptions): Promise<WsPingSession> {
-    const ws = new WebSocket(url, {
-        origin: options.origin,
-        headers: buildHeaders(options),
-        rejectUnauthorized: false
-    });
-
-    const buffered: WsPing[] = [];
-    const waiters: Array<{
-        predicate: (ping: WsPing) => boolean;
-        resolve: (ping: WsPing) => void;
-    }> = [];
-
-    const offer = (ping: WsPing) => {
-        const idx = waiters.findIndex((w) => w.predicate(ping));
-        if (idx >= 0) {
-            waiters.splice(idx, 1)[0].resolve(ping);
-        } else {
-            buffered.push(ping);
-        }
-    };
-
-    ws.on('message', (data: Buffer) => {
-        offer(JSON.parse(data.toString()) as WsPing);
-    });
-
-    await new Promise<void>((resolve, reject) => {
-        ws.once('open', () => resolve());
-        ws.once('unexpected-response', (_req: unknown, res: IncomingMessage) =>
-            reject(new Error(`unexpected upgrade response: ${res.statusCode}`))
-        );
-        ws.once('error', (err: Error) => reject(err));
-    });
-
-    const waitPing = (predicate: (ping: WsPing) => boolean, timeoutMs = 5000) =>
-        new Promise<WsPing>((resolve, reject) => {
-            const idx = buffered.findIndex(predicate);
-            if (idx >= 0) {
-                resolve(buffered.splice(idx, 1)[0]);
-                return;
-            }
-            const timer = setTimeout(() => reject(new Error(`no matching ping after ${timeoutMs}ms`)), timeoutMs);
-            waiters.push({
-                predicate,
-                resolve: (ping) => {
-                    clearTimeout(timer);
-                    resolve(ping);
-                }
-            });
-        });
-
-    const sendPingAndWait = async (id: string, timeoutMs = 5000) => {
-        const response = waitPing((ping) => ping.id === id, timeoutMs);
-        const send = () => ws.send(JSON.stringify({ type: 'ping', id }));
-        send();
-        // The socket upgrade completes before the hub asynchronously registers the connection.
-        // Retry the same id until it can receive the broadcast rather than depending on a delay.
-        const retry = setInterval(send, 50);
-        try {
-            return await response;
-        } finally {
-            clearInterval(retry);
-        }
-    };
-
-    return {
-        waitPing,
-        sendPing: (id, userId) => ws.send(JSON.stringify({ type: 'ping', id, ...(userId && { userId }) })),
-        sendPingAndWait,
-        sendRaw: (frame: string) => ws.send(frame),
-        close: () => ws.close()
-    };
-}
-
 test.describe('Builder websocket', { tag: ['@regression'] }, () => {
     let mint: SessionMint;
     let user: MintedSession;
@@ -281,21 +197,6 @@ test.describe('Builder websocket', { tag: ['@regression'] }, () => {
         });
     }
 
-    test('WS ping shall be broadcast back to the sender', async ({ homeUrl, builderWSUrl }) => {
-        const session = await openPingSession(wsConnectUrl(builderWSUrl), {
-            sid: user.sessionCookie,
-            ...wsHeaders(homeUrl, builderWSUrl)
-        });
-
-        try {
-            const id = randomUUID();
-
-            expect(await session.sendPingAndWait(id)).toEqual({ type: 'ping', id });
-        } finally {
-            session.close();
-        }
-    });
-
     test('WS second connection for a user shall drop the first (last connection wins)', async ({
         homeUrl,
         builderWSUrl
@@ -322,30 +223,5 @@ test.describe('Builder websocket', { tag: ['@regression'] }, () => {
         // The first socket must be force-closed by the hub, telling the client why; the second stays open.
         const firstResult = await first.settled;
         expect(firstResult).toEqual({ kind: 'closed', code: HUB_DROPPED_CLOSE_CODE, reason: 'replaced' });
-    });
-
-    test('WS connection shall be dropped when session is deleted', async ({
-        homeUrl,
-        builderWSUrl,
-        serviceTestInfo
-    }) => {
-        await serviceTestInfo('builder').runIf(['test']);
-
-        const url = wsConnectUrl(builderWSUrl);
-        const authCheckIntervalMs = 2_000;
-
-        // SessionChecker runs every 2s in test config; allow several intervals
-        // for detection, hub command processing, and websocket teardown.
-        const closeCtx = openAndWaitClose(url, {
-            sid: user.sessionCookie,
-            ...wsHeaders(homeUrl, builderWSUrl),
-            holdTimeoutMs: authCheckIntervalMs * 4
-        });
-
-        expect(await closeCtx.opened).toBe(true);
-        await mint.deleteUser(user);
-
-        const result = await closeCtx.settled;
-        expect(result).toEqual({ kind: 'closed', code: HUB_DROPPED_CLOSE_CODE, reason: 'session_invalid' });
     });
 });

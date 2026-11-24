@@ -22,9 +22,6 @@ const PIXEL_MAP = 'pixel-map';
 // Stream names are 1 to 64 letters, digits and `_ . : -`. Unique per test, so tests never share a stream.
 const newStreamId = (kind: string, prefix: string) => `${kind}:${prefix}-${randomUUID().replace(/-/g, '')}`;
 
-// The hub closes a socket it drops with this code; the close reason carries why.
-const HUB_DROPPED_CLOSE_CODE = 4000;
-
 const within = async <T>(promise: Promise<T>, ms: number, what: string): Promise<T> => {
     let timer: NodeJS.Timeout | undefined;
     const timeout = new Promise<never>((_, reject) => {
@@ -104,33 +101,6 @@ test.describe('Builder streams', { tag: ['@regression'] }, () => {
         }
     });
 
-    test('WS stream late subscriber shall get the history in its sync and only newer commands after it', async ({
-        homeUrl,
-        builderWSUrl
-    }) => {
-        const streamId = newStreamId(CHAT, 'room');
-        const a = await connect(homeUrl, builderWSUrl, alice);
-        await a.subscribe(streamId);
-        for (const text of ['one', 'two', 'three']) {
-            a.command(streamId, randomUUID(), add(text));
-        }
-        let delivered = 0;
-        while (delivered < 3) {
-            delivered += (await a.waitFrame('streamCommands', (f) => f.streamId === streamId)).commands.length;
-        }
-
-        const b = await connect(homeUrl, builderWSUrl, bob);
-        const sync = await b.subscribe(streamId);
-        // No snapshot yet (they come every 100 commands), so the sync carries the whole log.
-        expect(sync.snapshot).toBeNull();
-        expect(sync.commands.map((c) => c.version)).toEqual([1, 2, 3]);
-        expect(sync.commands.map((c) => c.command)).toEqual([add('one'), add('two'), add('three')]);
-
-        a.command(streamId, randomUUID(), add('four'));
-        const next = await b.waitFrame('streamCommands', (f) => f.streamId === streamId);
-        expect(next.commands.map((c) => c.version)).toEqual([4]);
-    });
-
     test('WS stream message over the socket limit shall end the socket and leave the user free to reconnect', async ({
         homeUrl,
         builderWSUrl
@@ -144,33 +114,6 @@ test.describe('Builder streams', { tag: ['@regression'] }, () => {
         await within(a.closed, 5000, 'the close of the socket');
         const again = await connect(homeUrl, builderWSUrl, alice);
         expect(await again.subscribe(streamId)).toMatchObject({ type: 'streamSync', commands: [] });
-    });
-
-    test('WS stream replaced connection shall lose its subscriptions and the new one start from the log', async ({
-        homeUrl,
-        builderWSUrl
-    }) => {
-        const streamId = newStreamId(CHAT, 'room');
-        const first = await connect(homeUrl, builderWSUrl, alice);
-        await first.subscribe(streamId);
-        first.command(streamId, randomUUID(), add('before'));
-        await first.waitFrame('streamCommands', (f) => f.streamId === streamId);
-
-        const second = await connect(homeUrl, builderWSUrl, alice);
-
-        expect(await within(first.closed, 5000, 'the close of the replaced socket')).toEqual({
-            code: HUB_DROPPED_CLOSE_CODE,
-            reason: 'replaced'
-        });
-        // What the user had subscribed to is not carried over: the new connection asks for it again.
-        const refused = randomUUID();
-        second.command(streamId, refused, add('too soon'));
-        expect(await second.waitFrame('streamNack', (f) => f.commandId === refused)).toMatchObject({
-            streamId,
-            reason: 'notSubscribed'
-        });
-        const sync = await second.subscribe(streamId);
-        expect(sync.commands.map((c) => c.command)).toEqual([add('before')]);
     });
 
     // Snapshots are taken every 100 commands. The pixel map is a state worth one: a 32 by 32 grid of colors.
