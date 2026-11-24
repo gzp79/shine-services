@@ -49,7 +49,7 @@ flowchart LR
 
 `SocketBudget::check` returns a `Verdict` for every frame. The overview above draws its three outcomes as the arrows leaving `SocketBudget`; this diagram is the inside of that box, showing how `check` reaches them.
 
-A text frame is parsed first (bounded by the 32 KB message limit), then draws tokens. A binary frame is not parsed and draws one frame token. The violation counter turns a sustained flood into a close.
+A text frame is parsed first (bounded by the 32 KB message limit), then draws a token of its bucket. A binary frame is not parsed and draws a frame token. The violation counter turns a sustained flood into a close.
 
 ```mermaid
 flowchart TD
@@ -57,9 +57,9 @@ flowchart TD
     classDef red fill:#ef444422,stroke:#ef4444
     classDef orange fill:#fb923c22,stroke:#fb923c
 
-    P["text frame parsed, or binary frame"] --> T{"frame token<br/>and, for subscribe or unsubscribe,<br/>subscribe token"}
+    P["text frame parsed, or binary frame"] --> T{"frame token,<br/>or subscribe token for a subscribe"}
     T -- "granted" --> OK["Verdict::Allow<br/>handle the frame, violations = 0"]:::green
-    T -- "denied" --> V{"violations over the limit?"}
+    T -- "denied" --> V{"violations at the limit?"}
     V -- "no" --> N["Verdict::Deny<br/>command nack or subscribe failure, reason rateLimited<br/>invalid or binary frame: no answer"]:::orange
     V -- "yes" --> D["Verdict::Close<br/>drop connection, reason RateLimited, close 1008"]:::red
 ```
@@ -69,30 +69,30 @@ flowchart TD
 | Concern | Rule |
 |---|---|
 | Scope | Every limit is per instance and in memory. Nothing is shared through Redis. A user has one live connection per instance (last wins), so a per-socket budget is the user's budget across all streams. |
-| Frame budget | One `TokenBucket` per socket, owned by its receive task (no lock). Every text or binary frame costs a frame token, parseable or not (WebSocket ping, pong and close frames are not charged). A granted binary frame is ignored. Subscribe and unsubscribe also cost a subscribe token. |
+| Frame budget | One `TokenBucket` per socket, owned by its receive task (no lock). Every text or binary frame draws on one of two buckets, parseable or not (WebSocket ping, pong and close frames are not charged): a subscribe, which is answered with a full sync, on the subscribe bucket, every other frame on the frame bucket. A granted binary frame is ignored. An unsubscribe is a plain frame, it is cheap and a refusal could not be answered. |
 | Denied frame | Command: `streamNack` reason `rateLimited`. Subscribe: `streamSubscribeFailed` reason `rateLimited`. Invalid, binary or non-stream frame: no answer. The connection stays open. |
-| Violations | Consecutive denied frames are counted; any granted frame resets the count. At `violation_limit` the socket is dropped as `RateLimited` (close 1008). |
+| Violations | Each denied frame adds a violation and each granted frame forgives one. At `violation_limit` the socket is dropped as `RateLimited` (close 1008). A flood that now and then gets a frame through is closed all the same; a client that now and then runs into its limit is not. |
 | Subscribe coalescing | The subscribe bucket is the coalescing rule: repeated subscribes to a stream (each a full `Sync`) are bounded by its refill rate. |
 | Busy inbox | The inbox back-pressure is kept as it is (`inbox.backpressure_high`, `backpressure_low`, `backpressure_poll_period`, `backpressure_timeout`): pushes wait above the high mark and fail `busy` after the timeout. A `busy` push is nacked; the connection stays open and there is no `Busy` disconnect reason. The sender's frame budget limits how fast it can retry. |
 | Connect rate | `KeyedRateLimiter<Uuid>` keyed by `user_id`, before the upgrade. Every authenticated attempt that passes the host and origin checks draws a token, including ones the cap then refuses. It outlives the socket, so a reconnect loop does not reset its budget. Over budget: 429 with `retryAfter` seconds in the problem. |
 | Connection cap | `HubService` owns an `Admission<Uuid>` with `max_connections` places. `admit(user_id)` checks the rate, then the cap, and returns an `AdmissionPermit` that the socket holds until it ends. Exhausted: 503. |
 | Client backoff | Clients are expected to back off on a refused connect and on close 1008; that work is the audit items C2 and C8 and is not part of this design. |
 | Command queue | One FIFO without a limit of its own, so a connection's commands run in the order they were sent and none is ever refused. Its size is bounded by what feeds it: one `ConnectUser` per socket and the sockets are capped by `max_connections`; subscribes and unsubscribes by the subscribe bucket of each socket; one disconnect per connection; drops deduplicated per connection; one registry notice per remote connect; one tick of the tasks. A reconnect storm is at most `max_connections` small entries. |
-| Stalled loop | While the loop waits for a registry call the queue grows at the rate above, for as long as the call takes, which the Redis `timeout` and `pool_timeout` bound. The depth metric (`hub_control_commands` queue delay) is the signal to watch. |
+| Stalled loop | While the loop waits for a registry call the queue grows at the rate above, for as long as the call takes, which the Redis `timeout` and `pool_timeout` bound. The queue delay metric (`hub_control_command_queue_delay`) is the signal to watch. |
 | Registry calls | The hub adds no timeout of its own to its calls to the hub connection registry. Each call is bounded by the Redis connection string: `timeout` (connect and per-command response, 500 ms by default) and `pool_timeout` (checkout wait, 30 s by default). Set `pool_timeout` for the builder to seconds, as `mock.json` does (5000), so a starved pool cannot hold the loop for long. A failed call is an error like any other, counted in the registry error counter; `ConnectUser` already re-reads the registry after a failed write, so a write that landed is accepted. |
 | Ping | A ping frame is an ordinary frame: it draws a frame token. |
 | Close codes | `RateLimited` 1008, the rest as in [Hub](hub.md#wire-protocol). |
-| Metrics | Refused connects count in `hub_connect_rejected` (`rate_limited`, `capacity`); drops in `hub_connections_dropped` by reason; denied frames in `ws_messages_received` with outcome `rate_limited`. |
+| Metrics | Refused connects count in `hub_connects_rejected` (`rate_limited`, `capacity`); drops in `hub_connections_dropped` by reason; denied frames in `ws_messages_received` with outcome `rate_limited`. |
 
 ### Limits
 
-All values are configuration; the defaults below are the starting point. The frame and subscribe limits are per socket (`WsConfig.limits`); the connect rate and the connection cap are hub settings (`HubConfig`).
+All values are configuration; the defaults below are the starting point. `burst` is the size of the bucket (the most a client can send at once) and `perSecond` the refill rate, which is also the steady rate a client can keep up; in any `T` seconds at most `burst + perSecond × T` get through. A `burst` below `perSecond` is a plain per-second limit. The frame and subscribe limits are per socket (`WsConfig.limits`); the connect rate and the connection cap are hub settings (`HubConfig`).
 
 | Setting | Default | Meaning |
 |---|---|---|
 | `frames` | burst 60, 30 / s | Frame bucket of a socket. |
-| `subscribes` | burst 10, 2 / s | Subscribe and unsubscribe bucket of a socket. |
-| `violation_limit` | 20 | Consecutive denied frames before the drop. |
+| `subscribes` | burst 10, 2 / s | Subscribe bucket of a socket, for the expensive request. |
+| `violation_limit` | 20 | Denied frames, net of the granted ones, before the drop. |
 | `connect_rate` | burst 5, 1 per 10 s | Connects per user. |
 | `max_connections` | 10 000 | Sockets per instance, from upgrade to close. |
 
@@ -124,7 +124,6 @@ Another key shape is another `K` (`(Uuid, Group)`); another rule is another limi
 | `services/builder/src/models/messages/stream.rs` | `CommandFailure::RateLimited`, `SubscribeFailure::RateLimited`. |
 | `services/builder/src/models/messages/hub.rs` | `DisconnectReason::RateLimited`; no `Busy`. |
 | `services/builder/src/services/hub/hub_service.rs` | `HubService::admit` over an `Admission<Uuid>`; busy nack without a drop; `HubConfig` fields. |
-| `services/builder/src/services/hub/hub_metrics.rs` | New refusal reasons. |
 | `crates/shine-game/src/replica/client_stream.rs` | A `rateLimited` nack removes the pending command like any other nack; a `rateLimited` subscribe failure takes the existing subscribe-failure path. No retry of the command. |
 
 <details data-agent="implementation">
@@ -139,7 +138,7 @@ The queue is one unbounded FIFO because a socket's `ConnectUser` must be process
 <details data-agent="security">
 <summary>What this does not cover</summary>
 
-Limits are per user: an attacker with many accounts has one budget per account, and `max_connections` is the backstop. There is no per-IP limit (it needs trusted proxy headers, see the audit item R17), no budget shared between instances, and no per-user quota inside the stream inbox. The loop still awaits registry calls inline; the Redis timeouts and the bounded producers limit the damage of a slow Redis, they do not remove it.
+Limits are per user: an attacker with many accounts has one budget per account, and `max_connections` is the backstop. There is no per-IP limit (it needs trusted proxy headers, see the audit item R17), no budget shared between instances, and no per-user quota inside the stream inbox. The 1008 close frame is sent when the hub loop has handled the drop; if the loop is stalled longer than `send_drain` the socket is aborted and the client sees 1006. The loop still awaits registry calls inline; the Redis timeouts and the bounded producers limit the damage of a slow Redis, they do not remove it.
 
 </details>
 
@@ -150,7 +149,7 @@ Limits are per user: an attacker with many accounts has one budget per account, 
 |---|---|---|
 | 1 | `TokenBucket`: burst, refill over time, capacity clamp, `is_full_at` | unit, injected time |
 | 2 | `KeyedRateLimiter`: keys independent, idle keys swept, clone shares state | unit |
-| 3 | `SocketBudget`: grant, deny, violation count resets on a granted frame, `Close` at the limit | unit |
+| 3 | `SocketBudget`: grant, deny, a granted frame forgives a denial, a paced flood is closed, `Close` at the limit | unit |
 | 4 | Denied command nacks `rateLimited` with its `commandId`; denied subscribe fails `rateLimited` | socket test |
 | 5 | Sustained flood closes the socket 1008; honest traffic beside it is untouched | socket test |
 | 6 | `Admission`: the budget of a key outlives its permits, a refusal for the places still costs a token, the places are limited and a dropped permit frees its place; `AdmissionError` is a 429 with `retryAfter` or a 503 | unit |

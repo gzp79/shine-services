@@ -39,11 +39,20 @@ pub struct Admission<K> {
     places: Arc<Semaphore>,
 }
 
+/// The duration in whole seconds, rounded up.
+fn whole_seconds_up(duration: Duration) -> Duration {
+    Duration::from_secs(
+        duration
+            .as_secs()
+            .saturating_add(u64::from(duration.subsec_nanos() > 0)),
+    )
+}
+
 impl<K: Eq + Hash> Admission<K> {
     pub fn new(rate: RateLimit, places: usize) -> Self {
         Self {
             limiter: KeyedRateLimiter::new(rate),
-            retry_after: Duration::from_secs(rate.interval().as_secs_f64().ceil() as u64),
+            retry_after: whole_seconds_up(rate.interval()),
             places: Arc::new(Semaphore::new(places)),
         }
     }
@@ -81,6 +90,16 @@ mod test {
             })
         );
         assert!(admission.admit(2).is_ok(), "the budget is per key");
+    }
+
+    #[test]
+    fn a_rate_that_almost_never_refills_is_told_as_a_very_long_wait() {
+        let admission = Admission::new(RateLimit::new(1, 1e-20), 1);
+        drop(admission.admit(1).unwrap());
+        assert!(matches!(
+            admission.admit(1).err(),
+            Some(AdmissionError::RateLimited { retry_after }) if retry_after > Duration::from_secs(86_400 * 365)
+        ));
     }
 
     #[test]

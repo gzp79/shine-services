@@ -67,7 +67,7 @@ pub struct HubConfig {
     pub ping_enabled: bool,
     /// Sockets served at the same time, counted from the upgrade to the close.
     #[serde(default = "consts::usize::<10000>")]
-    #[validate(range(min = 1))]
+    #[validate(range(min = 1, max = 1_000_000))]
     pub max_connections: usize,
     /// Connects of one user.
     #[serde(default = "HubConfig::default_connect_rate")]

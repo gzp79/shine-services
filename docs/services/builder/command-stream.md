@@ -313,7 +313,7 @@ After advancing, the persistence trims the Redis inbox through the latest stored
 
 | Metric | Labels | Measures |
 |---|---|---|
-| `stream_commands_pushed` | outcome: `queued`, `invalid`, `not_subscribed`, `busy`, `failed` | Every command a client sends: the hub counts the answer of the write path, the socket counts the ones refused as `invalid` before it (undecodable or over `MAX_COMMAND_BYTES`). Tells apart what the websocket metric reports as `refused` or `invalid`. |
+| `stream_commands_pushed` | outcome: `queued`, `invalid`, `not_subscribed`, `busy`, `failed`, `rate_limited` | Every command a client sends: the hub counts the answer of the write path, the socket counts the ones refused as `invalid` (undecodable or over `MAX_COMMAND_BYTES`) or `rate_limited` (over its budget) before it. Tells apart what the websocket metric reports as `refused` or `invalid`. |
 | `stream_push_throttle_wait` | outcome: `ok`, `timeout` | Time a push waited for the inbox to drain. Only pushes that had to wait are recorded, so the count is the number of throttled pushes. |
 | `stream_inbox_depth` | | Inbox length, sampled by the back-pressure check. |
 | `stream_commands_ingested` | | Commands taken from the inbox and versioned. |

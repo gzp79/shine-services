@@ -261,6 +261,23 @@ fn a_nack_of_an_unknown_command_changes_nothing() {
 }
 
 #[test]
+fn nacks_for_not_being_subscribed_ask_for_one_sync_not_one_for_each_command() {
+    let server = Server::new();
+    let mut client = live_client(&server);
+    for n in 1..=3 {
+        client.submit(id(n), paint(n as u8, 0, 1)).unwrap();
+    }
+
+    let out: Vec<String> = (1..=3)
+        .flat_map(|n| client.handle_message(&nack(n, "notSubscribed")))
+        .collect();
+
+    assert_eq!(out.len(), 1);
+    assert_eq!(frame_type(&out[0]), "streamSubscribe");
+    assert_eq!(client.pending_count(), 0);
+}
+
+#[test]
 fn a_rate_limited_command_is_dropped_and_not_sent_again() {
     let server = Server::new();
     let mut client = live_client(&server);

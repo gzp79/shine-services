@@ -230,7 +230,7 @@ async fn serve_socket<S, R, E>(
 
                 let kind = request
                     .as_ref()
-                    .map_or(BudgetKind::Frame, WSMessageRequest::budget_kind);
+                    .map_or(BudgetKind::Command, WSMessageRequest::budget_kind);
                 match budget.check(kind) {
                     Verdict::Allow => {}
                     Verdict::Deny => {
@@ -340,6 +340,7 @@ fn refuse_request(request: &WSMessageRequest, replies: &mpsc::WeakSender<HubMess
         WSMessageRequest::StreamCommand { stream_id, command_id, .. } => {
             if let Some(stream_id) = parse_stream_id(user_id, stream_id) {
                 let reason = CommandFailure::RateLimited;
+                stream_metrics().command_refused(stream_id.kind(), reason);
                 send_stream_response(
                     replies,
                     StreamMessage::CommandFailed {

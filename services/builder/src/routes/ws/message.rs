@@ -38,8 +38,8 @@ impl WSMessageRequest {
     /// What the request costs from the budget of its socket.
     pub fn budget_kind(&self) -> BudgetKind {
         match self {
-            Self::StreamSubscribe { .. } | Self::StreamUnsubscribe { .. } => BudgetKind::Subscribe,
-            Self::StreamCommand { .. } | Self::Ping(_) => BudgetKind::Frame,
+            Self::StreamSubscribe { .. } => BudgetKind::Subscribe,
+            Self::StreamUnsubscribe { .. } | Self::StreamCommand { .. } | Self::Ping(_) => BudgetKind::Command,
         }
     }
 

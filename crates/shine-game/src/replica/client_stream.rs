@@ -256,8 +256,9 @@ impl<S: ReplayState> ClientStream<S> {
         if self.pending.len() != before {
             self.revision = self.revision.wrapping_add(1);
         }
-        // The server lost the subscription: the next sync brings the state back.
-        if reason == "notSubscribed" {
+        // The server lost the subscription: the next sync brings the state back. One request is enough, the
+        // nacks of the other pending commands arrive while the client already waits for it.
+        if reason == "notSubscribed" && self.status != StreamStatus::Waiting {
             return self.resubscribe();
         }
         Vec::new()

@@ -5,9 +5,9 @@ use std::time::Instant;
 /// What a frame of the client costs from the budget.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BudgetKind {
-    /// A frame token.
-    Frame,
-    /// A frame token and a subscribe token: a subscribe or an unsubscribe.
+    /// A frame token, cheap and the bulk of the traffic.
+    Command,
+    /// An expensive operation that consumes a subscribe token.
     Subscribe,
 }
 
@@ -50,11 +50,14 @@ impl SocketBudget {
 
     /// Like [`check`](Self::check) with the time given, for tests.
     pub fn check_at(&mut self, now: Instant, kind: BudgetKind) -> Verdict {
-        // The subscribe token goes first: a subscribe it denies does not spend a frame token.
-        let granted =
-            (kind != BudgetKind::Subscribe || self.subscribes.try_acquire_at(now)) && self.frames.try_acquire_at(now);
-        if granted {
-            self.violations = 0;
+        let bucket = match kind {
+            BudgetKind::Command => &mut self.frames,
+            BudgetKind::Subscribe => &mut self.subscribes,
+        };
+        if bucket.try_acquire_at(now) {
+            // A grant forgives one denial: a flood that now and then gets a frame through is still closed, a
+            // client that now and then runs into its limit is not.
+            self.violations = self.violations.saturating_sub(1);
             return Verdict::Allow;
         }
         self.violations += 1;
@@ -95,7 +98,7 @@ mod test {
     fn frames_are_allowed_up_to_the_burst() {
         let t0 = t0();
         let mut budget = budget(RateLimit::new(3, NO_REFILL), RateLimit::new(1, NO_REFILL), 100, t0);
-        let verdicts: Vec<_> = (0..4).map(|_| budget.check_at(t0, BudgetKind::Frame)).collect();
+        let verdicts: Vec<_> = (0..4).map(|_| budget.check_at(t0, BudgetKind::Command)).collect();
         assert_eq!(
             verdicts,
             [Verdict::Allow, Verdict::Allow, Verdict::Allow, Verdict::Deny]
@@ -108,40 +111,52 @@ mod test {
         let mut budget = budget(RateLimit::new(10, NO_REFILL), RateLimit::new(1, NO_REFILL), 100, t0);
         assert_eq!(budget.check_at(t0, BudgetKind::Subscribe), Verdict::Allow);
         assert_eq!(budget.check_at(t0, BudgetKind::Subscribe), Verdict::Deny);
-        assert_eq!(budget.check_at(t0, BudgetKind::Frame), Verdict::Allow);
+        assert_eq!(budget.check_at(t0, BudgetKind::Command), Verdict::Allow);
     }
 
     #[test]
-    fn a_denied_subscribe_does_not_spend_the_frame_token() {
+    fn a_subscribe_and_the_other_frames_draw_on_their_own_buckets() {
         let t0 = t0();
-        let mut budget = budget(RateLimit::new(2, NO_REFILL), RateLimit::new(1, NO_REFILL), 100, t0);
+        let mut budget = budget(RateLimit::new(1, NO_REFILL), RateLimit::new(1, NO_REFILL), 100, t0);
         let verdicts = [
+            budget.check_at(t0, BudgetKind::Command),
+            budget.check_at(t0, BudgetKind::Command),
             budget.check_at(t0, BudgetKind::Subscribe),
             budget.check_at(t0, BudgetKind::Subscribe),
-            budget.check_at(t0, BudgetKind::Frame),
-            budget.check_at(t0, BudgetKind::Frame),
         ];
-        // The second subscribe is denied by its own bucket and leaves the second frame token for the next frame.
+        // The empty frame bucket does not stop a subscribe, and the spent subscribe bucket does not stop a frame.
         assert_eq!(verdicts, [Verdict::Allow, Verdict::Deny, Verdict::Allow, Verdict::Deny]);
+        assert_eq!(budget.check_at(t0, BudgetKind::Command), Verdict::Deny);
     }
 
     #[test]
     fn the_socket_is_closed_at_the_violation_limit() {
         let t0 = t0();
         let mut budget = budget(RateLimit::new(1, NO_REFILL), RateLimit::new(1, NO_REFILL), 3, t0);
-        let verdicts: Vec<_> = (0..4).map(|_| budget.check_at(t0, BudgetKind::Frame)).collect();
+        let verdicts: Vec<_> = (0..4).map(|_| budget.check_at(t0, BudgetKind::Command)).collect();
         assert_eq!(verdicts, [Verdict::Allow, Verdict::Deny, Verdict::Deny, Verdict::Close]);
     }
 
     #[test]
-    fn a_granted_frame_resets_the_violation_count() {
+    fn a_granted_frame_forgives_a_denial() {
         let t0 = t0();
         let mut budget = budget(RateLimit::new(1, 1.0), RateLimit::new(1, NO_REFILL), 2, t0);
-        assert_eq!(budget.check_at(t0, BudgetKind::Frame), Verdict::Allow);
-        assert_eq!(budget.check_at(t0, BudgetKind::Frame), Verdict::Deny);
-        // A second later the bucket has a token again: the grant clears the count of denials.
-        let later = t0 + Duration::from_secs(1);
-        assert_eq!(budget.check_at(later, BudgetKind::Frame), Verdict::Allow);
-        assert_eq!(budget.check_at(later, BudgetKind::Frame), Verdict::Deny);
+        // An occasional denial between grants never adds up to a close.
+        for second in 0..10 {
+            let now = t0 + Duration::from_secs(second);
+            assert_eq!(budget.check_at(now, BudgetKind::Command), Verdict::Allow);
+            assert_eq!(budget.check_at(now, BudgetKind::Command), Verdict::Deny);
+        }
+    }
+
+    #[test]
+    fn a_flood_that_gets_a_grant_now_and_then_is_closed_all_the_same() {
+        let t0 = t0();
+        // Four frames for every token that comes back: three denials for each grant.
+        let mut budget = budget(RateLimit::new(1, 1.0), RateLimit::new(1, NO_REFILL), 5, t0);
+        let closed = (0..40)
+            .map(|n| budget.check_at(t0 + Duration::from_millis(250) * n, BudgetKind::Command))
+            .any(|verdict| verdict == Verdict::Close);
+        assert!(closed);
     }
 }

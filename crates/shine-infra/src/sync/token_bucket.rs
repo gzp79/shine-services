@@ -25,9 +25,9 @@ impl RateLimit {
         Self { burst, per_second }
     }
 
-    /// Time it takes to earn one event back.
+    /// Time it takes to earn one event back; the longest duration for a rate too small to be told.
     pub fn interval(&self) -> Duration {
-        Duration::from_secs_f64(1.0 / self.per_second)
+        Duration::try_from_secs_f64(1.0 / self.per_second).unwrap_or(Duration::MAX)
     }
 }
 
