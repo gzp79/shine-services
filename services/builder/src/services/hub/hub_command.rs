@@ -1,7 +1,9 @@
-use crate::models::messages::{DisconnectReason, HubMessage, TopicKey};
+use crate::{
+    models::messages::{DisconnectReason, TopicKey},
+    services::hub::socket_channel::SocketSender,
+};
 use shine_game::replica::StreamId;
 use shine_infra::session::SessionKey;
-use tokio::sync::mpsc;
 use uuid::Uuid;
 
 /// Control messages processed by the hub's command loop — the sole writer of connection state.
@@ -11,7 +13,7 @@ pub enum ControlCommand {
         user_id: Uuid,
         connection_id: Uuid,
         session_key: SessionKey,
-        tx: mpsc::Sender<HubMessage>,
+        socket_sender: SocketSender,
         topics: Vec<TopicKey>,
     },
     DisconnectUser {

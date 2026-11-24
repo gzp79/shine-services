@@ -4,11 +4,7 @@ use crate::{
 };
 use opentelemetry::trace::SpanContext;
 use shine_infra::telemetry::current_span_context;
-use std::{
-    collections::HashSet,
-    sync::{Arc, Mutex},
-    time::Instant,
-};
+use std::time::Instant;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
@@ -19,18 +15,12 @@ pub type ControlMessage = (ControlCommand, SpanContext, Instant);
 #[derive(Clone)]
 pub struct ControlQueue {
     tx: mpsc::UnboundedSender<ControlMessage>,
-    /// Connections with a dead-connection disconnect queued and not yet processed.
-    pending_disconnects: Arc<Mutex<HashSet<Uuid>>>,
 }
 
 impl ControlQueue {
     pub fn new() -> (Self, mpsc::UnboundedReceiver<ControlMessage>) {
         let (tx, rx) = mpsc::unbounded_channel();
-        let queue = Self {
-            tx,
-            pending_disconnects: Arc::new(Mutex::new(HashSet::new())),
-        };
-        (queue, rx)
+        (Self { tx }, rx)
     }
 
     pub fn send(&self, command: ControlCommand) -> Result<(), HubError> {
@@ -44,23 +34,10 @@ impl ControlQueue {
             })
     }
 
-    /// Queues the removal of a connection found dead. A dead connection is found again by every send to it
-    /// until the loop removes it, so a request is queued only if there is none pending for the connection.
+    /// Queues the removal of a connection found dead. It is queued once per connection: only the send that
+    /// closed the connection first reports it.
     pub fn disconnect(&self, user_id: Uuid, connection_id: Uuid, reason: DisconnectReason) -> Result<(), HubError> {
-        if !self.pending_disconnects.lock().unwrap().insert(connection_id) {
-            hub_metrics().drop_deduplicated();
-            return Ok(());
-        }
-        let result = self.send(ControlCommand::DisconnectUser { user_id, connection_id, reason });
-        if result.is_err() {
-            self.disconnect_processed(connection_id);
-        }
-        result
-    }
-
-    /// The loop took a disconnect of the connection; a new one may be queued from now on.
-    pub fn disconnect_processed(&self, connection_id: Uuid) {
-        self.pending_disconnects.lock().unwrap().remove(&connection_id);
+        self.send(ControlCommand::DisconnectUser { user_id, connection_id, reason })
     }
 }
 
@@ -68,44 +45,29 @@ impl ControlQueue {
 mod tests {
     use super::*;
 
-    fn queued(rx: &mut mpsc::UnboundedReceiver<ControlMessage>) -> usize {
-        std::iter::from_fn(|| rx.try_recv().ok()).count()
-    }
-
     #[test]
-    fn a_dead_connection_has_one_disconnect_queued_at_a_time() {
+    fn a_disconnect_is_queued_with_its_reason() {
         let (queue, mut rx) = ControlQueue::new();
         let (user, id) = (Uuid::new_v4(), Uuid::new_v4());
 
         queue.disconnect(user, id, DisconnectReason::SlowConsumer).unwrap();
-        queue.disconnect(user, id, DisconnectReason::SlowConsumer).unwrap();
-        assert_eq!(queued(&mut rx), 1);
 
-        queue.disconnect_processed(id);
-        queue.disconnect(user, id, DisconnectReason::SlowConsumer).unwrap();
-        assert_eq!(queued(&mut rx), 1);
+        let (command, _, _) = rx.try_recv().unwrap();
+        assert!(matches!(
+            command,
+            ControlCommand::DisconnectUser { user_id, connection_id, reason: DisconnectReason::SlowConsumer }
+                if user_id == user && connection_id == id
+        ));
+        assert!(rx.try_recv().is_err());
     }
 
     #[test]
-    fn disconnects_of_other_connections_are_not_deduplicated() {
-        let (queue, mut rx) = ControlQueue::new();
-
-        queue
-            .disconnect(Uuid::new_v4(), Uuid::new_v4(), DisconnectReason::SlowConsumer)
-            .unwrap();
-        queue
-            .disconnect(Uuid::new_v4(), Uuid::new_v4(), DisconnectReason::SlowConsumer)
-            .unwrap();
-        assert_eq!(queued(&mut rx), 2);
-    }
-
-    #[test]
-    fn a_failed_send_does_not_block_the_next_disconnect() {
+    fn a_failed_send_is_an_error() {
         let (queue, rx) = ControlQueue::new();
-        let (user, id) = (Uuid::new_v4(), Uuid::new_v4());
         drop(rx);
 
-        assert!(queue.disconnect(user, id, DisconnectReason::SlowConsumer).is_err());
-        assert!(queue.disconnect(user, id, DisconnectReason::SlowConsumer).is_err());
+        assert!(queue
+            .disconnect(Uuid::new_v4(), Uuid::new_v4(), DisconnectReason::SlowConsumer)
+            .is_err());
     }
 }

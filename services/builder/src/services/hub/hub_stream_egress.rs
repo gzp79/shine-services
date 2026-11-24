@@ -17,12 +17,12 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct HubStreamEgress {
     connections: Arc<Connections>,
-    control_queue: ControlQueue,
+    control_sender: ControlQueue,
 }
 
 impl HubStreamEgress {
-    pub fn new(connections: Arc<Connections>, control_queue: ControlQueue) -> Self {
-        Self { connections, control_queue }
+    pub fn new(connections: Arc<Connections>, control_sender: ControlQueue) -> Self {
+        Self { connections, control_sender }
     }
 }
 
@@ -35,7 +35,7 @@ impl StreamEgress for HubStreamEgress {
         {
             Ok(queued) => queued,
             Err(DeadConnection { user_id, connection_id, reason }) => {
-                if self.control_queue.disconnect(user_id, connection_id, reason).is_err() {
+                if self.control_sender.disconnect(user_id, connection_id, reason).is_err() {
                     tracing::warn!("[{connection_id}] Failed to prune a dead stream connection");
                 }
                 false
@@ -45,7 +45,7 @@ impl StreamEgress for HubStreamEgress {
 
     async fn notify_failed(&self, stream_id: &StreamId) {
         if self
-            .control_queue
+            .control_sender
             .send(ControlCommand::StreamFailed { stream_id: stream_id.clone() })
             .is_err()
         {

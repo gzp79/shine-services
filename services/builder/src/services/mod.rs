@@ -5,7 +5,10 @@ pub use self::{
     command_stream::{
         standard_registry, stream_metrics, StreamAccessConfig, StreamEgress, StreamsConfig, MAX_COMMAND_BYTES,
     },
-    hub::{hub_metrics, HubConfig, HubService, HubStatus},
+    hub::{
+        hub_metrics, socket_channel, HubConfig, HubService, HubStatus, SocketMessage, SocketReceiver, SocketSender,
+        WeakSocketSender,
+    },
 };
 
 #[cfg(test)]

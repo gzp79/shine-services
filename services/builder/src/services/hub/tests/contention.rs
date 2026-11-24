@@ -5,7 +5,7 @@ use crate::{
     models::messages::{DisconnectReason, HubEvent, TopicKey},
     services::HubService,
     testing::{
-        hub::{Egress, EgressState, HubEvents, Lifecycle, TestHub},
+        hub::{EgressState, HubEvents, Lifecycle, TestEgress, TestHub},
         TestMessage,
     },
 };
@@ -71,7 +71,12 @@ const DROP_REASONS: [DisconnectReason; 2] = [DisconnectReason::SessionInvalid, D
 
 /// Runs a random but seeded script of connects, disconnects, forced drops and vanishing clients for one
 /// user, returning the expected outcome and the egress channels that were kept.
-async fn run_user_script(hub: HubService, user_id: Uuid, seed: u64, steps: usize) -> (UserModel, Vec<(Uuid, Egress)>) {
+async fn run_user_script(
+    hub: HubService,
+    user_id: Uuid,
+    seed: u64,
+    steps: usize,
+) -> (UserModel, Vec<(Uuid, TestEgress)>) {
     let mut rng = Rng(seed);
     let mut model = UserModel::default();
     let mut owned = vec![];
@@ -300,7 +305,7 @@ async fn same_user_contention_keeps_a_single_active_connection() {
 
 enum Client {
     Reader(JoinHandle<EgressState>),
-    Slow(Egress),
+    Slow(TestEgress),
 }
 
 #[test(serial = "hub-service")]
@@ -415,7 +420,7 @@ async fn churn_under_traffic_stays_consistent() {
     test.assert_consistent(users.iter().copied(), &active).await;
     let slow_state = slow_rx.drain();
     assert_eq!(slow_state.pings, ["b-00000000".to_string(), "b-00000001".to_string()]);
-    assert!(slow_state.disconnects.is_empty());
+    assert_eq!(slow_state.disconnects, [DisconnectReason::SlowConsumer]);
     assert!(slow_state.closed, "the slow client {slow_connection} was not released");
 
     // Release the survivors so every channel ends, then check what each client saw.

@@ -5,8 +5,8 @@ import { randomUUID } from 'node:crypto';
 import { IncomingMessage } from 'node:http';
 import { WebSocket } from 'ws';
 
-// Close code of a socket the hub dropped; the close reason carries the drop reason.
-const HUB_DROPPED_CLOSE_CODE = 4000;
+// Close code of a socket that a newer connection of the same user replaced; the close reason carries the drop reason.
+const HUB_REPLACED_CLOSE_CODE = 4001;
 
 type WsOutcome = { kind: 'open' } | { kind: 'http_error'; status: number } | { kind: 'error'; message: string };
 
@@ -222,6 +222,6 @@ test.describe('Builder websocket', { tag: ['@regression'] }, () => {
 
         // The first socket must be force-closed by the hub, telling the client why; the second stays open.
         const firstResult = await first.settled;
-        expect(firstResult).toEqual({ kind: 'closed', code: HUB_DROPPED_CLOSE_CODE, reason: 'replaced' });
+        expect(firstResult).toEqual({ kind: 'closed', code: HUB_REPLACED_CLOSE_CODE, reason: 'replaced' });
     });
 });

@@ -1,18 +1,20 @@
-//! Unit tests of [`Connections`]: send outcomes, topic filter, CAS removal, drop notice.
+//! Unit tests of [`Connections`]: send outcomes, topic filter, CAS removal, close reason.
 
 use crate::{
-    models::messages::{DisconnectReason, HubEvent, HubMessage, TopicKey},
-    services::hub::hub_connections::{Connections, DeadConnection},
+    models::messages::{DisconnectReason, HubMessage, TopicKey},
+    services::{
+        hub::hub_connections::{Connections, DeadConnection},
+        socket_channel,
+    },
     testing::{hub::TestSession, TestMessage},
 };
 use shine_test::test;
-use tokio::sync::mpsc;
 use uuid::Uuid;
 
 #[test]
 async fn directed_send_moves_to_the_one_connection() {
     let users = Connections::new();
-    let (tx, mut rx) = mpsc::channel(4);
+    let (tx, mut rx) = socket_channel(4);
     let (user_id, conn_id) = (Uuid::new_v4(), Uuid::new_v4());
     users
         .register_connection(
@@ -53,8 +55,8 @@ async fn directed_send_to_unknown_target_is_ok_noop() {
 async fn send_to_user_follows_the_active_connection_and_reports_dead_ones() {
     let users = Connections::new();
     let user_id = Uuid::new_v4();
-    let (old_tx, mut old_rx) = mpsc::channel(4);
-    let (new_tx, mut new_rx) = mpsc::channel(1);
+    let (old_tx, mut old_rx) = socket_channel(4);
+    let (new_tx, mut new_rx) = socket_channel(1);
     let (old_id, new_id) = (Uuid::new_v4(), Uuid::new_v4());
     users
         .register_connection(user_id, old_id, TestSession::new_random_key(), old_tx, vec![])
@@ -77,21 +79,15 @@ async fn send_to_user_follows_the_active_connection_and_reports_dead_ones() {
             reason: DisconnectReason::SlowConsumer
         })
     );
+    // The connection ended with the first failure: it is not reported again.
     drop(new_rx);
-    assert_eq!(
-        users.send_to_user(user_id, TestMessage::new_ping("4")).await,
-        Err(DeadConnection {
-            user_id,
-            connection_id: new_id,
-            reason: DisconnectReason::DeadChannel
-        })
-    );
+    assert_eq!(users.send_to_user(user_id, TestMessage::new_ping("4")).await, Ok(()));
 }
 
 #[test]
 async fn full_channel_reports_dead_connection() {
     let users = Connections::new();
-    let (tx, _rx) = mpsc::channel(1);
+    let (tx, _rx) = socket_channel(1);
     let (user_id, conn_id) = (Uuid::new_v4(), Uuid::new_v4());
     users
         .register_connection(
@@ -120,7 +116,7 @@ async fn full_channel_reports_dead_connection() {
 #[test]
 async fn closed_channel_reports_dead_connection() {
     let users = Connections::new();
-    let (tx, rx) = mpsc::channel(1);
+    let (tx, rx) = socket_channel(1);
     let (user_id, conn_id) = (Uuid::new_v4(), Uuid::new_v4());
     users
         .register_connection(
@@ -145,8 +141,8 @@ async fn closed_channel_reports_dead_connection() {
 #[test]
 async fn broadcast_clones_to_matching_topic_only() {
     let users = Connections::new();
-    let (tx_chat, mut rx_chat) = mpsc::channel(4);
-    let (tx_hub, mut rx_hub) = mpsc::channel(4);
+    let (tx_chat, mut rx_chat) = socket_channel(4);
+    let (tx_hub, mut rx_hub) = socket_channel(4);
     let chat_conn = Uuid::new_v4();
     let hub_conn = Uuid::new_v4();
     users
@@ -175,10 +171,10 @@ async fn broadcast_clones_to_matching_topic_only() {
 }
 
 #[test]
-async fn removed_connection_releases_its_channel_after_the_notice() {
+async fn removed_connection_releases_its_endpoint_after_the_reason() {
     let users = Connections::new();
-    let (tx_a, mut rx_a) = mpsc::channel(4);
-    let (tx_b, mut rx_b) = mpsc::channel(4);
+    let (tx_a, mut rx_a) = socket_channel(4);
+    let (tx_b, mut rx_b) = socket_channel(4);
     let (user_a, conn_a) = (Uuid::new_v4(), Uuid::new_v4());
     users
         .register_connection(user_a, conn_a, TestSession::new_random_key(), tx_a, vec![])
@@ -200,31 +196,19 @@ async fn removed_connection_releases_its_channel_after_the_notice() {
     let mut removed = removed.into_iter();
     let first = removed.next().unwrap();
     assert_eq!((first.user_id, first.connection_id), (user_a, conn_a));
-    first.notify(HubEvent::UserDisconnected {
-        user_id: user_a,
-        connection_id: conn_a,
-        reason: DisconnectReason::Shutdown,
-    });
+    first.close(DisconnectReason::Shutdown);
     drop(removed);
 
-    assert!(matches!(
-        rx_a.recv().await,
-        Some(HubMessage::Hub(HubEvent::UserDisconnected {
-            reason: DisconnectReason::Shutdown,
-            ..
-        }))
-    ));
+    assert_eq!(rx_a.close_reason(), Some(DisconnectReason::Shutdown));
     assert!(rx_a.recv().await.is_none(), "the hub holds no sender after the removal");
-    assert!(
-        rx_b.recv().await.is_none(),
-        "dropping a removed connection releases it silently"
-    );
+    assert!(rx_b.recv().await.is_none(), "dropping a removed connection releases it");
+    assert_eq!(rx_b.close_reason(), None);
 }
 
 #[test]
-async fn close_notice_on_a_full_channel_is_dropped() {
+async fn the_close_reason_reaches_a_full_connection() {
     let users = Connections::new();
-    let (tx, mut rx) = mpsc::channel(1);
+    let (tx, mut rx) = socket_channel(1);
     let (user_id, conn_id) = (Uuid::new_v4(), Uuid::new_v4());
     users
         .register_connection(user_id, conn_id, TestSession::new_random_key(), tx, vec![])
@@ -238,19 +222,77 @@ async fn close_notice_on_a_full_channel_is_dropped() {
         .unregister_connection(user_id, Some(conn_id))
         .await
         .unwrap()
-        .notify(HubEvent::UserDisconnected {
-            user_id,
-            connection_id: conn_id,
-            reason: DisconnectReason::Replaced,
-        });
+        .close(DisconnectReason::Replaced);
+
+    assert_eq!(rx.close_reason(), Some(DisconnectReason::Replaced));
     assert!(matches!(rx.recv().await, Some(HubMessage::Ping(_))));
     assert!(rx.recv().await.is_none());
 }
 
 #[test]
+async fn a_dead_connection_is_reported_to_the_first_send_only() {
+    let users = Connections::new();
+    let (tx, _rx) = socket_channel(1);
+    let (user_id, conn_id) = (Uuid::new_v4(), Uuid::new_v4());
+    users
+        .register_connection(
+            user_id,
+            conn_id,
+            TestSession::new_random_key(),
+            tx,
+            vec![TopicKey::Ping],
+        )
+        .await;
+    assert_eq!(
+        users.send_to_connection(conn_id, TestMessage::new_ping("1")).await,
+        Ok(true)
+    );
+
+    assert_eq!(
+        users.send_to_connection(conn_id, TestMessage::new_ping("2")).await,
+        Err(DeadConnection {
+            user_id,
+            connection_id: conn_id,
+            reason: DisconnectReason::SlowConsumer
+        })
+    );
+    // Every later send finds the connection ended: nothing is queued and nothing is reported.
+    assert_eq!(
+        users.send_to_connection(conn_id, TestMessage::new_ping("3")).await,
+        Ok(false)
+    );
+    assert_eq!(users.send_to_user(user_id, TestMessage::new_ping("4")).await, Ok(()));
+    assert_eq!(users.broadcast(TestMessage::new_ping("5")).await, Ok(()));
+}
+
+#[test]
+async fn a_connection_ended_by_someone_else_takes_no_more_messages() {
+    let users = Connections::new();
+    let (tx, mut rx) = socket_channel(4);
+    let closer = tx.clone();
+    let (user_id, conn_id) = (Uuid::new_v4(), Uuid::new_v4());
+    users
+        .register_connection(
+            user_id,
+            conn_id,
+            TestSession::new_random_key(),
+            tx,
+            vec![TopicKey::Ping],
+        )
+        .await;
+    assert!(closer.close(DisconnectReason::RateLimited));
+
+    assert_eq!(
+        users.send_to_connection(conn_id, TestMessage::new_ping("1")).await,
+        Ok(false)
+    );
+    assert!(rx.try_recv().is_err());
+}
+
+#[test]
 async fn remove_connection_cas_ignores_stale_id() {
     let users = Connections::new();
-    let (tx, _rx) = mpsc::channel(1);
+    let (tx, _rx) = socket_channel(1);
     let (user_id, conn_id) = (Uuid::new_v4(), Uuid::new_v4());
     users
         .register_connection(user_id, conn_id, TestSession::new_random_key(), tx, vec![])

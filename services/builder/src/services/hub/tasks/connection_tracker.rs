@@ -34,10 +34,11 @@ impl ConnectionTracker {
                 self.connections.insert(user_id, (connection_id, session_key));
                 false
             }
-            HubMessage::Hub(HubEvent::UserDisconnected { user_id, connection_id, .. }) => {
+            HubMessage::Hub(HubEvent::UserDisconnected { user_id, connection_id, reason }) => {
                 // Only forget the user when the disconnected connection is the one we track; a
                 // stale disconnect for a replaced connection must not drop the fresh reconnect.
                 if self.connections.get(&user_id).map(|(id, _)| *id) == Some(connection_id) {
+                    tracing::debug!("[{user_id}] [{connection_id}] Connection forgotten: {reason}");
                     self.connections.remove(&user_id);
                 }
                 false

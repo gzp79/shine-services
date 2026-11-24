@@ -11,10 +11,10 @@ use crate::{
             HubConnectionDb, HubRegistry,
         },
     },
-    services::{standard_registry, HubConfig, HubService, StreamConfig, StreamRegistry, StreamsConfig},
+    services::{socket_channel, standard_registry, HubConfig, HubService, StreamConfig, StreamRegistry, StreamsConfig},
     testing::{
         command_stream::{TestInbox, TestLog},
-        hub::{Egress, HubEvents, TestSession},
+        hub::{HubEvents, TestEgress, TestSession},
     },
 };
 use shine_game::replica::StreamId;
@@ -153,7 +153,7 @@ impl TestHub {
         capacity: usize,
         topics: Vec<TopicKey>,
         session_key: Option<SessionKey>,
-    ) -> (Uuid, Egress) {
+    ) -> (Uuid, TestEgress) {
         Self::connect_to(&self.hub, user_id, capacity, topics, session_key)
     }
 
@@ -164,8 +164,8 @@ impl TestHub {
         capacity: usize,
         topics: Vec<TopicKey>,
         session_key: Option<SessionKey>,
-    ) -> (Uuid, Egress) {
-        let (tx, rx) = mpsc::channel(capacity);
+    ) -> (Uuid, TestEgress) {
+        let (tx, rx) = socket_channel(capacity);
         let connection_id = hub
             .request_connection(
                 user_id,
@@ -174,14 +174,14 @@ impl TestHub {
                 topics,
             )
             .unwrap();
-        (connection_id, Egress::new(rx))
+        (connection_id, TestEgress::new(rx))
     }
 
-    pub fn connect_ping(&self, user_id: Uuid, capacity: usize) -> (Uuid, Egress) {
+    pub fn connect_ping(&self, user_id: Uuid, capacity: usize) -> (Uuid, TestEgress) {
         self.connect(user_id, capacity, vec![TopicKey::Ping], None)
     }
 
-    pub fn connect_ping_to(hub: &HubService, user_id: Uuid, capacity: usize) -> (Uuid, Egress) {
+    pub fn connect_ping_to(hub: &HubService, user_id: Uuid, capacity: usize) -> (Uuid, TestEgress) {
         Self::connect_to(hub, user_id, capacity, vec![TopicKey::Ping], None)
     }
 
@@ -237,7 +237,7 @@ impl TestHub {
         // create a sentinel connection to act as a barrier for all previous commands
         let (sentinel_user, _sentinel_rx) = {
             let sentinel_user = Uuid::new_v4();
-            let (tx, rx) = mpsc::channel(1);
+            let (tx, rx) = socket_channel(1);
             let connection_id = hub
                 .request_connection(sentinel_user, TestSession::new_random_key(), tx, Vec::new())
                 .unwrap();

@@ -18,7 +18,6 @@ pub struct HubMetrics {
     control_commands: Counter<u64>,
     control_command_duration: Histogram<f64>,
     control_command_queue_delay: Histogram<f64>,
-    drops_deduplicated: Counter<u64>,
     messages_sent: Counter<u64>,
     registry_errors: Counter<u64>,
     tick_duration: Histogram<f64>,
@@ -66,10 +65,6 @@ impl HubMetrics {
                 .with_unit("s")
                 .with_boundaries(SECONDS_BUCKETS.to_vec())
                 .with_description("Time a hub control command waits before it is processed")
-                .build(),
-            drops_deduplicated: meter
-                .u64_counter("hub_drops_deduplicated")
-                .with_description("Drop requests skipped because the connection already had one queued")
                 .build(),
             messages_sent: meter
                 .u64_counter("hub_messages_sent")
@@ -130,11 +125,6 @@ impl HubMetrics {
         self.control_commands.add(1, &[label("command", command)]);
         self.control_command_duration
             .record(duration.as_secs_f64(), &[label("command", command)]);
-    }
-
-    /// A drop request was skipped, the connection already has one queued.
-    pub fn drop_deduplicated(&self) {
-        self.drops_deduplicated.add(1, &[]);
     }
 
     /// A message was offered to a connection's queue; `outcome` is `ok`, `full` or `closed`.

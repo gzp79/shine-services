@@ -36,15 +36,6 @@ fn text_json(frame: &WsMessage) -> serde_json::Value {
     serde_json::from_str(text.as_str()).unwrap()
 }
 
-/// The event that ends the socket of connection `Uuid::nil()`.
-fn dropped_event(reason: DisconnectReason) -> HubMessage {
-    HubMessage::Hub(HubEvent::UserDisconnected {
-        user_id: Uuid::nil(),
-        connection_id: Uuid::nil(),
-        reason,
-    })
-}
-
 /// The ids and texts of a chat frame.
 fn ping_frame(frame: &WsMessage) -> PingEvent {
     let WsMessage::Text(text) = frame else {
@@ -63,62 +54,106 @@ fn ping_frame(frame: &WsMessage) -> PingEvent {
     }
 }
 
-/// Runs [`forward_egress`] over the given hub messages and returns the frames it sent.
-async fn forwarded(messages: Vec<HubMessage>) -> Vec<WsMessage> {
-    let (tx, rx) = mpsc::channel(messages.len().max(1));
+/// Runs [`forward_egress`] over the given hub messages, with the connection ended for `closed`, and returns the
+/// frames it sent.
+async fn forwarded(messages: Vec<HubMessage>, closed: Option<DisconnectReason>) -> Vec<WsMessage> {
+    let (tx, egress) = socket_channel(messages.len().max(1));
     for message in messages {
         tx.try_send(message).unwrap();
     }
+    if let Some(reason) = closed {
+        tx.close(reason);
+    }
     drop(tx);
     let (frames_tx, frames_rx) = socket::unbounded();
-    forward_egress(rx, frames_tx, Uuid::nil(), Uuid::nil(), SocketTimeouts::default()).await;
+    forward_egress(egress, frames_tx, Uuid::nil(), Uuid::nil(), SocketTimeouts::default()).await;
     frames_rx.collect().await
 }
 
 #[test]
-async fn a_close_notice_ends_the_socket_with_its_reason() {
-    let frames = forwarded(vec![
-        TestMessage::new_ping("1-0"),
-        HubMessage::Hub(HubEvent::Shutdown),
-        dropped_event(DisconnectReason::Replaced),
-        TestMessage::new_ping("2-0"),
-    ])
+async fn a_close_reason_ends_the_socket_with_it() {
+    let frames = forwarded(
+        vec![TestMessage::new_ping("1-0"), HubMessage::Hub(HubEvent::Shutdown)],
+        Some(DisconnectReason::Replaced),
+    )
     .await;
 
-    // Hub events are not forwarded, and nothing after the notice is.
-    assert_eq!(frames.len(), 2, "{frames:?}");
-    assert_eq!(ping_frame(&frames[0]), PingEvent { id: "1-0".into() });
-    assert_eq!(frames[1], close(CLOSE_CODE_DROPPED, "replaced"));
+    // The close beats the queued data.
+    assert_eq!(frames, [close(CLOSE_CODE_REPLACED, "replaced")]);
 }
 
 #[test]
-async fn the_drops_of_other_connections_do_not_end_the_socket() {
-    let other = HubMessage::Hub(HubEvent::UserDisconnected {
-        user_id: Uuid::new_v4(),
-        connection_id: Uuid::new_v4(),
-        reason: DisconnectReason::SessionInvalid,
-    });
-    let frames = forwarded(vec![other, TestMessage::new_ping("1-0")]).await;
+async fn hub_events_are_not_forwarded() {
+    let frames = forwarded(
+        vec![
+            TestMessage::new_ping("1-0"),
+            HubMessage::Hub(HubEvent::Shutdown),
+            TestMessage::new_ping("2-0"),
+        ],
+        None,
+    )
+    .await;
 
-    assert_eq!(frames.len(), 2, "{frames:?}");
+    // Only the end of the queue without a reason is left to close the socket.
+    assert_eq!(frames.len(), 3, "{frames:?}");
     assert_eq!(ping_frame(&frames[0]), PingEvent { id: "1-0".into() });
-    assert_eq!(frames[1], WsMessage::Close(None));
+    assert_eq!(ping_frame(&frames[1]), PingEvent { id: "2-0".into() });
+    assert_eq!(frames[2], WsMessage::Close(None));
 }
 
 #[test]
-async fn every_drop_reason_maps_to_its_close_code() {
+async fn the_close_reason_is_not_lost_when_the_queue_is_full() {
+    // A slow consumer has a full queue by definition: the reason does not need room in it.
+    let (tx, egress) = socket_channel(1);
+    tx.try_send(TestMessage::new_ping("1-0")).unwrap();
+    assert!(tx.try_send(TestMessage::new_ping("2-0")).is_err());
+    assert!(tx.close(DisconnectReason::SlowConsumer));
+    drop(tx);
+
+    let (frames_tx, frames_rx) = socket::unbounded();
+    forward_egress(egress, frames_tx, Uuid::nil(), Uuid::nil(), SocketTimeouts::default()).await;
+
+    assert_eq!(
+        frames_rx.collect::<Vec<_>>().await,
+        [close(CLOSE_CODE_TRANSIENT, "slow_consumer")]
+    );
+}
+
+#[test]
+async fn a_socket_ends_its_own_connection_without_the_hub_loop() {
+    // The receive task of a socket over its budget ends the connection itself: the hub is not involved.
+    let (tx, egress) = socket_channel(1);
+    tx.try_send(TestMessage::new_ping("1-0")).unwrap();
+    let replies = tx.downgrade();
+    end_connection(&replies, DisconnectReason::RateLimited);
+    // The hub's own close for the same drop finds the reason set.
+    assert!(!tx.close(DisconnectReason::RateLimited));
+    drop(tx);
+
+    let (frames_tx, frames_rx) = socket::unbounded();
+    forward_egress(egress, frames_tx, Uuid::nil(), Uuid::nil(), SocketTimeouts::default()).await;
+
+    assert_eq!(
+        frames_rx.collect::<Vec<_>>().await,
+        [close(close_code::POLICY, "rate_limited")]
+    );
+}
+
+#[test]
+async fn every_reason_maps_to_its_close_code() {
     for (reason, code) in [
-        (DisconnectReason::Replaced, CLOSE_CODE_DROPPED),
-        (DisconnectReason::SessionInvalid, CLOSE_CODE_DROPPED),
-        (DisconnectReason::HeartbeatInactive, CLOSE_CODE_DROPPED),
-        (DisconnectReason::RegistryInactive, CLOSE_CODE_DROPPED),
-        (DisconnectReason::SlowConsumer, CLOSE_CODE_DROPPED),
-        (DisconnectReason::DeadChannel, CLOSE_CODE_DROPPED),
+        (DisconnectReason::Client, close_code::NORMAL),
         (DisconnectReason::Shutdown, close_code::AWAY),
         (DisconnectReason::RateLimited, close_code::POLICY),
+        (DisconnectReason::Replaced, 4001),
+        (DisconnectReason::RegistryInactive, 4001),
+        (DisconnectReason::SessionInvalid, 4002),
+        (DisconnectReason::HeartbeatInactive, 4000),
+        (DisconnectReason::SlowConsumer, 4000),
+        (DisconnectReason::DeadChannel, 4000),
     ] {
         assert_eq!(
-            forwarded(vec![dropped_event(reason)]).await,
+            forwarded(vec![], Some(reason)).await,
             [close(code, reason.as_str())],
             "{reason}"
         );
@@ -126,9 +161,9 @@ async fn every_drop_reason_maps_to_its_close_code() {
 }
 
 #[test]
-async fn a_channel_ending_without_a_notice_closes_without_a_reason() {
-    // As for a slow consumer, whose notice did not fit: the buffered messages are still sent first.
-    let frames = forwarded(vec![TestMessage::new_ping("1-0")]).await;
+async fn a_queue_ending_without_a_reason_closes_without_a_code() {
+    // The queued messages are still sent first.
+    let frames = forwarded(vec![TestMessage::new_ping("1-0")], None).await;
     assert_eq!(frames.len(), 2, "{frames:?}");
     assert_eq!(ping_frame(&frames[0]), PingEvent { id: "1-0".into() });
     assert_eq!(frames[1], WsMessage::Close(None));
@@ -230,13 +265,13 @@ async fn a_replaced_socket_is_closed_with_the_reason() {
     let first = Client::open(&mut test, user).await;
     let mut second = Client::open(&mut test, user).await;
 
-    assert_eq!(first.finished().await, [close(CLOSE_CODE_DROPPED, "replaced")]);
+    assert_eq!(first.finished().await, [close(CLOSE_CODE_REPLACED, "replaced")]);
     test.broadcast(TestMessage::new_ping("1-0")).await.unwrap();
     assert_eq!(ping_frame(&second.next_frame().await), PingEvent { id: "1-0".into() });
 
     second.leave();
     let second_id = second.connection_id;
-    assert_eq!(second.finished().await, [WsMessage::Close(None)]);
+    assert_eq!(second.finished().await, [close(close_code::NORMAL, "client")]);
     let seen = test.wait_all_commands().await;
     assert_eq!(seen.lifecycle_of(user), [Lifecycle::Disconnected(second_id)]);
 }
@@ -258,7 +293,7 @@ async fn a_forced_drop_and_a_shutdown_close_the_sockets_with_their_reason() {
         .unwrap();
     assert_eq!(
         dropped_client.finished().await,
-        [close(CLOSE_CODE_DROPPED, "session_invalid")]
+        [close(CLOSE_CODE_SESSION_INVALID, "session_invalid")]
     );
 
     test.hub.request_shutdown().unwrap();
@@ -315,7 +350,12 @@ async fn a_client_leaving_under_traffic_is_not_counted_as_a_drop() {
         let _ = stop_tx.send(true);
         sender.await.unwrap();
 
-        assert_eq!(frames.last(), Some(&WsMessage::Close(None)), "{:?}", frames.last());
+        assert_eq!(
+            frames.last(),
+            Some(&close(close_code::NORMAL, "client")),
+            "{:?}",
+            frames.last()
+        );
         let seen = test.wait_all_commands().await;
         assert_eq!(seen.lifecycle_of(user), [Lifecycle::Disconnected(connection_id)]);
         assert!(seen.drops().is_empty());
@@ -336,7 +376,7 @@ async fn client_ping_is_broadcast_when_no_target_is_set() {
     assert_eq!(ping_frame(&client.next_frame().await), PingEvent { id: "hi".into() });
 
     client.leave();
-    assert_eq!(client.finished().await, [WsMessage::Close(None)]);
+    assert_eq!(client.finished().await, [close(close_code::NORMAL, "client")]);
     let seen = test.wait_all_commands().await;
     assert!(seen.drops().is_empty());
 }
@@ -554,7 +594,7 @@ impl Sink<WsMessage> for StuckSink {
 
 #[test]
 async fn a_peer_that_does_not_read_ends_the_egress_at_the_write_timeout() {
-    let (tx, rx) = mpsc::channel(4);
+    let (tx, rx) = socket_channel(4);
     tx.try_send(TestMessage::new_ping("1-0")).unwrap();
 
     // The hub still holds its sender: only the write timeout can end the task.
@@ -569,7 +609,7 @@ async fn a_peer_that_does_not_read_ends_the_egress_at_the_write_timeout() {
 
 #[test]
 async fn a_peer_that_does_not_read_the_pings_ends_the_egress_too() {
-    let (tx, rx) = mpsc::channel(4);
+    let (tx, rx) = socket_channel(4);
 
     timeout(
         WAIT_TIMEOUT,
@@ -588,8 +628,8 @@ async fn a_silent_peer_is_pinged_and_then_closed_as_idle() {
     let connection_id = client.connection_id;
 
     let frames = client.finished().await;
-    let (close, pings) = frames.split_last().expect("no frames");
-    assert_eq!(close, &WsMessage::Close(None), "{frames:?}");
+    let (last, pings) = frames.split_last().expect("no frames");
+    assert_eq!(last, &close(close_code::NORMAL, "client"), "{frames:?}");
     assert!(!pings.is_empty(), "no ping before the socket was closed: {frames:?}");
     assert!(
         pings.iter().all(|frame| matches!(frame, WsMessage::Ping(_))),
@@ -621,5 +661,5 @@ async fn a_peer_that_answers_the_pings_is_not_idle() {
 
     client.leave();
     let frames = client.finished().await;
-    assert_eq!(frames.last(), Some(&WsMessage::Close(None)), "{frames:?}");
+    assert_eq!(frames.last(), Some(&close(close_code::NORMAL, "client")), "{frames:?}");
 }

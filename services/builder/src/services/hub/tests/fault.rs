@@ -40,15 +40,11 @@ async fn connect_proceeds_when_the_registry_write_landed_but_its_reply_was_lost(
     let first_end = first_rx.next().await;
     proxy.remove_toxic("cut").await;
 
-    assert!(
-        matches!(
-            first_end,
-            Some(HubMessage::Hub(HubEvent::UserDisconnected {
-                reason: DisconnectReason::Replaced,
-                ..
-            }))
-        ),
-        "the registry already names the new connection, so it must replace the old one: {first_end:?}"
+    assert!(first_end.is_none(), "the old connection was released: {first_end:?}");
+    assert_eq!(
+        first_rx.close_reason(),
+        Some(DisconnectReason::Replaced),
+        "the registry already names the new connection, so it must replace the old one"
     );
     let seen = test.wait_all_commands().await;
     assert_eq!(

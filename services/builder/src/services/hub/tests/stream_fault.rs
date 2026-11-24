@@ -6,7 +6,7 @@ use crate::{
     services::command_stream::{InboxConfig, LogConfig, StreamConfig},
     testing::{
         command_stream::TestStreamId,
-        hub::{Egress, TestHub, TestHubOptions},
+        hub::{TestEgress, TestHub, TestHubOptions},
         TestMessage,
     },
 };
@@ -47,7 +47,7 @@ async fn hub(retries: u32) -> TestHub {
 }
 
 /// The next stream message the connection gets within `wait`.
-async fn next_stream_message(socket: &mut Egress, wait: Duration) -> Option<Arc<StreamMessage>> {
+async fn next_stream_message(socket: &mut TestEgress, wait: Duration) -> Option<Arc<StreamMessage>> {
     timeout(wait, async {
         loop {
             match socket.recv().await {

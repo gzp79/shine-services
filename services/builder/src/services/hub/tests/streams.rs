@@ -6,7 +6,7 @@ use crate::{
     services::command_stream::StreamEgress,
     testing::{
         command_stream::TestStreamId,
-        hub::{Egress, TestHub, TestHubOptions},
+        hub::{TestEgress, TestHub, TestHubOptions},
         TestMessage,
     },
 };
@@ -145,7 +145,7 @@ mod served {
     }
 
     /// The next stream message the connection gets.
-    async fn next_stream_message(socket: &mut Egress) -> Arc<StreamMessage> {
+    async fn next_stream_message(socket: &mut TestEgress) -> Arc<StreamMessage> {
         timeout(Duration::from_secs(5), async {
             loop {
                 match socket.recv().await {

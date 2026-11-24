@@ -3,6 +3,7 @@
 use crate::{
     models::messages::{DisconnectReason, HubEvent, HubMessage, TopicKey},
     repositories::hub_registry::{HubConnection, HubConnectionDb, HubRegistry},
+    services::socket_channel,
     testing::{
         hub::{Lifecycle, TestHub, TestHubOptions, TestSession},
         TestMessage,
@@ -190,7 +191,7 @@ async fn slow_consumer_is_dropped_and_its_channel_released() {
     rx.drain()
         .assert_closed()
         .assert_pings(&["b-0", "b-1"])
-        .assert_disconnects(&[]);
+        .assert_disconnects(&[DisconnectReason::SlowConsumer]);
     assert_eq!(seen.drops(), BTreeMap::from([(DisconnectReason::SlowConsumer, 1)]));
     test.assert_consistent([user], &HashMap::new()).await;
 }
@@ -270,7 +271,7 @@ async fn send_to_user_prunes_a_dead_or_slow_connection_once() {
     slow_rx
         .drain()
         .assert_pings(&["s-0"])
-        .assert_disconnects(&[])
+        .assert_disconnects(&[DisconnectReason::SlowConsumer])
         .assert_closed();
     test.assert_consistent([gone_user, slow_user], &HashMap::new()).await;
 }
@@ -340,7 +341,7 @@ async fn shutdown_drops_every_connection_and_publishes_nothing_after() {
     let _ = test.hub.request_connection(
         late_user,
         SessionKey::new_random(&SystemRandom::new()).unwrap(),
-        tokio::sync::mpsc::channel(1).0,
+        socket_channel(1).0,
         vec![],
     );
 
@@ -372,7 +373,7 @@ async fn a_stopped_hub_refuses_every_request() {
 
     // A socket that connects while the hub stops must be able to tell, to close itself.
     let session = SessionKey::new_random(&SystemRandom::new()).unwrap();
-    let (tx, _rx) = tokio::sync::mpsc::channel(1);
+    let (tx, _rx) = socket_channel(1);
     assert!(test.hub.request_connection(user, session, tx, vec![]).is_err());
     assert!(test.hub.request_disconnection(user, connection).is_err());
     assert!(test.hub.request_shutdown().is_err());

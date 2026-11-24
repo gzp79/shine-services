@@ -20,6 +20,7 @@ use crate::{
             hub_metrics::hub_metrics,
             hub_stream_egress::HubStreamEgress,
             hub_subscribers::Subscribers,
+            socket_channel::SocketSender,
             tasks::{Heartbeat, SessionChecker, StreamDispatcher},
         },
         StreamEgress,
@@ -107,8 +108,8 @@ pub enum HubServiceBuilderError {
 pub struct HubServiceBuilder {
     config: HubConfig,
     connections: Arc<Connections>,
-    control_queue: ControlQueue,
-    control_rx: mpsc::UnboundedReceiver<ControlMessage>,
+    control_sender: ControlQueue,
+    control_receiver: mpsc::UnboundedReceiver<ControlMessage>,
 
     session_service: Option<Arc<CurrentUserService>>,
     hub_registry: Option<RedisHubConnectionDb>,
@@ -118,12 +119,12 @@ pub struct HubServiceBuilder {
 
 impl HubServiceBuilder {
     fn new(config: HubConfig) -> Self {
-        let (control_queue, control_rx) = ControlQueue::new();
+        let (control_sender, control_receiver) = ControlQueue::new();
         Self {
             config,
             connections: Arc::new(Connections::new()),
-            control_queue,
-            control_rx,
+            control_sender,
+            control_receiver,
             session_service: None,
             hub_registry: None,
             stream_registry: None,
@@ -155,7 +156,7 @@ impl HubServiceBuilder {
     where
         F: FnOnce(&HubStreamEgress) -> Result<StreamRegistry<RedisCommandInboxDb, PgCommandLogDb>, CommandStreamError>,
     {
-        let stream_egress = HubStreamEgress::new(self.connections.clone(), self.control_queue.clone());
+        let stream_egress = HubStreamEgress::new(self.connections.clone(), self.control_sender.clone());
         self.stream_registry = Some(stream_registry(&stream_egress)?);
         Ok(self)
     }
@@ -164,8 +165,8 @@ impl HubServiceBuilder {
         let Self {
             config,
             connections,
-            control_queue,
-            control_rx,
+            control_sender,
+            control_receiver,
             session_service,
             hub_registry,
             stream_registry,
@@ -178,7 +179,7 @@ impl HubServiceBuilder {
 
         let service = HubService {
             inner: Arc::new(Inner {
-                control_queue,
+                control_sender,
                 shutdown_complete: shutdown_complete_rx,
                 connections,
                 subscribers: Subscribers::new(),
@@ -209,7 +210,7 @@ impl HubServiceBuilder {
         };
         HubService::start_dispatcher(
             service.clone(),
-            control_rx,
+            control_receiver,
             background_tasks,
             stream_dispatcher,
             shutdown_complete_tx,
@@ -233,7 +234,7 @@ const SHUTDOWN_REGISTRY_CONCURRENCY: usize = 32;
 const SHUTDOWN_REGISTRY_TIMEOUT: Duration = Duration::from_secs(5);
 
 struct Inner {
-    control_queue: ControlQueue,
+    control_sender: ControlQueue,
     shutdown_complete: watch::Receiver<bool>,
     connections: Arc<Connections>,
     subscribers: Subscribers,
@@ -326,22 +327,23 @@ impl HubService {
     }
 
     fn send_control(&self, command: ControlCommand) -> Result<(), HubError> {
-        self.inner.control_queue.send(command)
+        self.inner.control_sender.send(command)
     }
 
-    /// Logs and counts a connection removed by the hub, and tells its socket why.
-    fn record_drop(&self, removed: RemovedConnection, reason: DisconnectReason) -> (Uuid, Uuid) {
+    /// Logs and counts a connection removed by the hub, and tells its socket why. The reason is the one the
+    /// socket was told, which differs from `reason` when something ended the connection first.
+    fn record_drop(&self, removed: RemovedConnection, reason: DisconnectReason) -> (Uuid, Uuid, DisconnectReason) {
         let (user_id, connection_id) = (removed.user_id, removed.connection_id);
+        let reason = removed.close(reason);
         tracing::info!("[{user_id}] [{connection_id}] Connection dropped: {reason}");
         hub_metrics().connection_dropped(reason);
-        removed.notify(HubEvent::UserDisconnected { user_id, connection_id, reason });
-        (user_id, connection_id)
+        (user_id, connection_id, reason)
     }
 
     /// Prunes any connection found dead during an egress send.
     fn drop_dead(&self, dead: impl IntoIterator<Item = DeadConnection>) -> Result<(), HubError> {
         for DeadConnection { user_id, connection_id, reason } in dead {
-            self.inner.control_queue.disconnect(user_id, connection_id, reason)?;
+            self.inner.control_sender.disconnect(user_id, connection_id, reason)?;
         }
         Ok(())
     }
@@ -351,7 +353,7 @@ impl HubService {
         &self,
         user_id: Uuid,
         session_key: SessionKey,
-        tx: mpsc::Sender<HubMessage>,
+        socket_sender: SocketSender,
         topics: Vec<TopicKey>,
     ) -> Result<Uuid, HubError> {
         let connection_id = Uuid::new_v4();
@@ -359,7 +361,7 @@ impl HubService {
             user_id,
             connection_id,
             session_key,
-            tx,
+            socket_sender,
             topics,
         })?;
         Ok(connection_id)
@@ -454,14 +456,14 @@ impl HubService {
     /// Starts the command loop, the sole writer of connection state.
     fn start_dispatcher(
         service: HubService,
-        mut control_rx: mpsc::UnboundedReceiver<ControlMessage>,
+        mut control_receiver: mpsc::UnboundedReceiver<ControlMessage>,
         background_tasks: Vec<JoinHandle<()>>,
         stream_dispatcher: Option<JoinHandle<()>>,
         shutdown_complete: watch::Sender<bool>,
     ) {
         let supervisor = service.supervisor().clone();
         supervisor.spawn("hub command loop", async move {
-            while let Some((command, origin, queued_at)) = control_rx.recv().await {
+            while let Some((command, origin, queued_at)) = control_receiver.recv().await {
                 let name = command.name();
                 let metrics = hub_metrics();
                 metrics.control_command_started(name, queued_at.elapsed());
@@ -500,7 +502,7 @@ impl HubService {
                     tracing::error!("Stream dispatcher failed while stopping: {err}");
                 }
             }
-            drop(control_rx);
+            drop(control_receiver);
             shutdown_complete.send_replace(true);
         });
     }
@@ -532,7 +534,7 @@ impl HubService {
                 user_id,
                 connection_id,
                 session_key,
-                tx,
+                socket_sender,
                 topics,
             } => {
                 // Record the replacement in the registry first. If this fails, the previously
@@ -561,20 +563,17 @@ impl HubService {
                             .unregister_connection(user_id, Some(old_connection_id))
                             .await
                         {
-                            let (user_id, connection_id) = self.record_drop(removed, DisconnectReason::Replaced);
-                            self.publish(HubEvent::UserDisconnected {
-                                user_id,
-                                connection_id,
-                                reason: DisconnectReason::Replaced,
-                            })
-                            .await;
+                            let (user_id, connection_id, reason) =
+                                self.record_drop(removed, DisconnectReason::Replaced);
+                            self.publish(HubEvent::UserDisconnected { user_id, connection_id, reason })
+                                .await;
                         }
                     }
                 }
 
                 self.inner
                     .connections
-                    .register_connection(user_id, connection_id, session_key, tx, topics)
+                    .register_connection(user_id, connection_id, session_key, socket_sender, topics)
                     .await;
                 self.publish(HubEvent::UserConnected {
                     user_id,
@@ -585,7 +584,6 @@ impl HubService {
                 true
             }
             ControlCommand::DisconnectUser { user_id, connection_id, reason } => {
-                self.inner.control_queue.disconnect_processed(connection_id);
                 // Only removes the entry when `connection_id` still matches the active
                 // connection, so a stale disconnect can never tear down a fresh reconnect.
                 let Some(removed) = self
@@ -598,10 +596,11 @@ impl HubService {
                 };
 
                 // A client-requested disconnect is not a drop; its socket is already closing.
-                let removed_connection_id = if reason.is_drop() {
-                    self.record_drop(removed, reason).1
+                let (removed_connection_id, reason) = if reason.is_drop() {
+                    let (_, connection_id, reason) = self.record_drop(removed, reason);
+                    (connection_id, reason)
                 } else {
-                    removed.connection_id
+                    (removed.connection_id, removed.close(reason))
                 };
                 if let Err(err) = self.remove_registry_connection(user_id, removed_connection_id).await {
                     // Best-effort: publish UserDisconnected regardless so the socket and trackers
@@ -754,13 +753,9 @@ impl HubService {
             return;
         };
 
-        let (user_id, connection_id) = self.record_drop(removed, DisconnectReason::RegistryInactive);
-        self.publish(HubEvent::UserDisconnected {
-            user_id,
-            connection_id,
-            reason: DisconnectReason::RegistryInactive,
-        })
-        .await;
+        let (user_id, connection_id, reason) = self.record_drop(removed, DisconnectReason::RegistryInactive);
+        self.publish(HubEvent::UserDisconnected { user_id, connection_id, reason })
+            .await;
     }
 
     /// Stops the internal consumers, then drops every connection. Nothing is published after the
@@ -779,7 +774,10 @@ impl HubService {
             .unregister_all()
             .await
             .into_iter()
-            .map(|removed| self.record_drop(removed, DisconnectReason::Shutdown))
+            .map(|removed| {
+                let (user_id, connection_id, _) = self.record_drop(removed, DisconnectReason::Shutdown);
+                (user_id, connection_id)
+            })
             .collect();
 
         // Side by side and within a time limit: a slow registry would otherwise cost every connection its
@@ -833,7 +831,7 @@ impl HubService {
                         .unregister_connection(user_id, Some(connection_id))
                         .await
                     {
-                        let (user_id, connection_id) = self.record_drop(removed, reason);
+                        let (user_id, connection_id, reason) = self.record_drop(removed, reason);
                         if let Err(err) = self.remove_registry_connection(user_id, connection_id).await {
                             tracing::error!(
                                 "[{user_id}] Failed to remove dead connection from registry (TTL will clean up): {err:#?}"
