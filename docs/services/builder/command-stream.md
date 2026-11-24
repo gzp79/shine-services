@@ -129,7 +129,7 @@ sequenceDiagram
 
 ### Submit
 
-The hub passes a command to the registry's write path ([Stream registry](#stream-registry)). There is no success acknowledgement: the sender sees its own `commandId` in a `streamCommands` batch once the worker has versioned it. A refusal answers with `streamNack`; `busy` also drops the connection (close code 4000, reason `busy`).
+The hub passes a command to the registry's write path ([Stream registry](#stream-registry)). There is no success acknowledgement: the sender sees its own `commandId` in a `streamCommands` batch once the worker has versioned it. A refusal answers with `streamNack`; the connection stays open, also after `busy` or `rateLimited`. How much a socket may send is in [Hub Load Protection](hub-load-protection.md).
 
 ### Client protocol
 
@@ -144,8 +144,8 @@ Frames are JSON text with a camel-case `type`; the `StreamId` carries the kind p
 | to client | `streamCommands` | `streamId`, contiguous optimistic or canonical commands. |
 | to client | `streamCheckpoint` | `streamId`, `version`, `stateHash`; sent after the commands it covers, to compare with the client's own state hash at that version. |
 | to client | `streamUnsynced` | `streamId`; the worker cannot serve the stream now, subscribe again. |
-| to client | `streamNack` | `streamId`, `commandId`, reason `notSubscribed`, `failed` or `busy` (then the connection is dropped). |
-| to client | `streamSubscribeFailed` | `streamId`, reason `unauthorized` or `failed`. |
+| to client | `streamNack` | `streamId`, `commandId`, reason `notSubscribed`, `failed`, `busy` or `rateLimited`. |
+| to client | `streamSubscribeFailed` | `streamId`, reason `unauthorized`, `failed` or `rateLimited`. |
 | to client | `streamReset` | Defined but never sent: a sync alone replaces the state. |
 
 A frame that carries an invalid stream id is ignored without an answer. A command that is invalid (it does not decode, is not valid for the kind, or is over `MAX_COMMAND_BYTES`) is ignored the same way, and counted as `invalid` in `ws_messages_received`. A valid request that is refused for another reason gets the matching `streamNack`. A socket message over twice `MAX_COMMAND_BYTES` ends the socket.
@@ -282,7 +282,7 @@ sequenceDiagram
 
 The two limits stack on either side of the Redis inbox, so a slow persistence ends up refusing client pushes.
 
-**Write side.** Each open stream polls its inbox length every `inbox.backpressure_poll_period`. Pushes wait once it reaches `inbox.backpressure_high` and resume when it drains to `inbox.backpressure_low`. After `inbox.backpressure_timeout` the push fails `busy`: the sender gets `streamNack` and the hub drops the connection. An unreadable length does not block pushes, they fail on their own if Redis is down.
+**Write side.** Each open stream polls its inbox length every `inbox.backpressure_poll_period`. Pushes wait once it reaches `inbox.backpressure_high` and resume when it drains to `inbox.backpressure_low`. After `inbox.backpressure_timeout` the push fails `busy`: the sender gets `streamNack` and keeps its connection; its frame budget limits how fast it can try again. An unreadable length does not block pushes, they fail on their own if Redis is down.
 
 **Read side.** `relay_max_pending` caps the optimistic tail. At the cap a pass does not read the inbox, and each read asks for at most the room that is left.
 
@@ -295,7 +295,7 @@ flowchart LR
     Slow["Persistence is slow"]:::orange --> Full["Optimistic tail full<br/>relay_max_pending"]:::orange
     Full --> Hold["Inbox not read,<br/>proposals stay in Redis"]:::orange
     Hold --> High["Inbox at the high watermark,<br/>pushes wait"]:::orange
-    High --> Busy["Still full after the timeout:<br/>nack busy, connection dropped"]:::red
+    High --> Busy["Still full after the timeout:<br/>nack busy, connection stays"]:::red
     Done["A result confirms a prefix"]:::green -. "frees room, wake, reads resume" .-> Hold
 ```
 
@@ -354,7 +354,7 @@ After advancing, the persistence trims the Redis inbox through the latest stored
 | Slow subscriber | `StreamEgress::send` never waits; when it cannot queue, the relay forgets the subscriber. |
 | Identity | The user id and connection id come from the authenticated connection, never from a frame. |
 | Authorization | The access of the stream's kind decides which streams may be opened, checked by `open` before anything is created; the default opens none, see [Stream access](#stream-access). |
-| Busy connection | A push into an inbox that stays full is nacked `busy` and the connection is dropped (close code 4000, reason `busy`). |
+| Busy inbox | A push into an inbox that stays full is nacked `busy`; the connection stays open. |
 | Socket limit | A socket message over twice `MAX_COMMAND_BYTES` ends the socket; the command limits are the registry's. |
 | Shutdown | On the hub's shutdown the dispatcher has the registry persist what is waiting, for up to `stream_shutdown_timeout`; see [Shutdown](#shutdown). |
 
@@ -375,7 +375,7 @@ After advancing, the persistence trims the Redis inbox through the latest stored
 | `services/builder/src/services/command_stream/stream_metrics.rs` | OpenTelemetry instruments of the streams. |
 | `services/builder/src/services/command_stream/stream_config.rs` | The settings of a kind: `inbox` (poll, recovery, retries, back-pressure), `log` (retries, paging, snapshots), the relay and worker limits, and the `access` config (`any`, `allowList`) with its validation. |
 | `services/builder/src/services/command_stream/stream_egress.rs` | Transport-independent worker-to-connection delivery interface: `send` and `notify_failed`. |
-| `services/builder/src/services/hub/hub_service.rs` | Stream side of the hub: subscribe (open, then event), unsubscribe, command submission, busy-connection drop, `StreamFailed` handling; `StreamEgress` implementation. |
+| `services/builder/src/services/hub/hub_service.rs` | Stream side of the hub: subscribe (open, then event), unsubscribe, command submission, `StreamFailed` handling; `StreamEgress` implementation. |
 | `services/builder/src/services/hub/tasks/stream_dispatcher.rs` | Applies ordered subscribe events to the registry, purges ended workers, shuts the registry down. |
 | `services/builder/config/mock.json`, `services/builder/server_config.prod.json` | The access of the streams per stage. |
 | `services/builder/src/models/messages/stream.rs` | Internal stream messages, events and failures. |

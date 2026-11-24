@@ -61,9 +61,9 @@ A client sends `{"type":"ping","id":"…","userId":"<uuid>?"}`. With a `userId` 
 | to server | `ping` | `id`, optional `userId`. |
 | to client | `connected` | `userId`; first frame of a connection. |
 | to client | `ping` | `id`. |
-| to client | close | Sent when the hub drops the connection: code 4000 with the `DisconnectReason` name as reason, or 1001 (going away) on shutdown. A client-initiated disconnect sends none. |
+| to client | close | Sent when the hub drops the connection: code 4000 with the `DisconnectReason` name as reason, 1008 (policy violation) for `rate_limited`, or 1001 (going away) on shutdown. A client-initiated disconnect sends none. |
 
-Frames that are not text, do not parse, or fail validation are ignored without an answer and do not end the connection.
+Frames that are not text, do not parse, or fail validation are ignored without an answer and do not end the connection. A socket that sends more than its budget allows has its frames refused and, if it keeps on, is dropped; a connect that is too frequent or finds the hub full is refused before the upgrade. See [Hub Load Protection](hub-load-protection.md).
 
 ## Connection lifecycle
 
@@ -195,12 +195,13 @@ A *control command* is the hub's own input (connect, disconnect, registry change
 |---|---|
 | `hub_connections` | Live connections. |
 | `hub_connections_dropped` | Connections the hub removed, by reason. |
+| `hub_connects_rejected` | Connects refused before the upgrade, by reason (`host`, `origin`, `rate_limited`, `capacity`, `hub_stopped`). |
 | `hub_control_commands` | Control commands processed, by command. |
 | `hub_control_command_duration` | Processing time of a control command in the loop. |
 | `hub_control_command_queue_delay` | Time a control command waited before the loop picked it up. |
 | `hub_messages_sent` | Messages pushed to connections, by kind and outcome. |
 | `hub_tick_duration` | Tick time of the background consumers, by consumer. |
-| `ws_messages_received` | Messages received from clients, by kind and outcome. |
+| `ws_messages_received` | Messages received from clients, by kind and outcome (`rate_limited` for the ones over the budget of the socket). |
 
 ## Key rules
 
@@ -216,12 +217,14 @@ A *control command* is the hub's own input (connect, disconnect, registry change
 | Identity | The user id and connection id come from the authenticated connection, never from a frame. |
 | Slow connection | Egress never waits: a connection whose queue is full is dropped as `slow_consumer`. |
 | Ping | Gated by `ping_enabled`; `id` is at most 255 characters. |
+| Load | A connect is admitted by the per-user connect rate and the connection cap before the upgrade, and every frame of a socket draws on its budget; the command queue stays unbounded because these bound what feeds it. See [Hub Load Protection](hub-load-protection.md). |
 
 ## File map
 
 | File | Role |
 |---|---|
-| `services/builder/src/routes/ws/connect.rs` | Upgrade, `connected` frame, ping request, egress to the socket, close codes. |
+| `services/builder/src/routes/ws/connect.rs` | Upgrade (after `admit`), `connected` frame, ping request, egress to the socket, close codes. |
+| `services/builder/src/routes/ws/socket_budget.rs` | `SocketBudget`: the frame budget of a socket. |
 | `services/builder/src/routes/ws/message.rs` | Wire request and response shapes. |
 | `services/builder/src/services/hub/hub_service.rs` | Command loop (sole writer); connect/disconnect/drop/registry-change handling; event publish; topic delivery (`send_to_connection`, `send_to_user`, `broadcast`, `subscribe`). |
 | `services/builder/src/services/hub/hub_command.rs` | `ControlCommand` enum — the loop's input vocabulary. |

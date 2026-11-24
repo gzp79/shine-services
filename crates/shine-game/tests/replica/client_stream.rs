@@ -261,6 +261,31 @@ fn a_nack_of_an_unknown_command_changes_nothing() {
 }
 
 #[test]
+fn a_rate_limited_command_is_dropped_and_not_sent_again() {
+    let server = Server::new();
+    let mut client = live_client(&server);
+    client.submit(id(1), paint(4, 5, 9)).unwrap();
+
+    let out = client.handle_message(&nack(1, "rateLimited"));
+
+    assert!(out.is_empty());
+    assert_eq!(client.pending_count(), 0);
+    assert_eq!(client.status(), StreamStatus::Live);
+}
+
+#[test]
+fn a_rate_limited_subscribe_leaves_the_stream_unsynced() {
+    let server = Server::new();
+    let mut client = live_client(&server);
+    let failed = json!({"type": "streamSubscribeFailed", "streamId": "pixel-map:s", "reason": "rateLimited"});
+
+    let out = client.handle_message(&failed.to_string());
+
+    assert!(out.is_empty());
+    assert_eq!(client.status(), StreamStatus::Unsynced);
+}
+
+#[test]
 fn a_nack_for_not_being_subscribed_subscribes_again() {
     let server = Server::new();
     let mut client = live_client(&server);

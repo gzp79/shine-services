@@ -35,10 +35,8 @@ Method: static reading only. Line numbers drift, treat them as pointers.
 | L13 | Low | correctness | Grace timer can starve |
 | L14 | Low | misc | Chat text stored and relayed raw |
 | A1 | Low | authz | Access is by stream id only; no per-user rule, no re-check after subscribe, `any` is valid in prod config |
-| A2 | Medium | DoS | No rate limit on commands/subscribes; stream-wide backpressure punishes honest users |
-| A3 | Medium | DoS | Unbounded hub control queue; no connect throttle or connection cap |
-| A6 | Low | authz | `Ping` has no role check or rate limit (default is off) |
-| R2 | Medium | availability | Hub command loop does Redis I/O inline, serial, unbounded queue |
+| A6 | Low | authz | `Ping` has no role check (default is off) |
+| R2 | Low | availability | Hub command loop does Redis I/O inline and serially |
 | R7 | Medium | scalability | `SessionChecker` is sequential and extends the session TTL |
 | R9 | Low | correctness | Registry listener not awaited, not retried |
 | R10 | Low | correctness | `Connected` sent before registration |
@@ -147,38 +145,17 @@ Which streams may be opened is configured per kind (`streams.<kind>.access`, see
 - Authorization is not re-evaluated after subscribe (R7).
 - `mode: any` is accepted in every stage; only the config layers keep it out of prod. A start-up check that rejects it for the `prod` stage would close that.
 
-### A2. No rate limit on commands/subscribes; backpressure punishes honest users (Medium)
+### A6. `Ping` has no role check (Low while disabled)
 
-- `connect.rs` processes every text frame; no per-connection or per-user limit on commands, subscribes or unsubscribes.
-- Backpressure is per stream, polled every 250 ms: between polls a connection can push thousands of entries past the 1024 high mark. Once blocked, every push waits 2 s then returns `Busy`, and `send_stream_command` drops the pusher's connection (`hub_service.rs`). One abuser flooding `chat:global` gets honest users disconnected.
-- Each `StreamSubscribe` for an already-subscribed stream resets the cursor and causes a full `Sync` (up to ~400 KB for chat plus tail, base64). A few dozen bytes in, hundreds of KB out.
-
-Fix: token bucket per connection (commands, subscribes), disconnect on repeated violation (close 1008); penalize the offender (per-user in-flight/quota), not whoever pushes next; coalesce repeated subscribes (at most one `Sync` per interval per connection).
-
-### A3. Hub control queue unthrottled; no connect throttle or connection cap (Medium)
-
-- `control_tx` is an `UnboundedSender` (`hub_service.rs`). Every subscribe/unsubscribe, `request_connection`, drop and registry-change notice enqueues a `ControlCommand`; invalid JSON and unsubscribes cost almost nothing to send. `StreamUnsubscribe` for any valid id takes the subscribers write lock and pushes into the unbounded `StreamDispatcher` queue.
-- A user can reconnect in a tight loop: each connect costs an upgrade, two tasks, a channel, a Redis `SET`+`PUBLISH`, a registry-change round trip on every other node and broadcasts (R13). No resume point.
-
-Failure: a client spams subscribe/unsubscribe or one account reconnects continuously; producers outrun the loop whenever it is slowed (R2); `control_rx` and the unbounded per-consumer queues grow until OOM.
-
-Fix: per-connection token bucket (shared with A2); per-user connect-rate limit before the upgrade; per-instance connection cap; bounded control channel with `try_send` + drop-connection on overflow for client-originated commands (reserved lane for internal ones); jittered client backoff.
-
-### A6. `Ping` has no role check or rate limit (Low while disabled)
-
-`HubConfig::ping_enabled` now defaults to `false` and prod sets it false. Where it is enabled, any logged-in user may send `{"type":"ping","id":"<255 chars>"}` with `userId: <any uuid>` or broadcast to every connection (`connect.rs`, `hub_service.rs`), which can evict slow victims as `SlowConsumer` and push attacker-chosen strings to all clients. Fix: operator-only role, reject `userId` for non-admins, rate limit (A2/A3), or delete the feature.
+`HubConfig::ping_enabled` defaults to `false` and prod sets it false. Where it is enabled, any logged-in user may send `{"type":"ping","id":"<255 chars>"}` with `userId: <any uuid>` or broadcast to every connection (`connect.rs`, `hub_service.rs`), which can evict slow victims as `SlowConsumer` and push attacker-chosen strings to all clients. The frame budget of the socket limits how often. Fix: operator-only role and reject `userId` for non-admins, or delete the feature.
 
 ---
 
 ## Availability and robustness
 
-### R2. Hub command loop: inline Redis I/O, serial, no timeouts (Medium)
+### R2. Hub command loop awaits Redis inline (Low)
 
-`ConnectUser`, `DisconnectUser`, `DropConnection`, the registry change heartbeat and others (`hub_service.rs`) await Redis from the one loop that serializes every state mutation. Pool checkout wait defaults to 30 s (`redis_connection.rs`, `max_size` 10) and the pool is shared with HTTP session lookups, the heartbeat and the session checker.
-
-Failure: pool exhausted; each loop command can block up to 30 s, so connects, disconnects and slow-consumer drops queue (A3), stale sockets stay in the map and `Connections` broadcasts to dead channels.
-
-Fix: a short hub-level timeout (1-2 s) around every registry call, a bounded queue, and either move registry writes off the loop (the in-memory map is authoritative locally; async write with retry) or give the hub a small dedicated Redis pool.
+`ConnectUser`, `DisconnectUser`, `DropConnection`, the registry change heartbeat and others (`hub_service.rs`) await Redis from the one loop that serializes every state mutation, so a slow Redis delays every connect and disconnect behind it. Each call is bounded by the connection string (`timeout` per command, `pool_timeout` for the checkout, which the hub shares with the HTTP session lookups, the heartbeat and the session checker), and what feeds the queue is bounded by the connection cap and the frame budgets ([Hub Load Protection](../services/builder/hub-load-protection.md)). Fix, if needed: set a short `pool_timeout` in the builder's `redisCns`, or give the hub its own small Redis pool, or move the registry writes off the loop (the in-memory map is authoritative locally; async write with retry).
 
 ### R7. Session checker is sequential and extends the session TTL (Medium)
 
@@ -309,7 +286,7 @@ No action needed.
 - Identity: `user_id` and `connection_id` always come from the server-side session, never from the client payload.
 - Map invariants: `users` and `connections` are mutated only on the loop; replacement removes the old entry before registering; stale disconnects are keyed by connection id and cannot remove a fresh reconnect; lock scopes in `Connections` contain no awaits and only non-blocking `try_send`.
 - Ordering: `ConnectUser`, `SubscribeStream` and `DisconnectUser` are FIFO on one channel; a subscribe that lands after the connection is gone is undone.
-- Slow consumers: egress to sockets is bounded with `try_send`; internal consumers are unbounded by design (A3, R7).
+- Slow consumers: egress to sockets is bounded with `try_send`; internal consumers are unbounded by design (R7).
 - Logging: `SessionKey` Debug is redacted; client payloads appear only at `trace`.
 
 ## Not verified

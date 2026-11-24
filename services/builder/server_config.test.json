@@ -16,6 +16,9 @@
       "sessionCheck": 2,
       "pingEnabled": true
     },
+    "ws": {
+      "limits": { "frames": { "burst": 1000, "perSecond": 1000 } }
+    },
     "streams": {
       "chat": {
         "inbox": { "recoveryPollInterval": 1 }
