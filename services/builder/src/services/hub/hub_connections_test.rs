@@ -72,6 +72,7 @@ async fn send_to_user_follows_the_active_connection_and_reports_dead_ones() {
     assert_eq!(
         users.send_to_user(user_id, TestMessage::new_ping("3")).await,
         Err(DeadConnection {
+            user_id,
             connection_id: new_id,
             reason: DisconnectReason::SlowConsumer
         })
@@ -80,6 +81,7 @@ async fn send_to_user_follows_the_active_connection_and_reports_dead_ones() {
     assert_eq!(
         users.send_to_user(user_id, TestMessage::new_ping("4")).await,
         Err(DeadConnection {
+            user_id,
             connection_id: new_id,
             reason: DisconnectReason::DeadChannel
         })
@@ -90,10 +92,10 @@ async fn send_to_user_follows_the_active_connection_and_reports_dead_ones() {
 async fn full_channel_reports_dead_connection() {
     let users = Connections::new();
     let (tx, _rx) = mpsc::channel(1);
-    let conn_id = Uuid::new_v4();
+    let (user_id, conn_id) = (Uuid::new_v4(), Uuid::new_v4());
     users
         .register_connection(
-            Uuid::new_v4(),
+            user_id,
             conn_id,
             TestSession::new_random_key(),
             tx,
@@ -108,6 +110,7 @@ async fn full_channel_reports_dead_connection() {
     assert_eq!(
         users.send_to_connection(conn_id, TestMessage::new_ping("2")).await,
         Err(DeadConnection {
+            user_id,
             connection_id: conn_id,
             reason: DisconnectReason::SlowConsumer
         })
@@ -118,10 +121,10 @@ async fn full_channel_reports_dead_connection() {
 async fn closed_channel_reports_dead_connection() {
     let users = Connections::new();
     let (tx, rx) = mpsc::channel(1);
-    let conn_id = Uuid::new_v4();
+    let (user_id, conn_id) = (Uuid::new_v4(), Uuid::new_v4());
     users
         .register_connection(
-            Uuid::new_v4(),
+            user_id,
             conn_id,
             TestSession::new_random_key(),
             tx,
@@ -132,6 +135,7 @@ async fn closed_channel_reports_dead_connection() {
     assert_eq!(
         users.send_to_connection(conn_id, TestMessage::new_ping("1")).await,
         Err(DeadConnection {
+            user_id,
             connection_id: conn_id,
             reason: DisconnectReason::DeadChannel
         })
@@ -189,7 +193,7 @@ async fn removed_connection_releases_its_channel_after_the_notice() {
         )
         .await;
 
-    let mut removed = users.remove_all().await;
+    let mut removed = users.unregister_all().await;
     assert_eq!(removed.len(), 2);
     assert_eq!(users.len().await, 0);
     removed.sort_by_key(|r| r.connection_id != conn_a);
@@ -231,7 +235,7 @@ async fn close_notice_on_a_full_channel_is_dropped() {
     );
 
     users
-        .remove_connection(user_id, Some(conn_id))
+        .unregister_connection(user_id, Some(conn_id))
         .await
         .unwrap()
         .notify(HubEvent::UserDisconnected {
@@ -253,10 +257,10 @@ async fn remove_connection_cas_ignores_stale_id() {
         .await;
 
     // stale id → no-op
-    assert!(users.remove_connection(user_id, Some(Uuid::new_v4())).await.is_none());
+    assert!(users.unregister_connection(user_id, Some(Uuid::new_v4())).await.is_none());
     assert_eq!(
         users
-            .remove_connection(user_id, Some(conn_id))
+            .unregister_connection(user_id, Some(conn_id))
             .await
             .map(|removed| removed.connection_id),
         Some(conn_id)

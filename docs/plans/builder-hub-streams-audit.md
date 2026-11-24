@@ -43,7 +43,6 @@ Method: static reading only. Line numbers drift, treat them as pointers.
 | R11 | Low | correctness | One close code (4000) for every drop; reason lost when queue is full |
 | R12 | Low | robustness | No drop guard for a cancelled socket task |
 | R13 | Low | perf | Lifecycle events broadcast to every socket |
-| R14 | Low | perf | `remove_connection_by_id` is O(N) under the write lock |
 | R15 | Low | correctness | Tracker tick starves lifecycle events |
 | R16 | Low | correctness | Topics ignored for targeted sends |
 | R17 | Low | security | Host check trusts client headers |
@@ -156,7 +155,7 @@ Which streams may be opened is configured per kind (`streams.<kind>.access`, see
 
 ### R2. Hub command loop awaits Redis inline (Low)
 
-`ConnectUser`, `DisconnectUser`, `DropConnection`, the registry change heartbeat and others (`hub_service.rs`) await Redis from the one loop that serializes every state mutation, so a slow Redis delays every connect and disconnect behind it. Each call is bounded by the connection string (`timeout` per command, `pool_timeout` for the checkout, which the hub shares with the HTTP session lookups, the heartbeat and the session checker), and what feeds the queue is bounded by the connection cap and the frame budgets ([Hub Load Protection](../services/builder/hub-load-protection.md)). Fix, if needed: set a short `pool_timeout` in the builder's `redisCns`, or give the hub its own small Redis pool, or move the registry writes off the loop (the in-memory map is authoritative locally; async write with retry).
+`ConnectUser`, `DisconnectUser`, the registry change heartbeat and others (`hub_service.rs`) await Redis from the one loop that serializes every state mutation, so a slow Redis delays every connect and disconnect behind it. Each call is bounded by the connection string (`timeout` per command, `pool_timeout` for the checkout, which the hub shares with the HTTP session lookups, the heartbeat and the session checker), and what feeds the queue is bounded by the connection cap and the frame budgets ([Hub Load Protection](../services/builder/hub-load-protection.md)). Fix, if needed: set a short `pool_timeout` in the builder's `redisCns`, or give the hub its own small Redis pool, or move the registry writes off the loop (the in-memory map is authoritative locally; async write with retry).
 
 ### R7. Session checker extends the session TTL and is slow to revoke (Low, was Medium)
 
@@ -187,10 +186,6 @@ A cancelled socket task (the `serve_socket` future dropped) leaves its entry reg
 ### R13. Lifecycle events fan out to every socket (Low)
 
 `connect.rs` subscribes each socket to `TopicKey::Hub` but `event_to_wire_message` drops hub events; the socket only needs its own disconnect, already delivered by `RemovedConnection::notify`. Every connect/disconnect costs a read-lock scan and N `try_send`s and uses the same 1000-slot queue that decides `SlowConsumer` eviction; a connect storm is O(N^2). `UserConnected` also carries the session key. Fix: do not subscribe sockets to `TopicKey::Hub`; keep the session key out of the broadcast.
-
-### R14. O(N) `remove_connection_by_id` (Low)
-
-`hub_connections.rs` scans `users` for a connection id under the write lock, on every dead-connection prune. Drops are now deduplicated per connection, but each real removal is still a full scan; a mass eviction is O(N^2) with writers blocking all stream sends. Fix: store `user_id` in `Connection` (reverse map).
 
 ### R15. Tracker tick starves lifecycle events (Low)
 

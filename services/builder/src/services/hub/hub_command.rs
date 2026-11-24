@@ -19,10 +19,6 @@ pub enum ControlCommand {
         connection_id: Uuid,
         reason: DisconnectReason,
     },
-    DropConnection {
-        connection_id: Uuid,
-        reason: DisconnectReason,
-    },
     HubRegistryChanged {
         user_id: Uuid,
     },
@@ -48,7 +44,6 @@ impl ControlCommand {
         match self {
             ControlCommand::ConnectUser { .. } => "connect_user",
             ControlCommand::DisconnectUser { .. } => "disconnect_user",
-            ControlCommand::DropConnection { .. } => "drop_connection",
             ControlCommand::HubRegistryChanged { .. } => "hub_registry_changed",
             ControlCommand::SubscribeStream { .. } => "subscribe_stream",
             ControlCommand::UnsubscribeStream { .. } => "unsubscribe_stream",
@@ -63,8 +58,7 @@ impl ControlCommand {
             ControlCommand::ConnectUser { user_id, .. }
             | ControlCommand::DisconnectUser { user_id, .. }
             | ControlCommand::HubRegistryChanged { user_id } => Some(*user_id),
-            ControlCommand::DropConnection { .. }
-            | ControlCommand::SubscribeStream { .. }
+            ControlCommand::SubscribeStream { .. }
             | ControlCommand::UnsubscribeStream { .. }
             | ControlCommand::StreamFailed { .. }
             | ControlCommand::Shutdown => None,
@@ -76,7 +70,6 @@ impl ControlCommand {
         match self {
             ControlCommand::ConnectUser { connection_id, .. }
             | ControlCommand::DisconnectUser { connection_id, .. }
-            | ControlCommand::DropConnection { connection_id, .. }
             | ControlCommand::SubscribeStream { connection_id, .. }
             | ControlCommand::UnsubscribeStream { connection_id, .. } => Some(*connection_id),
             ControlCommand::HubRegistryChanged { .. }

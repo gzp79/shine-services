@@ -11,6 +11,7 @@ use tokio::sync::{
 use uuid::Uuid;
 
 struct Connection {
+    user_id: Uuid,
     session_key: SessionKey,
     tx: mpsc::Sender<HubMessage>,
     topics: Vec<TopicKey>,
@@ -27,6 +28,7 @@ struct Registry {
 /// A connection found dead during a send.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DeadConnection {
+    pub user_id: Uuid,
     pub connection_id: Uuid,
     pub reason: DisconnectReason,
 }
@@ -70,14 +72,14 @@ impl Connections {
         registry.users.insert(user_id, connection_id);
         let replaced = registry
             .connections
-            .insert(connection_id, Connection { session_key, tx, topics });
+            .insert(connection_id, Connection { user_id, session_key, tx, topics });
         if replaced.is_none() {
             hub_metrics().connection_added();
         }
     }
 
     /// Removes a user's connection, only if it is still `connection_id` when given.
-    pub async fn remove_connection(&self, user_id: Uuid, connection_id: Option<Uuid>) -> Option<RemovedConnection> {
+    pub async fn unregister_connection(&self, user_id: Uuid, connection_id: Option<Uuid>) -> Option<RemovedConnection> {
         let mut registry = self.registry.write().await;
         if let Some(expected) = connection_id {
             if registry.users.get(&user_id).copied() != Some(expected) {
@@ -88,20 +90,8 @@ impl Connections {
         Self::take(&mut registry, user_id, removed)
     }
 
-    /// Removes a connection by its id.
-    pub async fn remove_connection_by_id(&self, connection_id: Uuid) -> Option<RemovedConnection> {
-        let mut registry = self.registry.write().await;
-        let user_id = registry
-            .users
-            .iter()
-            .find(|(_, cid)| **cid == connection_id)
-            .map(|(u, _)| *u)?;
-        registry.users.remove(&user_id);
-        Self::take(&mut registry, user_id, connection_id)
-    }
-
     /// Removes every connection.
-    pub async fn remove_all(&self) -> Vec<RemovedConnection> {
+    pub async fn unregister_all(&self) -> Vec<RemovedConnection> {
         let mut registry = self.registry.write().await;
         let users: Vec<_> = registry.users.drain().collect();
         users
@@ -137,7 +127,7 @@ impl Connections {
         };
         try_send(&data.tx, message)
             .map(|()| true)
-            .map_err(|reason| DeadConnection { connection_id, reason })
+            .map_err(|reason| DeadConnection { user_id: data.user_id, connection_id, reason })
     }
 
     /// Sends a message to the user's active connection. `Err` carries the dead connection to prune.
@@ -149,7 +139,7 @@ impl Connections {
         let Some(data) = registry.connections.get(&connection_id) else {
             return Ok(());
         };
-        try_send(&data.tx, message).map_err(|reason| DeadConnection { connection_id, reason })
+        try_send(&data.tx, message).map_err(|reason| DeadConnection { user_id, connection_id, reason })
     }
 
     /// Broadcasts a message to every topic-matching connection. `Err` carries the dead connections to prune.
@@ -164,6 +154,7 @@ impl Connections {
             }
             if let Err(reason) = try_send(&data.tx, message.clone()) {
                 dead.push(DeadConnection {
+                    user_id: data.user_id,
                     connection_id: *connection_id,
                     reason,
                 });
