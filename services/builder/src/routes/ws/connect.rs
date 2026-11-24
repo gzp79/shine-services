@@ -1,10 +1,13 @@
 use crate::{
     app_config::{AppConfig, AppConfigEx},
     app_state::AppState,
-    models::messages::{CommandFailure, DisconnectReason, HubEvent, HubMessage, PingEvent, StreamMessage, TopicKey},
+    models::messages::{
+        CommandFailure, DisconnectReason, HubEvent, HubMessage, PingEvent, StreamMessage, SubscribeFailure, TopicKey,
+    },
     routes::ws::{
         message::{decode_wire_command, stream_message_to_wire, PingRequest, WSMessageRequest, WSMessageResponse},
-        ws_config::SocketTimeouts,
+        socket_budget::{BudgetKind, SocketBudget, Verdict},
+        ws_config::{SocketLimits, SocketTimeouts},
         ws_metrics::ws_metrics,
     },
     services::{hub_metrics, stream_metrics, HubService, MAX_COMMAND_BYTES},
@@ -106,11 +109,17 @@ pub async fn connect(
     let ws = ws
         .max_message_size(MAX_WS_MESSAGE_BYTES)
         .max_frame_size(MAX_WS_MESSAGE_BYTES);
-    Ok(
-        ws.on_upgrade(move |socket| {
-            handle_socket(socket, user, hub_service, span_context, config.ws_config().timeouts)
-        }),
-    )
+    Ok(ws.on_upgrade(move |socket| {
+        let ws_config = config.ws_config();
+        handle_socket(
+            socket,
+            user,
+            hub_service,
+            span_context,
+            ws_config.timeouts,
+            ws_config.limits,
+        )
+    }))
 }
 
 fn event_to_wire_message(message: HubMessage) -> Option<WSMessageResponse> {
@@ -127,6 +136,7 @@ async fn handle_socket(
     hub_service: HubService,
     span_context: SpanContext,
     timeouts: SocketTimeouts,
+    limits: SocketLimits,
 ) {
     let (ws_sender, ws_receiver) = socket.split();
     serve_socket(
@@ -137,6 +147,7 @@ async fn handle_socket(
         hub_service,
         span_context,
         timeouts,
+        limits,
     )
     .await
 }
@@ -150,6 +161,7 @@ async fn serve_socket<S, R, E>(
     hub_service: HubService,
     span_context: SpanContext,
     timeouts: SocketTimeouts,
+    limits: SocketLimits,
 ) where
     S: Sink<WsMessage> + Unpin + Send + 'static,
     S::Error: Debug,
@@ -182,6 +194,7 @@ async fn serve_socket<S, R, E>(
     let mut recv_task = {
         let hub_service = hub_service.clone();
         tokio::spawn(async move {
+            let mut budget = SocketBudget::new(&limits);
             loop {
                 // Any frame counts as a sign of life, a `Pong` answering the server's `Ping` included.
                 let message = match tokio::time::timeout(timeouts.idle, ws_receiver.next()).await {
@@ -194,11 +207,48 @@ async fn serve_socket<S, R, E>(
                     }
                 };
                 tracing::debug!("[{current_user_id}] WsMessage received");
-                let WsMessage::Text(text) = message else {
-                    continue;
+                let text = match message {
+                    WsMessage::Text(text) => Some(text),
+                    WsMessage::Binary(_) => None,
+                    // The ping, pong and close frames are the socket's own business, they cost nothing.
+                    _ => continue,
                 };
-                match serde_json::from_str::<WSMessageRequest>(&text) {
-                    Ok(request) => {
+                let request = text
+                    .as_deref()
+                    .and_then(|text| serde_json::from_str::<WSMessageRequest>(text).ok());
+
+                let kind = request
+                    .as_ref()
+                    .map_or(BudgetKind::Frame, WSMessageRequest::budget_kind);
+                match budget.check(kind) {
+                    Verdict::Allow => {}
+                    Verdict::Deny => {
+                        ws_metrics().message_received(
+                            request.as_ref().map_or("unknown", WSMessageRequest::metric_kind),
+                            "rate_limited",
+                        );
+                        if let Some(request) = &request {
+                            refuse_request(request, &replies, current_user_id);
+                        }
+                        continue;
+                    }
+                    Verdict::Close => {
+                        tracing::info!("[{current_user_id}] [{connection_id}] Socket over its budget, dropping");
+                        ws_metrics().message_received(
+                            request.as_ref().map_or("unknown", WSMessageRequest::metric_kind),
+                            "rate_limited",
+                        );
+                        if let Err(err) =
+                            hub_service.request_drop(current_user_id, connection_id, DisconnectReason::RateLimited)
+                        {
+                            tracing::info!("[{current_user_id}] Failed to drop the socket (hub stopped): {err:#?}");
+                        }
+                        break;
+                    }
+                }
+
+                match (request, text) {
+                    (Some(request), _) => {
                         let span = info_span!(
                             parent: None,
                             "ws message",
@@ -210,10 +260,12 @@ async fn serve_socket<S, R, E>(
                             .instrument(span)
                             .await;
                     }
-                    Err(_) => {
+                    (None, Some(text)) => {
                         ws_metrics().message_received("unknown", "invalid");
                         tracing::trace!("[{current_user_id}] Received invalid message: {text}");
                     }
+                    // Binary frames are ignored.
+                    (None, None) => {}
                 }
             }
         })
@@ -268,6 +320,32 @@ fn parse_stream_id(user_id: Uuid, stream_id: &str) -> Option<StreamId> {
             tracing::trace!("[{user_id}] Invalid stream id: {stream_id}");
             None
         }
+    }
+}
+
+/// Answers a request that is over the budget of the socket. Only the ones the client waits for are answered.
+fn refuse_request(request: &WSMessageRequest, replies: &mpsc::WeakSender<HubMessage>, user_id: Uuid) {
+    match request {
+        WSMessageRequest::StreamCommand { stream_id, command_id, .. } => {
+            if let Some(stream_id) = parse_stream_id(user_id, stream_id) {
+                let reason = CommandFailure::RateLimited;
+                send_stream_response(
+                    replies,
+                    StreamMessage::CommandFailed {
+                        stream_id,
+                        command_id: *command_id,
+                        reason,
+                    },
+                );
+            }
+        }
+        WSMessageRequest::StreamSubscribe { stream_id } => {
+            if let Some(stream_id) = parse_stream_id(user_id, stream_id) {
+                let reason = SubscribeFailure::RateLimited;
+                send_stream_response(replies, StreamMessage::SubscribeFailed { stream_id, reason });
+            }
+        }
+        WSMessageRequest::StreamUnsubscribe { .. } | WSMessageRequest::Ping(_) => {}
     }
 }
 

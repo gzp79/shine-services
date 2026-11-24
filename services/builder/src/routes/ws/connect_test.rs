@@ -4,6 +4,7 @@
 use super::*;
 use crate::{
     models::messages::{DisconnectReason, HubEvent},
+    routes::ws::ws_config::SocketLimits,
     testing::{
         hub::{HubEvents, Lifecycle, TestHub, TestSession},
         TestMessage,
@@ -11,8 +12,9 @@ use crate::{
 };
 use futures::channel::mpsc as socket;
 use serde::Deserialize;
+use shine_infra::sync::RateLimit;
 use shine_test::test;
-use std::convert::Infallible;
+use std::{collections::BTreeMap, convert::Infallible};
 use tokio::{
     task::JoinHandle,
     time::{timeout, Duration},
@@ -141,10 +143,14 @@ struct Client {
 impl Client {
     /// Opens a socket and waits until the hub has registered it.
     async fn open(test: &mut TestHub, user_id: Uuid) -> Self {
-        Self::open_with(test, user_id, SocketTimeouts::default()).await
+        Self::open_with(test, user_id, SocketTimeouts::default(), SocketLimits::default()).await
     }
 
-    async fn open_with(test: &mut TestHub, user_id: Uuid, timeouts: SocketTimeouts) -> Self {
+    async fn open_limited(test: &mut TestHub, user_id: Uuid, limits: SocketLimits) -> Self {
+        Self::open_with(test, user_id, SocketTimeouts::default(), limits).await
+    }
+
+    async fn open_with(test: &mut TestHub, user_id: Uuid, timeouts: SocketTimeouts, limits: SocketLimits) -> Self {
         let (to_server, server_rx) = socket::unbounded();
         let (server_tx, from_server) = socket::unbounded();
         let server = tokio::spawn(serve_socket(
@@ -155,6 +161,7 @@ impl Client {
             test.hub.clone(),
             SpanContext::empty_context(),
             timeouts,
+            limits,
         ));
         let seen = test
             .wait_event(
@@ -175,11 +182,11 @@ impl Client {
     }
 
     fn send(&self, text: &str) {
-        self.to_server
-            .as_ref()
-            .unwrap()
-            .unbounded_send(Ok(WsMessage::Text(text.into())))
-            .unwrap();
+        self.send_frame(WsMessage::Text(text.into()));
+    }
+
+    fn send_frame(&self, frame: WsMessage) {
+        self.to_server.as_ref().unwrap().unbounded_send(Ok(frame)).unwrap();
     }
 
     /// The client goes away: its side of the socket ends.
@@ -266,6 +273,7 @@ async fn a_forced_drop_and_a_shutdown_close_the_sockets_with_their_reason() {
         test.hub.clone(),
         SpanContext::empty_context(),
         SocketTimeouts::default(),
+        SocketLimits::default(),
     )
     .await;
     drop(to_server);
@@ -328,6 +336,109 @@ async fn client_ping_is_broadcast_when_no_target_is_set() {
     assert_eq!(client.finished().await, [WsMessage::Close(None)]);
     let seen = test.wait_all_commands().await;
     assert!(seen.drops().is_empty());
+}
+
+// --- Frame budget ---------------------------------------------------------------------------------
+
+/// Limits whose buckets do not refill within a test.
+fn limits(frames: u32, subscribes: u32, violation_limit: u32) -> SocketLimits {
+    SocketLimits {
+        frames: RateLimit::new(frames, 0.001),
+        subscribes: RateLimit::new(subscribes, 0.001),
+        violation_limit,
+    }
+}
+
+fn command_frame(command_id: Uuid) -> String {
+    serde_json::json!({
+        "type": "streamCommand", "streamId": "chat:s", "commandId": command_id, "command": "AA=="
+    })
+    .to_string()
+}
+
+fn nack(command_id: Uuid, reason: &str) -> serde_json::Value {
+    serde_json::json!({"type": "streamNack", "streamId": "chat:s", "commandId": command_id, "reason": reason})
+}
+
+#[test(serial = "hub-service")]
+async fn a_denied_command_is_nacked_rate_limited_with_its_command_id() {
+    let mut test = TestHub::default_from_env().await;
+    let mut client = Client::open_limited(&mut test, Uuid::new_v4(), limits(1, 10, 20)).await;
+    let (first, second) = (Uuid::new_v4(), Uuid::new_v4());
+
+    // The hub has no streams, so the allowed command is refused for it; the second is over the budget.
+    client.send(&command_frame(first));
+    client.send(&command_frame(second));
+
+    assert_eq!(text_json(&client.next_frame().await), nack(first, "notSubscribed"));
+    assert_eq!(text_json(&client.next_frame().await), nack(second, "rateLimited"));
+}
+
+#[test(serial = "hub-service")]
+async fn a_denied_subscribe_fails_rate_limited() {
+    let mut test = TestHub::default_from_env().await;
+    let mut client = Client::open_limited(&mut test, Uuid::new_v4(), limits(10, 1, 20)).await;
+    let subscribe = r#"{"type":"streamSubscribe","streamId":"chat:s"}"#;
+
+    client.send(subscribe);
+    client.send(subscribe);
+
+    let failed =
+        |reason: &str| serde_json::json!({"type": "streamSubscribeFailed", "streamId": "chat:s", "reason": reason});
+    assert_eq!(text_json(&client.next_frame().await), failed("failed"));
+    assert_eq!(text_json(&client.next_frame().await), failed("rateLimited"));
+}
+
+#[test(serial = "hub-service")]
+async fn a_flood_closes_the_socket_with_policy_violation_and_a_neighbour_is_untouched() {
+    let mut test = TestHub::default_from_env().await;
+    let mut neighbour = Client::open(&mut test, Uuid::new_v4()).await;
+    let flooder = Client::open_limited(&mut test, Uuid::new_v4(), limits(2, 10, 3)).await;
+    let flooder_user = flooder.connection_id;
+
+    // Two frames pass, the next three are denied: the third denial ends the socket.
+    for _ in 0..5 {
+        flooder.send(r#"{"type":"unknown"}"#);
+    }
+    assert_eq!(flooder.finished().await, [close(close_code::POLICY, "rate_limited")]);
+
+    let seen = test.wait_all_commands().await;
+    assert_eq!(seen.drops(), BTreeMap::from([(DisconnectReason::RateLimited, 1)]));
+    assert_eq!(test.hub.stats().await.connections, 1, "{flooder_user}");
+    test.broadcast(TestMessage::new_ping("1-0")).await.unwrap();
+    assert_eq!(
+        ping_frame(&neighbour.next_frame().await),
+        PingEvent { id: "1-0".into() }
+    );
+}
+
+#[test(serial = "hub-service")]
+async fn a_flood_of_unparseable_and_binary_frames_closes_without_answers() {
+    let mut test = TestHub::default_from_env().await;
+    let client = Client::open_limited(&mut test, Uuid::new_v4(), limits(1, 10, 3)).await;
+
+    client.send("not json");
+    client.send_frame(WsMessage::Binary(Default::default()));
+    client.send("not json");
+    client.send_frame(WsMessage::Binary(Default::default()));
+
+    assert_eq!(client.finished().await, [close(close_code::POLICY, "rate_limited")]);
+}
+
+#[test(serial = "hub-service")]
+async fn ping_and_pong_frames_are_not_charged() {
+    let mut test = TestHub::default_from_env().await;
+    let mut client = Client::open_limited(&mut test, Uuid::new_v4(), limits(1, 10, 2)).await;
+    let command_id = Uuid::new_v4();
+
+    for _ in 0..10 {
+        client.send_frame(WsMessage::Ping(Default::default()));
+        client.send_frame(WsMessage::Pong(Default::default()));
+    }
+    // The one frame token is still there.
+    client.send(&command_frame(command_id));
+    assert_eq!(text_json(&client.next_frame().await), nack(command_id, "notSubscribed"));
+    assert!(!client.server.is_finished());
 }
 
 // --- Stuck and silent peers ----------------------------------------------------------------------
@@ -406,7 +517,7 @@ async fn a_peer_that_does_not_read_the_pings_ends_the_egress_too() {
 async fn a_silent_peer_is_pinged_and_then_closed_as_idle() {
     let mut test = TestHub::default_from_env().await;
     let user = Uuid::new_v4();
-    let client = Client::open_with(&mut test, user, quick_timeouts()).await;
+    let client = Client::open_with(&mut test, user, quick_timeouts(), SocketLimits::default()).await;
     let connection_id = client.connection_id;
 
     let frames = client.finished().await;
@@ -427,7 +538,7 @@ async fn a_silent_peer_is_pinged_and_then_closed_as_idle() {
 async fn a_peer_that_answers_the_pings_is_not_idle() {
     let mut test = TestHub::default_from_env().await;
     let user = Uuid::new_v4();
-    let mut client = Client::open_with(&mut test, user, quick_timeouts()).await;
+    let mut client = Client::open_with(&mut test, user, quick_timeouts(), SocketLimits::default()).await;
 
     // Three times the idle limit, with a pong every 40 ms.
     for _ in 0..19 {

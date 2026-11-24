@@ -105,7 +105,7 @@ Two types in `shine-infra::sync`, next to `ExponentialBackoff`; neither knows ab
 | `TokenBucket` | `new(capacity, refill_per_second)`; `try_acquire(&mut self) -> bool`, one token per call, lazily refilled from a monotonic clock; `try_acquire_at(now)` and `is_full_at(now)` take the time as a parameter so tests need no sleeps. |
 | `KeyedRateLimiter<K>` | Cloneable handle over a mutex-guarded map of buckets with one shared configuration. `check(key) -> bool` draws a token from the key's bucket, creating it full. Buckets that have refilled to full are idle and are swept lazily, so memory follows the keys active within one refill period. |
 
-Another key shape is another `K` (`(Uuid, Group)`); another rule is another limiter instance with its own configuration. `SocketBudget` is builder-local (`ws_limits.rs`): two `TokenBucket`s and the violation counter behind a `check(frame_kind) -> Verdict` of `Allow`, `Deny` or `Close`, one instance per socket. Admission is not a type: it is the method `HubService::admit`, which combines the `KeyedRateLimiter`, and the connection semaphore.
+Another key shape is another `K` (`(Uuid, Group)`); another rule is another limiter instance with its own configuration. `SocketBudget` is builder-local (`socket_budget.rs`): two `TokenBucket`s and the violation counter behind a `check(budget_kind) -> Verdict` of `Allow`, `Deny` or `Close`, one instance per socket. Admission is not a type: it is the method `HubService::admit`, which combines the `KeyedRateLimiter`, and the connection semaphore.
 
 ## File map
 
@@ -114,7 +114,7 @@ Another key shape is another `K` (`(Uuid, Group)`); another rule is another limi
 | `crates/shine-infra/src/sync/token_bucket.rs` | `TokenBucket`. |
 | `crates/shine-infra/src/sync/keyed_rate_limiter.rs` | `KeyedRateLimiter<K>`. |
 | `crates/shine-infra/src/sync/mod.rs` | Exports the two types. |
-| `services/builder/src/routes/ws/ws_limits.rs` | `SocketBudget` and `Verdict`. |
+| `services/builder/src/routes/ws/socket_budget.rs` | `SocketBudget` and `Verdict`. |
 | `services/builder/src/routes/ws/ws_config.rs` | `SocketLimits` and `WsConfig.limits`, next to `SocketTimeouts`. |
 | `services/builder/src/routes/ws/connect.rs` | `admit` call before the upgrade; `SocketBudget` in the receive loop; answers for denied frames; close code 1008. |
 | `services/builder/src/routes/ws/message.rs` | Wire reason `rateLimited` for nacks and subscribe failures. |

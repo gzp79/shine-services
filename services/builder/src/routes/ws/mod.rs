@@ -1,6 +1,7 @@
 mod connect;
 mod message;
 mod router;
+mod socket_budget;
 mod ws_config;
 mod ws_metrics;
 

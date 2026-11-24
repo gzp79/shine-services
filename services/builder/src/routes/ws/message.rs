@@ -1,5 +1,6 @@
 use crate::{
     models::messages::{CommandFailure, StreamCommand, StreamMessage, SubscribeFailure},
+    routes::ws::socket_budget::BudgetKind,
     services::MAX_COMMAND_BYTES,
 };
 use base64::{engine::general_purpose::STANDARD, Engine};
@@ -31,6 +32,26 @@ pub enum WSMessageRequest {
         command: String,
     },
     Ping(PingRequest),
+}
+
+impl WSMessageRequest {
+    /// What the request costs from the budget of its socket.
+    pub fn budget_kind(&self) -> BudgetKind {
+        match self {
+            Self::StreamSubscribe { .. } | Self::StreamUnsubscribe { .. } => BudgetKind::Subscribe,
+            Self::StreamCommand { .. } | Self::Ping(_) => BudgetKind::Frame,
+        }
+    }
+
+    /// The label of the request in the metrics.
+    pub fn metric_kind(&self) -> &'static str {
+        match self {
+            Self::StreamSubscribe { .. } => "stream_subscribe",
+            Self::StreamUnsubscribe { .. } => "stream_unsubscribe",
+            Self::StreamCommand { .. } => "stream_command",
+            Self::Ping(_) => "ping",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
