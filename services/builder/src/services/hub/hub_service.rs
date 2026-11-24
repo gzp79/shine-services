@@ -192,6 +192,7 @@ impl HubServiceBuilder {
                 hub_registry,
                 stream_registry,
                 ping_enabled: config.ping_enabled,
+                registry_timeout: config.registry_timeout,
                 supervisor,
             }),
         };
@@ -230,6 +231,22 @@ fn track_registry<T>(operation: &'static str, result: Result<T, HubError>) -> Re
         hub_metrics().registry_error(operation);
     }
     result
+}
+
+/// Runs a call to the hub registry within `limit`. A failed call is counted by `operation`, one that did not
+/// answer in time as `timeout`.
+pub(super) async fn registry_call<T>(
+    limit: Duration,
+    operation: &'static str,
+    call: impl std::future::Future<Output = Result<T, HubError>>,
+) -> Result<T, HubError> {
+    match tokio::time::timeout(limit, call).await {
+        Ok(result) => track_registry(operation, result),
+        Err(_) => {
+            hub_metrics().registry_error("timeout");
+            Err(HubError::RegistryTimeout)
+        }
+    }
 }
 
 /// Registry rows removed at the same time on shutdown.
@@ -280,6 +297,7 @@ struct Inner {
     hub_registry: RedisHubConnectionDb,
     stream_registry: Option<StreamRegistry<RedisCommandInboxDb, PgCommandLogDb>>,
     ping_enabled: bool,
+    registry_timeout: Duration,
     supervisor: TaskSupervisor,
 }
 
@@ -717,21 +735,21 @@ impl HubService {
     }
 
     async fn create_registry_connection(&self, user_id: Uuid, connection_id: Uuid) -> Result<(), HubError> {
-        let result = async {
+        registry_call(self.inner.registry_timeout, "create", async {
             let mut context = self.inner.hub_registry.create_context().await?;
             context.create_connection(user_id, connection_id).await
-        }
-        .await;
-        track_registry("create", result)
+        })
+        .await
     }
 
     /// Whether the registry holds `connection_id` as the user's active connection; `false` on a read error.
     async fn is_registry_connection(&self, user_id: Uuid, connection_id: Uuid) -> bool {
-        let found = match self.inner.hub_registry.create_context().await {
-            Ok(mut context) => context.find_connection_by_user(user_id).await,
-            Err(err) => Err(err),
-        };
-        match track_registry("find", found) {
+        let found = registry_call(self.inner.registry_timeout, "find", async {
+            let mut context = self.inner.hub_registry.create_context().await?;
+            context.find_connection_by_user(user_id).await
+        })
+        .await;
+        match found {
             Ok(found) => found.is_some_and(|found| found.connection_id == connection_id),
             Err(err) => {
                 tracing::warn!("[{user_id}] Failed to read hub connection: {err:#?}");
@@ -741,21 +759,20 @@ impl HubService {
     }
 
     async fn remove_registry_connection(&self, user_id: Uuid, connection_id: Uuid) -> Result<(), HubError> {
-        let result = async {
+        registry_call(self.inner.registry_timeout, "remove", async {
             let mut context = self.inner.hub_registry.create_context().await?;
             context.remove_connection_if_active(user_id, connection_id).await
-        }
-        .await;
-        track_registry("remove", result).map(|_| ())
+        })
+        .await
+        .map(|_| ())
     }
 
     pub async fn heartbeat_registry_connection(&self, user_id: Uuid, connection_id: Uuid) -> Result<bool, HubError> {
-        let result = async {
+        registry_call(self.inner.registry_timeout, "heartbeat", async {
             let mut context = self.inner.hub_registry.create_context().await?;
             context.heartbeat_connection(user_id, connection_id).await
-        }
-        .await;
-        track_registry("heartbeat", result)
+        })
+        .await
     }
 
     /// Batched heartbeat over the given connections, returning the ones the registry no longer holds
@@ -764,12 +781,11 @@ impl HubService {
         &self,
         connections: &[HubConnection],
     ) -> Result<Vec<HubConnection>, HubError> {
-        let result = async {
+        registry_call(self.inner.registry_timeout, "heartbeat", async {
             let mut context = self.inner.hub_registry.create_context().await?;
             context.heartbeat_connections(connections).await
-        }
-        .await;
-        track_registry("heartbeat", result)
+        })
+        .await
     }
 
     async fn process_registry_change(&self, user_id: Uuid) {

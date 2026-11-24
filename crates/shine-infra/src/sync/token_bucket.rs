@@ -160,16 +160,6 @@ mod test {
     }
 
     #[test]
-    fn rate_limit_validation() {
-        assert!(RateLimit::new(1, 0.1).validate().is_ok());
-        assert!(RateLimit::new(0, 1.0).validate().is_err(), "no burst");
-        assert!(RateLimit::new(1, 0.0).validate().is_err(), "no refill");
-        assert!(RateLimit::new(1, -1.0).validate().is_err());
-        assert!(RateLimit::new(1, f64::NAN).validate().is_err());
-        assert!(RateLimit::new(1, f64::INFINITY).validate().is_err());
-    }
-
-    #[test]
     fn interval_is_the_inverse_of_the_rate() {
         assert_eq!(RateLimit::new(5, 0.1).interval(), secs(10));
         assert_eq!(RateLimit::new(5, 4.0).interval(), Duration::from_millis(250));

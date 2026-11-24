@@ -127,10 +127,10 @@ async fn the_hub_sends_stream_messages_to_a_connection_by_its_id() {
 
 mod served {
     use super::*;
-    use crate::services::command_stream::{StreamAccessConfig, StreamConfig};
+    use crate::services::command_stream::{InboxConfig, StreamAccessConfig, StreamConfig};
     use shine_test::test;
     use std::time::Duration;
-    use tokio::time::timeout;
+    use tokio::time::{sleep, timeout};
 
     async fn create_test_hub() -> TestHub {
         let stream_config = StreamConfig {
@@ -376,6 +376,49 @@ mod served {
             send(&id, TestMessage::new_paint_command(1, 1, 1)).await,
             Err(CommandFailure::NotSubscribed)
         );
+    }
+
+    #[test(serial = "hub-service")]
+    async fn a_command_into_a_full_inbox_is_refused_as_busy_and_the_connection_stays() {
+        let mut test = TestHub::from_env(TestHubOptions {
+            with_streams: Some(StreamConfig {
+                inbox: InboxConfig {
+                    backpressure_low: 0,
+                    backpressure_high: 1,
+                    backpressure_poll_period: Duration::from_millis(5),
+                    backpressure_timeout: Duration::from_millis(100),
+                    ..StreamConfig::test_default().inbox
+                },
+                ..StreamConfig::test_default()
+            }),
+            ..TestHubOptions::default()
+        })
+        .await;
+        let user = Uuid::new_v4();
+        let id = TestStreamId::new_chat();
+        let (connection, _socket) = test.connect_ping(user, 32);
+        test.wait_all_commands().await;
+        // Opened on the registry, not subscribed through the hub: no worker drains the inbox.
+        test.stream_registry
+            .as_ref()
+            .unwrap()
+            .open(connection, user, &id)
+            .await
+            .unwrap();
+
+        let command = TestMessage::new_chat_command("hi");
+        let send = || {
+            test.hub
+                .send_stream_command(connection, user, &id, Uuid::new_v4(), &command)
+        };
+        send().await.unwrap();
+        // The limit is polled, not reserved: the next push is throttled only once the length is seen.
+        sleep(Duration::from_millis(100)).await;
+        assert_eq!(send().await, Err(CommandFailure::Busy));
+
+        let seen = test.wait_all_commands().await;
+        assert!(seen.drops().is_empty(), "{:?}", seen.drops());
+        assert_eq!(test.hub.stats().await.connections, 1);
     }
 
     #[test(serial = "hub-service")]
