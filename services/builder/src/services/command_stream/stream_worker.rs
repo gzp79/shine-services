@@ -267,7 +267,7 @@ where
     }
 
     async fn run(&mut self, config: &StreamConfig, receiver: &mut mpsc::UnboundedReceiver<Message>) -> StopReason {
-        let mut poll = time::interval(config.inbox_recovery_poll_interval);
+        let mut poll = time::interval(config.inbox.recovery_poll_interval);
         poll.set_missed_tick_behavior(MissedTickBehavior::Skip);
         poll.tick().await;
         let wake = self.wake.clone();

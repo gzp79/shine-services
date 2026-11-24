@@ -255,7 +255,7 @@ where
         &mut self,
         commands: &[StoredCommand],
     ) -> Result<(Option<StoredSnapshot>, Option<Checkpoint>), AdvanceError> {
-        let snapshot_every = self.service.config().log_snapshot_every;
+        let snapshot_every = self.service.config().log.snapshot_every;
         // Only the last snapshot boundary of the batch is kept: the ones before it are already
         // obsolete by the end of the replay.
         let boundary = if snapshot_every > 0 {

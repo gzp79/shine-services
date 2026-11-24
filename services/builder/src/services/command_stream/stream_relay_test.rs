@@ -5,8 +5,8 @@ use crate::{
         command_log::{pg::PgCommandLogDb, CommandLogDb, StoredCommand},
     },
     services::command_stream::{
-        stream_persistence::PersistenceWork, PersistResult, StreamConfig, StreamLogService, StreamPersistence,
-        StreamRelay,
+        stream_persistence::PersistenceWork, InboxConfig, LogConfig, PersistResult, StreamConfig, StreamLogService,
+        StreamPersistence, StreamRelay,
     },
     testing::{
         command_stream::{ChatLog, TestEgress, TestInbox, TestLog, TestStreamId},
@@ -238,7 +238,10 @@ async fn ingest_reads_a_page_and_tells_whether_there_is_more() {
     let log = TestLog::from_env().await;
     let stream_id = TestStreamId::new_chat();
     let config = StreamConfig {
-        inbox_poll_limit: 2,
+        inbox: InboxConfig {
+            poll_limit: 2,
+            ..InboxConfig::default()
+        },
         ..StreamConfig::default()
     };
     let (mut relay, _persistence) = setup_with(&stream_id, &inbox, &log, config).await;
@@ -413,7 +416,10 @@ async fn a_failed_persistence_is_an_error_of_the_relay_and_changes_nothing() {
 /// Like `setup`, with a snapshot at every second version, so a checkpoint comes with a few commands.
 async fn setup_snapshot_every_two(stream_id: &StreamId, inbox: &TestInbox, log: &TestLog) -> (Relay, Persistence) {
     let config = StreamConfig {
-        log_snapshot_every: 2,
+        log: LogConfig {
+            snapshot_every: 2,
+            ..LogConfig::default()
+        },
         ..StreamConfig::default()
     };
     let mut persistence = Persistence::new(

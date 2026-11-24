@@ -5,7 +5,7 @@ use crate::{
         hub_registry::redis::RedisHubConnectionDb,
     },
     routes::ws::WsConfig,
-    services::{standard_registry, HubService, StreamAuthorizeService},
+    services::{standard_registry, HubService},
 };
 use anyhow::Error as AnyError;
 use regex::bytes::Regex;
@@ -52,7 +52,6 @@ impl AppState {
                     config.feature().streams.clone(),
                 )
             })?
-            .with_stream_authorize_service(StreamAuthorizeService::new)
             .build()
             .await?;
 

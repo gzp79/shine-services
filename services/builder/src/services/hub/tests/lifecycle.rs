@@ -540,7 +540,7 @@ async fn batched_heartbeat_refreshes_active_and_reports_stale() {
 #[test(serial = "hub-service")]
 async fn a_shutdown_does_not_report_the_ending_tasks_as_failed() {
     let mut test = TestHub::from_env(TestHubOptions {
-        with_streams: Some(crate::services::command_stream::StreamConfig::quiet()),
+        with_streams: Some(crate::services::command_stream::StreamConfig::test_default()),
         ..Default::default()
     })
     .await;

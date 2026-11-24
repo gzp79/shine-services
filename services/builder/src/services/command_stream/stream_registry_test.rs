@@ -8,8 +8,8 @@ use crate::{
         command_log::{pg::PgCommandLogDb, CommandLogDb},
     },
     services::command_stream::{
-        stream_persistence::PersistenceWork, PersistResult, StreamConfig, StreamLogService, StreamPersistence,
-        StreamRegistry, MAX_COMMAND_BYTES,
+        stream_persistence::PersistenceWork, InboxConfig, PersistResult, StreamAccessConfig, StreamConfig,
+        StreamLogService, StreamPersistence, StreamRegistry, MAX_COMMAND_BYTES,
     },
     testing::{
         command_stream::{ChatLog, TestEgress, TestInbox, TestLog, TestStreamId},
@@ -40,7 +40,9 @@ async fn harness(worker: StreamConfig) -> Harness {
     let service = || StreamLogService::new(inbox.db.clone(), log.db.clone(), StreamConfig::default());
     let registry = StreamRegistry::builder(inbox.db.clone(), log.db.clone())
         .register::<ChatState, _>(service(), egress.clone(), worker.clone())
+        .unwrap()
         .register::<PixelMapState, _>(service(), egress.clone(), worker)
+        .unwrap()
         .build()
         .unwrap();
     Harness { log, inbox, egress, registry }
@@ -73,7 +75,7 @@ impl Harness {
     }
 
     async fn join_as(&self, connection: Uuid, stream: &StreamId) {
-        self.registry.open(connection, stream).unwrap();
+        self.registry.open(connection, Uuid::new_v4(), stream).await.unwrap();
         self.registry.subscribe(connection, stream).unwrap();
         self.egress
             .wait(connection, |m| m.iter().any(|message| message.stream_id() == stream))
@@ -94,38 +96,122 @@ async fn wait_for_workers(registry: &StreamRegistry<RedisCommandInboxDb, PgComma
 fn short_grace() -> StreamConfig {
     StreamConfig {
         worker_unload_grace: Duration::from_millis(200),
-        ..StreamConfig::quiet()
+        ..StreamConfig::test_default()
     }
 }
 
 #[test]
-async fn a_kind_registered_twice_fails_the_build() {
+async fn a_kind_registered_twice_fails_the_second_registration() {
     let log = TestLog::from_env().await;
     let inbox = TestInbox::from_env().await;
     let service = || StreamLogService::new(inbox.db.clone(), log.db.clone(), StreamConfig::default());
 
-    let result = StreamRegistry::builder(inbox.db.clone(), log.db.clone())
-        .register::<ChatState, _>(service(), TestEgress::default(), StreamConfig::quiet())
-        .register::<ChatState, _>(service(), TestEgress::default(), StreamConfig::quiet())
-        .build();
+    let builder = StreamRegistry::builder(inbox.db.clone(), log.db.clone())
+        .register::<ChatState, _>(service(), TestEgress::default(), StreamConfig::test_default())
+        .unwrap();
+    let result = builder.register::<ChatState, _>(service(), TestEgress::default(), StreamConfig::test_default());
 
     assert!(matches!(result, Err(CommandStreamError::DuplicateKind(kind)) if kind == ChatState::KIND));
+}
+
+#[test]
+async fn an_access_with_an_invalid_id_fails_the_registration() {
+    let log = TestLog::from_env().await;
+    let inbox = TestInbox::from_env().await;
+    let service = StreamLogService::new(inbox.db.clone(), log.db.clone(), StreamConfig::default());
+    let config = StreamConfig {
+        access: allow(&["has space"]),
+        ..StreamConfig::test_default()
+    };
+
+    let result = StreamRegistry::builder(inbox.db.clone(), log.db.clone()).register::<ChatState, _>(
+        service,
+        TestEgress::default(),
+        config,
+    );
+
+    assert!(matches!(result, Err(CommandStreamError::Internal { .. })));
 }
 
 // ---------------------------------------------------------------------------------------------
 // Opening
 // ---------------------------------------------------------------------------------------------
 
+fn allow(ids: &[&str]) -> StreamAccessConfig {
+    StreamAccessConfig::AllowList {
+        ids: ids.iter().map(ToString::to_string).collect(),
+    }
+}
+
+#[test]
+async fn only_the_streams_of_the_allow_list_open() {
+    let h = harness(StreamConfig {
+        access: allow(&["global"]),
+        ..StreamConfig::test_default()
+    })
+    .await;
+    let user = Uuid::new_v4();
+    let connection = Uuid::new_v4();
+    let allowed = TestStreamId::new_chat_with("global");
+    let other = TestStreamId::new_chat_with("other");
+
+    assert!(h.registry.open(connection, user, &allowed).await.is_ok());
+    assert!(matches!(
+        h.registry.open(connection, user, &other).await,
+        Err(CommandStreamError::Unauthorized)
+    ));
+}
+
+#[test]
+async fn a_stream_that_is_not_allowed_is_not_created() {
+    let h = harness(StreamConfig {
+        access: allow(&[]),
+        ..StreamConfig::test_default()
+    })
+    .await;
+    let (user, connection) = (Uuid::new_v4(), Uuid::new_v4());
+    let id = TestStreamId::new_chat();
+    let data = TestMessage::new_chat_command("hi");
+
+    assert!(matches!(
+        h.registry.open(connection, user, &id).await,
+        Err(CommandStreamError::Unauthorized)
+    ));
+
+    // nothing is open for the connection, so it can neither push nor subscribe
+    let pushed = h.registry.push(connection, &id, user, Uuid::new_v4(), &data).await;
+    assert!(matches!(pushed, Err(CommandFailure::NotSubscribed)));
+    assert_eq!(h.registry.worker_count(), 0);
+}
+
+#[test]
+async fn a_failed_open_is_reported_as_unauthorized_to_the_client() {
+    use crate::models::messages::SubscribeFailure;
+
+    assert_eq!(
+        CommandStreamError::Unauthorized.subscribe_failure(),
+        SubscribeFailure::Unauthorized
+    );
+    assert_eq!(
+        CommandStreamError::StreamNotFound.subscribe_failure(),
+        SubscribeFailure::Failed
+    );
+}
+
 #[test]
 async fn a_new_stream_opens_if_its_kind_is_registered() {
-    let h = harness(StreamConfig::quiet()).await;
+    let h = harness(StreamConfig::test_default()).await;
 
-    assert!(h.registry.open(Uuid::new_v4(), &TestStreamId::new_chat()).is_ok());
+    assert!(h
+        .registry
+        .open(Uuid::new_v4(), Uuid::new_v4(), &TestStreamId::new_chat())
+        .await
+        .is_ok());
 }
 
 #[test]
 async fn a_push_needs_the_stream_open_for_the_connection() {
-    let h = harness(StreamConfig::quiet()).await;
+    let h = harness(StreamConfig::test_default()).await;
     let (id, other) = (TestStreamId::new_chat(), TestStreamId::new_chat());
     let connection = Uuid::new_v4();
     let data = TestMessage::new_chat_command("hi");
@@ -139,8 +225,8 @@ async fn a_push_needs_the_stream_open_for_the_connection() {
     };
 
     assert_eq!(push(&id).await, Err(CommandFailure::NotSubscribed), "not opened");
-    h.registry.open(connection, &id).unwrap();
-    h.registry.open(Uuid::new_v4(), &other).unwrap();
+    h.registry.open(connection, Uuid::new_v4(), &id).await.unwrap();
+    h.registry.open(Uuid::new_v4(), Uuid::new_v4(), &other).await.unwrap();
     assert_eq!(push(&id).await, Ok(()));
     assert_eq!(
         push(&other).await,
@@ -149,14 +235,14 @@ async fn a_push_needs_the_stream_open_for_the_connection() {
     );
     h.registry.close(connection, &id);
     assert_eq!(push(&id).await, Err(CommandFailure::NotSubscribed), "closed");
-    h.registry.open(connection, &id).unwrap();
+    h.registry.open(connection, Uuid::new_v4(), &id).await.unwrap();
     h.registry.disconnect(connection);
     assert_eq!(push(&id).await, Err(CommandFailure::NotSubscribed), "disconnected");
 }
 
 #[test]
 async fn commands_are_checked_by_the_kind_of_their_stream() {
-    let h = harness(StreamConfig::quiet()).await;
+    let h = harness(StreamConfig::test_default()).await;
     let chat = TestMessage::new_chat_command("hi");
     let paint = TestMessage::new_paint_command(1, 2, 3);
     let off_the_map = TestMessage::new_paint_command(99, 2, 3);
@@ -172,11 +258,11 @@ async fn commands_are_checked_by_the_kind_of_their_stream() {
 
 #[test]
 async fn a_valid_command_is_queued_in_the_inbox_of_its_stream() {
-    let h = harness(StreamConfig::quiet()).await;
+    let h = harness(StreamConfig::test_default()).await;
     let id = TestStreamId::new_chat();
     let (connection, command_id, user_id) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
     let data = TestMessage::new_chat_command("hi");
-    h.registry.open(connection, &id).unwrap();
+    h.registry.open(connection, Uuid::new_v4(), &id).await.unwrap();
 
     h.registry
         .push(connection, &id, user_id, command_id, &data)
@@ -190,12 +276,12 @@ async fn a_valid_command_is_queued_in_the_inbox_of_its_stream() {
 
 #[test]
 async fn a_command_that_is_not_valid_for_the_kind_is_refused_and_not_queued() {
-    let h = harness(StreamConfig::quiet()).await;
+    let h = harness(StreamConfig::test_default()).await;
     let id = TestStreamId::new_chat();
     let connection = Uuid::new_v4();
     let paint = TestMessage::new_paint_command(1, 1, 1);
     let off_the_map = TestMessage::new_paint_command(90, 1, 1);
-    h.registry.open(connection, &id).unwrap();
+    h.registry.open(connection, Uuid::new_v4(), &id).await.unwrap();
     let push = |command: Vec<u8>| {
         let (registry, id) = (h.registry.clone(), id.clone());
         async move {
@@ -228,18 +314,21 @@ async fn a_command_that_is_not_valid_for_the_kind_is_refused_and_not_queued() {
 #[test]
 async fn a_push_into_an_inbox_that_stays_full_fails_as_busy_and_is_not_queued() {
     let h = harness(StreamConfig {
-        inbox_backpressure_low: 0,
-        inbox_backpressure_high: 1,
-        inbox_backpressure_poll_period: Duration::from_millis(5),
-        inbox_backpressure_timeout: Duration::from_millis(100),
-        ..StreamConfig::quiet()
+        inbox: InboxConfig {
+            backpressure_low: 0,
+            backpressure_high: 1,
+            backpressure_poll_period: Duration::from_millis(5),
+            backpressure_timeout: Duration::from_millis(100),
+            ..StreamConfig::test_default().inbox
+        },
+        ..StreamConfig::test_default()
     })
     .await;
     // No worker is subscribed, so nothing drains the inbox.
     let id = TestStreamId::new_chat();
     let connection = Uuid::new_v4();
     let data = TestMessage::new_chat_command("hi");
-    h.registry.open(connection, &id).unwrap();
+    h.registry.open(connection, Uuid::new_v4(), &id).await.unwrap();
 
     h.registry
         .push(connection, &id, Uuid::nil(), Uuid::new_v4(), &data)
@@ -262,7 +351,7 @@ async fn a_push_into_an_inbox_that_stays_full_fails_as_busy_and_is_not_queued() 
 
 #[test]
 async fn subscribers_of_a_stream_share_one_worker_and_streams_have_their_own() {
-    let h = harness(StreamConfig::quiet()).await;
+    let h = harness(StreamConfig::test_default()).await;
     let (a, b) = (TestStreamId::new_chat(), TestStreamId::new_pixel_map());
 
     let first = h.join(&a).await;
@@ -281,7 +370,7 @@ async fn subscribers_of_a_stream_share_one_worker_and_streams_have_their_own() {
 
 #[test]
 async fn a_wake_reaches_the_worker_of_its_stream() {
-    let h = harness(StreamConfig::quiet()).await;
+    let h = harness(StreamConfig::test_default()).await;
     let (a, b) = (TestStreamId::new_chat(), TestStreamId::new_pixel_map());
     let in_a = h.join(&a).await;
     let in_b = h.join(&b).await;
@@ -301,7 +390,7 @@ async fn a_wake_reaches_the_worker_of_its_stream() {
 
 #[test]
 async fn the_inbox_wakes_the_workers_without_anyone_calling_wake() {
-    let h = harness(StreamConfig::quiet()).await;
+    let h = harness(StreamConfig::test_default()).await;
     h.registry.listen().await.unwrap();
     let id = TestStreamId::new_chat();
     let connection = h.join(&id).await;
@@ -317,7 +406,7 @@ async fn the_inbox_wakes_the_workers_without_anyone_calling_wake() {
 
 #[test]
 async fn streams_of_different_kinds_work_side_by_side_for_one_connection() {
-    let h = harness(StreamConfig::quiet()).await;
+    let h = harness(StreamConfig::test_default()).await;
     h.registry.listen().await.unwrap();
     let (chat, map) = (TestStreamId::new_chat(), TestStreamId::new_pixel_map());
     let connection = h.join(&chat).await;
@@ -339,7 +428,7 @@ async fn streams_of_different_kinds_work_side_by_side_for_one_connection() {
 
 #[test]
 async fn the_entries_of_the_stored_commands_are_cleared_from_the_inbox() {
-    let h = harness(StreamConfig::quiet()).await;
+    let h = harness(StreamConfig::test_default()).await;
     h.registry.listen().await.unwrap();
     let id = TestStreamId::new_chat();
     let connection = h.join(&id).await;
@@ -358,8 +447,11 @@ async fn the_entries_of_the_stored_commands_are_cleared_from_the_inbox() {
 #[test(skip = "the quiet-stream reconcile of the stream worker is removed for now")]
 async fn a_quiet_worker_reconciles_a_durable_head_advanced_by_a_peer() {
     let h = harness(StreamConfig {
-        inbox_recovery_poll_interval: Duration::from_millis(50),
-        ..StreamConfig::quiet()
+        inbox: InboxConfig {
+            recovery_poll_interval: Duration::from_millis(50),
+            ..StreamConfig::test_default().inbox
+        },
+        ..StreamConfig::test_default()
     })
     .await;
     let id = TestStreamId::new_chat();
@@ -440,13 +532,13 @@ async fn ended_workers_are_not_running_and_a_purge_forgets_them() {
 
 #[test]
 async fn a_failed_stream_is_closed_for_every_connection_that_has_it_open() {
-    let h = harness(StreamConfig::quiet()).await;
+    let h = harness(StreamConfig::test_default()).await;
     let (failed, other) = (TestStreamId::new_chat(), TestStreamId::new_chat());
     let (first, second) = (Uuid::new_v4(), Uuid::new_v4());
-    h.registry.open(first, &failed).unwrap();
-    h.registry.open(first, &other).unwrap();
+    h.registry.open(first, Uuid::new_v4(), &failed).await.unwrap();
+    h.registry.open(first, Uuid::new_v4(), &other).await.unwrap();
     // Opened, its subscribe is not there yet.
-    h.registry.open(second, &failed).unwrap();
+    h.registry.open(second, Uuid::new_v4(), &failed).await.unwrap();
 
     let mut closed = h.registry.close_stream(&failed);
     closed.sort();
@@ -471,14 +563,14 @@ async fn a_failed_stream_is_closed_for_every_connection_that_has_it_open() {
 
 #[test]
 async fn a_subscribe_of_a_stream_closed_since_it_was_opened_starts_no_worker() {
-    let h = harness(StreamConfig::quiet()).await;
+    let h = harness(StreamConfig::test_default()).await;
     let (closed, gone) = (TestStreamId::new_chat(), TestStreamId::new_chat());
     let connection = Uuid::new_v4();
 
-    h.registry.open(connection, &closed).unwrap();
+    h.registry.open(connection, Uuid::new_v4(), &closed).await.unwrap();
     h.registry.close(connection, &closed);
     h.registry.subscribe(connection, &closed).unwrap();
-    h.registry.open(connection, &gone).unwrap();
+    h.registry.open(connection, Uuid::new_v4(), &gone).await.unwrap();
     h.registry.disconnect(connection);
     h.registry.subscribe(connection, &gone).unwrap();
 
@@ -487,11 +579,11 @@ async fn a_subscribe_of_a_stream_closed_since_it_was_opened_starts_no_worker() {
 
 #[test]
 async fn a_purge_keeps_the_open_streams_and_forgets_the_rest() {
-    let h = harness(StreamConfig::quiet()).await;
+    let h = harness(StreamConfig::test_default()).await;
     let (kept, forgotten) = (TestStreamId::new_chat(), TestStreamId::new_chat());
     let (connection, other) = (Uuid::new_v4(), Uuid::new_v4());
-    h.registry.open(connection, &kept).unwrap();
-    h.registry.open(other, &forgotten).unwrap();
+    h.registry.open(connection, Uuid::new_v4(), &kept).await.unwrap();
+    h.registry.open(other, Uuid::new_v4(), &forgotten).await.unwrap();
     h.registry.disconnect(other);
 
     h.registry.purge();
@@ -503,7 +595,7 @@ async fn a_purge_keeps_the_open_streams_and_forgets_the_rest() {
 
 #[test]
 async fn a_shutdown_persists_what_is_waiting_and_ends_every_worker() {
-    let h = harness(StreamConfig::quiet()).await;
+    let h = harness(StreamConfig::test_default()).await;
     let (a, b) = (TestStreamId::new_chat(), TestStreamId::new_pixel_map());
     h.join(&a).await;
     h.join(&b).await;

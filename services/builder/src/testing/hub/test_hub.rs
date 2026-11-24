@@ -11,9 +11,7 @@ use crate::{
             HubConnectionDb, HubRegistry,
         },
     },
-    services::{
-        standard_registry, HubConfig, HubService, StreamAuthorizeService, StreamConfig, StreamRegistry, StreamsConfig,
-    },
+    services::{standard_registry, HubConfig, HubService, StreamConfig, StreamRegistry, StreamsConfig},
     testing::{
         command_stream::{TestInbox, TestLog},
         hub::{Egress, HubEvents, TestSession},
@@ -90,8 +88,7 @@ impl TestHub {
 
         let mut hub_builder = HubService::builder(hub_config)
             .with_session_service(session_service)
-            .with_hub_registry(registry.clone())
-            .with_stream_authorize_service(StreamAuthorizeService::new);
+            .with_hub_registry(registry.clone());
         if let Some(config) = options.with_streams {
             let si = TestInbox::new(redis.clone(), 60).await;
             let sl = TestLog::from_env().await;

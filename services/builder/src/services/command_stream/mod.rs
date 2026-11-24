@@ -1,3 +1,4 @@
+mod stream_access;
 mod stream_config;
 mod stream_egress;
 mod stream_kinds;
@@ -9,7 +10,8 @@ mod stream_relay;
 mod stream_worker;
 
 pub use self::{
-    stream_config::{StreamConfig, StreamsConfig},
+    stream_access::{AllowListStreamAccess, AnyStreamAccess, StreamAccess},
+    stream_config::{InboxConfig, LogConfig, StreamAccessConfig, StreamConfig, StreamsConfig},
     stream_egress::StreamEgress,
     stream_kinds::standard_registry,
     stream_log_service::{AppendOutcome, SnapshotOutcome, StoredStream, StreamLogService},

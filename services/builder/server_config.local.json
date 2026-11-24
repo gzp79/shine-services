@@ -21,10 +21,10 @@
   "builder": {
     "streams": {
       "chat": {
-        "inboxRecoveryPollInterval": 60
+        "inbox": { "recoveryPollInterval": 60 }
       },
       "pixelMap": {
-        "inboxRecoveryPollInterval": 60
+        "inbox": { "recoveryPollInterval": 60 }
       }
     }
   }

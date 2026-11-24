@@ -18,10 +18,10 @@
     },
     "streams": {
       "chat": {
-        "inboxRecoveryPollInterval": 1
+        "inbox": { "recoveryPollInterval": 1 }
       },
       "pixelMap": {
-        "inboxRecoveryPollInterval": 1
+        "inbox": { "recoveryPollInterval": 1 }
       }
     }
   }

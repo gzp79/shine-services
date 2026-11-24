@@ -2,7 +2,7 @@ use super::*;
 use crate::models::CommandStreamError;
 use crate::{
     repositories::{command_inbox::CommandInboxDb, command_log::CommandLogDb},
-    services::command_stream::StreamConfig,
+    services::command_stream::{LogConfig, StreamConfig},
     testing::command_stream::{ChatLog, TestInbox, TestLog, TestStreamId},
 };
 use shine_game::replica::{fold_chain_hash, ChatState, StreamId};
@@ -111,7 +111,10 @@ async fn persistence_appends_replays_and_returns_a_snapshot() {
     let stream_id = TestStreamId::new_chat();
     let room = ChatLog::new("persist", 4);
     let config = StreamConfig {
-        log_snapshot_every: 2,
+        log: LogConfig {
+            snapshot_every: 2,
+            ..LogConfig::default()
+        },
         ..StreamConfig::default()
     };
     let mut persistence = persistence(stream_id.clone(), &inbox, &log, config);

@@ -21,7 +21,7 @@ use crate::{
             hub_subscribers::Subscribers,
             tasks::{Heartbeat, SessionChecker, StreamDispatcher},
         },
-        StreamAuthorizeService, StreamEgress,
+        StreamEgress,
     },
 };
 use futures::{stream, StreamExt};
@@ -82,8 +82,6 @@ pub enum HubServiceBuilderError {
     MissingSessionService,
     #[error("Missing hub registry")]
     MissingHubRegistry,
-    #[error("Missing stream authorize service")]
-    MissingStreamAuthorizeService,
     #[error(transparent)]
     CommandInbox(#[from] CommandStreamError),
 }
@@ -98,7 +96,6 @@ pub struct HubServiceBuilder {
     session_service: Option<Arc<CurrentUserService>>,
     hub_registry: Option<RedisHubConnectionDb>,
     stream_registry: Option<StreamRegistry<RedisCommandInboxDb, PgCommandLogDb>>,
-    stream_authorize_service: Option<StreamAuthorizeService>,
     supervisor: TaskSupervisor,
 }
 
@@ -113,7 +110,6 @@ impl HubServiceBuilder {
             session_service: None,
             hub_registry: None,
             stream_registry: None,
-            stream_authorize_service: None,
             supervisor: TaskSupervisor::new(),
         }
     }
@@ -150,15 +146,6 @@ impl HubServiceBuilder {
         Ok(self)
     }
 
-    #[must_use]
-    pub fn with_stream_authorize_service<F>(mut self, stream_authorize_service: F) -> Self
-    where
-        F: FnOnce() -> StreamAuthorizeService,
-    {
-        self.stream_authorize_service = Some(stream_authorize_service());
-        self
-    }
-
     pub async fn build(self) -> Result<HubService, HubServiceBuilderError> {
         let Self {
             config,
@@ -168,14 +155,11 @@ impl HubServiceBuilder {
             session_service,
             hub_registry,
             stream_registry,
-            stream_authorize_service,
             supervisor,
         } = self;
 
         let session_service = session_service.ok_or(HubServiceBuilderError::MissingSessionService)?;
         let hub_registry = hub_registry.ok_or(HubServiceBuilderError::MissingHubRegistry)?;
-        let stream_authorize_service =
-            stream_authorize_service.ok_or(HubServiceBuilderError::MissingStreamAuthorizeService)?;
         let (shutdown_complete_tx, shutdown_complete_rx) = watch::channel(false);
 
         let service = HubService {
@@ -186,7 +170,6 @@ impl HubServiceBuilder {
                 subscribers: Subscribers::new(),
                 hub_registry,
                 stream_registry,
-                stream_authorize_service,
                 ping_enabled: config.ping_enabled,
                 supervisor,
             }),
@@ -275,7 +258,6 @@ struct Inner {
     subscribers: Subscribers,
     hub_registry: RedisHubConnectionDb,
     stream_registry: Option<StreamRegistry<RedisCommandInboxDb, PgCommandLogDb>>,
-    stream_authorize_service: StreamAuthorizeService,
     ping_enabled: bool,
     supervisor: TaskSupervisor,
 }
@@ -314,21 +296,9 @@ impl HubService {
         stream_id: StreamId,
     ) -> Result<(), SubscribeFailure> {
         let registry = self.inner.stream_registry.as_ref().ok_or(SubscribeFailure::Failed)?;
-        let authorized = self
-            .inner
-            .stream_authorize_service
-            .is_authorized(user_id, &stream_id)
-            .await
-            .map_err(|err| {
-                tracing::warn!("[{connection_id}] Stream authorization failed: {err}");
-                SubscribeFailure::Failed
-            })?;
-        if !authorized {
-            tracing::info!("[{connection_id}] User {user_id} is not authorized for stream {stream_id}");
-            return Err(SubscribeFailure::Unauthorized);
-        }
         registry
-            .open(connection_id, &stream_id)
+            .open(connection_id, user_id, &stream_id)
+            .await
             .map_err(|err| err.subscribe_failure())?;
         self.request_stream_subscribe(connection_id, stream_id)
             .map_err(|_| SubscribeFailure::Failed)

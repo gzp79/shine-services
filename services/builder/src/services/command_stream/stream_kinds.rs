@@ -19,7 +19,7 @@ where
 {
     let service = |config: &StreamConfig| StreamLogService::new(inbox_db.clone(), log_db.clone(), config.clone());
     StreamRegistry::builder(inbox_db.clone(), log_db.clone())
-        .register::<ChatState, _>(service(&config.chat), egress.clone(), config.chat)
-        .register::<PixelMapState, _>(service(&config.pixel_map), egress.clone(), config.pixel_map)
+        .register::<ChatState, _>(service(&config.chat), egress.clone(), config.chat)?
+        .register::<PixelMapState, _>(service(&config.pixel_map), egress.clone(), config.pixel_map)?
         .build()
 }

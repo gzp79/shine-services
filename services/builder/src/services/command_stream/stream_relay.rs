@@ -159,12 +159,12 @@ where
     }
 
     /// One read of the inbox from the read position. A failure that may pass, like Redis being out for a
-    /// moment, is tried again with growing waits, at most `inbox_max_retries` times, so the subscribers are
+    /// moment, is tried again with growing waits, at most `inbox.max_retries` times, so the subscribers are
     /// not dropped for it. The read changes nothing here until it succeeds, so repeating it is safe.
     async fn poll_inbox(&self, limit: usize) -> Result<InboxBatch, CommandStreamError> {
-        ExponentialBackoff::new(self.config.inbox_retry_min_delay, self.config.inbox_retry_max_delay)
+        ExponentialBackoff::new(self.config.inbox.retry_min_delay, self.config.inbox.retry_max_delay)
             .retry_if(
-                self.config.inbox_max_retries,
+                self.config.inbox.max_retries,
                 |result: &Result<InboxBatch, CommandStreamError>| result.as_ref().is_err_and(|err| err.is_transient()),
                 |retries| async move {
                     let result = self.inbox.poll(&self.stream_id, &self.read_index, limit).await;
@@ -197,7 +197,7 @@ where
         if room == 0 {
             return Ok(false);
         }
-        let limit = self.config.inbox_poll_limit.min(room);
+        let limit = self.config.inbox.poll_limit.min(room);
         let started = Instant::now();
         let batch = self.poll_inbox(limit).await?;
         let metrics = stream_metrics();

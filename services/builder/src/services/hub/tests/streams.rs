@@ -127,7 +127,7 @@ async fn the_hub_sends_stream_messages_to_a_connection_by_its_id() {
 
 mod served {
     use super::*;
-    use crate::services::command_stream::StreamConfig;
+    use crate::services::command_stream::{StreamAccessConfig, StreamConfig};
     use shine_test::test;
     use std::time::Duration;
     use tokio::time::timeout;
@@ -135,7 +135,7 @@ mod served {
     async fn create_test_hub() -> TestHub {
         let stream_config = StreamConfig {
             worker_unload_grace: Duration::from_millis(20),
-            ..StreamConfig::quiet()
+            ..StreamConfig::test_default()
         };
         TestHub::from_env(TestHubOptions {
             with_streams: Some(stream_config),
@@ -399,6 +399,42 @@ mod served {
                 &id,
                 Uuid::new_v4(),
                 &TestMessage::new_chat_command("ghost"),
+            )
+            .await;
+        assert_eq!(result, Err(CommandFailure::NotSubscribed));
+    }
+
+    #[test(serial = "hub-service")]
+    async fn a_stream_outside_the_allow_list_is_refused_as_unauthorized() {
+        let mut test = TestHub::from_env(TestHubOptions {
+            with_streams: Some(StreamConfig {
+                access: StreamAccessConfig::AllowList { ids: vec!["open".to_string()] },
+                ..StreamConfig::test_default()
+            }),
+            ..TestHubOptions::default()
+        })
+        .await;
+        let user = Uuid::new_v4();
+        let (connection, _socket) = test.connect_ping(user, 32);
+        test.wait_all_commands().await;
+        let allowed = TestStreamId::new_chat_with("open");
+        let refused = TestStreamId::new_chat_with("closed");
+
+        assert_eq!(test.stream_subscribe(connection, user, &allowed).await, Ok(()));
+        assert_eq!(
+            test.stream_subscribe(connection, user, &refused).await,
+            Err(SubscribeFailure::Unauthorized)
+        );
+
+        // nothing was opened for the refused stream, so the connection cannot push to it either
+        let result = test
+            .hub
+            .send_stream_command(
+                connection,
+                user,
+                &refused,
+                Uuid::new_v4(),
+                &TestMessage::new_chat_command("no"),
             )
             .await;
         assert_eq!(result, Err(CommandFailure::NotSubscribed));

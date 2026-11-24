@@ -7,6 +7,8 @@ use thiserror::Error as ThisError;
 pub enum CommandStreamError {
     #[error("Stream not found")]
     StreamNotFound,
+    #[error("The user may not open the stream")]
+    Unauthorized,
     #[error("Too much contention appending to the stream")]
     Contention,
     #[error("Drifted from the persisted chain (head at version {})", .head.version)]
@@ -62,6 +64,9 @@ impl CommandStreamError {
 
     /// What a client is told when this is why it cannot subscribe.
     pub fn subscribe_failure(&self) -> SubscribeFailure {
-        SubscribeFailure::Failed
+        match self {
+            Self::Unauthorized => SubscribeFailure::Unauthorized,
+            _ => SubscribeFailure::Failed,
+        }
     }
 }

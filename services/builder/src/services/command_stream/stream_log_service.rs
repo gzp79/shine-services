@@ -60,15 +60,15 @@ impl<I: CommandInboxDb, L: CommandLogDb> StreamLogService<I, L> {
     }
 
     /// Runs a call to the log again, with growing waits, while it fails because the database is out of reach,
-    /// at most `log_max_retries` times, so a stream is not given up for an outage that passes. Only for calls
+    /// at most `log.max_retries` times, so a stream is not given up for an outage that passes. Only for calls
     /// that are safe to repeat. Any other error is returned at once.
     async fn retry<T, Fut>(&self, stream_id: &StreamId, mut call: impl FnMut() -> Fut) -> Result<T, CommandStreamError>
     where
         Fut: Future<Output = Result<T, CommandStreamError>>,
     {
-        ExponentialBackoff::new(self.config.log_retry_min_delay, self.config.log_retry_max_delay)
+        ExponentialBackoff::new(self.config.log.retry_min_delay, self.config.log.retry_max_delay)
             .retry_if(
-                self.config.log_max_retries,
+                self.config.log.max_retries,
                 |result: &Result<T, CommandStreamError>| result.as_ref().is_err_and(|err| err.is_transient()),
                 |retries| {
                     let attempt = call();
@@ -130,14 +130,14 @@ impl<I: CommandInboxDb, L: CommandLogDb> StreamLogService<I, L> {
         loop {
             let page = self
                 .log
-                .commands_after(stream_id, after, self.config.log_page_size)
+                .commands_after(stream_id, after, self.config.log.page_size)
                 .await?;
             let count = page.len() as i64;
             if let Some(last) = page.last() {
                 after = last.version;
             }
             commands.extend(page);
-            if count < self.config.log_page_size {
+            if count < self.config.log.page_size {
                 return Ok(commands);
             }
         }
@@ -176,7 +176,7 @@ impl<I: CommandInboxDb, L: CommandLogDb> StreamLogService<I, L> {
     pub async fn store_snapshot(&self, stream_id: &StreamId, snapshot: &StoredSnapshot) -> SnapshotOutcome {
         match self.log.try_store_snapshot(stream_id, snapshot).await {
             Ok(()) => {
-                if let Err(error) = self.log.prune(stream_id, self.config.log_keep_snapshots).await {
+                if let Err(error) = self.log.prune(stream_id, self.config.log.keep_snapshots).await {
                     tracing::warn!("[{stream_id}] Failed to prune the log: {error:#?}");
                 }
                 SnapshotOutcome::Stored

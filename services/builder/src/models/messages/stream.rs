@@ -117,7 +117,6 @@ pub enum CommandFailure {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SubscribeFailure {
     Failed,
-    /// The stream may not be subscribed to by this connection.
     Unauthorized,
 }
 
