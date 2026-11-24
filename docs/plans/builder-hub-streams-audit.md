@@ -37,7 +37,7 @@ Method: static reading only. Line numbers drift, treat them as pointers.
 | A1 | Low | authz | Access is by stream id only; no per-user rule, no re-check after subscribe, `any` is valid in prod config |
 | A6 | Low | authz | `Ping` has no role check (default is off) |
 | R2 | Low | availability | Hub command loop does Redis I/O inline and serially |
-| R7 | Medium | scalability | `SessionChecker` is sequential and extends the session TTL |
+| R7 | Low | scalability | `SessionChecker` extends the session TTL and revokes slowly (lookups are bounded-concurrent now) |
 | R9 | Low | correctness | Registry listener not awaited, not retried |
 | R10 | Low | correctness | `Connected` sent before registration |
 | R11 | Low | correctness | One close code (4000) for every drop; reason lost when queue is full |
@@ -158,15 +158,15 @@ Which streams may be opened is configured per kind (`streams.<kind>.access`, see
 
 `ConnectUser`, `DisconnectUser`, `DropConnection`, the registry change heartbeat and others (`hub_service.rs`) await Redis from the one loop that serializes every state mutation, so a slow Redis delays every connect and disconnect behind it. Each call is bounded by the connection string (`timeout` per command, `pool_timeout` for the checkout, which the hub shares with the HTTP session lookups, the heartbeat and the session checker), and what feeds the queue is bounded by the connection cap and the frame budgets ([Hub Load Protection](../services/builder/hub-load-protection.md)). Fix, if needed: set a short `pool_timeout` in the builder's `redisCns`, or give the hub its own small Redis pool, or move the registry writes off the loop (the in-memory map is authoritative locally; async write with retry).
 
-### R7. Session checker is sequential and extends the session TTL (Medium)
+### R7. Session checker extends the session TTL and is slow to revoke (Low, was Medium)
 
-- `tasks/session_checker.rs`: `get_current_user` is awaited per tracked connection, one after another. N connections at latency L take N*L per tick (10k * 2 ms = 20 s; 100k exceeds the interval).
-- While `on_tick` runs the `select!` in `connection_tracker.rs` does not drain the subscription, so lifecycle events pile up in the unbounded queue (R15).
+The lookups now run with bounded concurrency (`CHECK_CONCURRENCY` = 32 in `tasks/session_checker.rs`, so a tick takes about N*L/32 instead of N*L) and a Redis outage logs one warning per tick with a count instead of one per connection. What remains:
+
+- While `on_tick` runs the `select!` in `connection_tracker.rs` does not drain the subscription, so lifecycle events pile up in the unbounded queue (R15). Shorter ticks make this smaller, not gone.
 - A revoked session keeps its socket for at least `session_check` (900 s in prod) plus tick time, and stream authorization is not re-evaluated.
 - `get_current_user` also extends the session TTL (`crates/shine-infra/src/session/current_user_service.rs`); for a WebSocket-only user the checker is the only keepalive, so `session_check` must stay well below `sessionTtl` (1800 s).
-- A warning is logged per connection per tick (O2).
 
-Fix: bounded concurrency (`buffer_unordered(32)`) or a batched lookup; revoke by event (publish on logout). Cheaper check: a read-only existence check in `CurrentUserService` (`EXISTS` on the sentinel key, one pipeline per tick) without the data read or `EXPIRE`; keep the TTL refresh on the normal request path.
+Fix, if needed: revoke by event (publish on logout), or a batched lookup (one pipeline per tick). The longer-term plan, a mass check through Lua scripts without the sentinel, is in [session-redis-lua.md](session-redis-lua.md). A check that does not extend the lifetime would stop the checker keeping WebSocket-only sessions alive, which is a product decision, not only a cost fix (`validate_many` in the Lua plan takes an `extend` flag for it).
 
 ### R9. Registry listener (Low)
 
@@ -238,7 +238,7 @@ A socket over its frame budget asks the hub to drop it (`request_drop(RateLimite
 
 | ID | Finding | Where | Fix |
 |---|---|---|---|
-| O2 | **Info-level spans and logs on hot paths.** A per-command hub span with the user id, registry spans, and a session-checker warning per connection per tick. | `hub_service.rs`; `redis_hub_registry.rs`; `tasks/session_checker.rs` | `debug`; log once per tick with a count. |
+| O2 | **Info-level spans and logs on hot paths.** A per-command hub span with the user id and registry spans. | `hub_service.rs`; `redis_hub_registry.rs` | `debug`. |
 | O5 | **Registry notices enqueue a command for users the instance does not hold.** | `redis_hub_connection_db.rs`; `hub_service.rs` | Filter in the listener. |
 | O6 | **Protocol gaps.** No version or connection id in `connected`; bad JSON, binary frames and bad stream ids are dropped silently; no close after repeated invalid frames; OpenAPI documents only `OK`. | `routes/ws/message.rs`; `connect.rs` | Document the schema; consider a close after repeated refusals. |
 
