@@ -121,3 +121,23 @@ fn the_other_stream_messages_have_their_own_frames() {
         json!({"type": "streamSubscribeFailed", "streamId": "chat:s", "reason": "failed"})
     );
 }
+
+#[test]
+fn a_rate_limited_refusal_names_its_reason() {
+    let command_id = Uuid::new_v4();
+    assert_eq!(
+        frame(StreamMessage::CommandFailed {
+            stream_id: TestStreamId::new_chat_with("s"),
+            command_id,
+            reason: CommandFailure::RateLimited
+        }),
+        json!({"type": "streamNack", "streamId": "chat:s", "commandId": command_id, "reason": "rateLimited"})
+    );
+    assert_eq!(
+        frame(StreamMessage::SubscribeFailed {
+            stream_id: TestStreamId::new_chat_with("s"),
+            reason: SubscribeFailure::RateLimited
+        }),
+        json!({"type": "streamSubscribeFailed", "streamId": "chat:s", "reason": "rateLimited"})
+    );
+}

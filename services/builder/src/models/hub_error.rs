@@ -9,6 +9,8 @@ pub enum HubError {
     UserAlreadyConnected,
     #[error("Failed to send command to hub")]
     SendCommandFailed,
+    #[error("The hub registry did not answer in time")]
+    RegistryTimeout,
     #[error("Internal error")]
     Internal {
         #[source]
@@ -35,6 +37,9 @@ impl From<HubError> for Problem {
             HubError::UserAlreadyConnected => Problem::new(StatusCode::CONFLICT, "User already connected"),
             HubError::SendCommandFailed => {
                 Problem::new(StatusCode::INTERNAL_SERVER_ERROR, "Failed to send command to hub")
+            }
+            HubError::RegistryTimeout => {
+                Problem::service_unavailable().with_detail("The hub registry did not answer in time")
             }
             err @ HubError::Internal { .. } => Problem::internal_error_ty("hub-error")
                 .with_detail(err.to_string())

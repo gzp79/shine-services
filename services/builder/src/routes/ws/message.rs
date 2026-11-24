@@ -120,6 +120,7 @@ fn nack_reason(reason: CommandFailure) -> &'static str {
         CommandFailure::Invalid => "invalid",
         CommandFailure::Failed => "failed",
         CommandFailure::Busy => "busy",
+        CommandFailure::RateLimited => "rateLimited",
     }
 }
 
@@ -127,6 +128,7 @@ fn subscribe_failure(reason: SubscribeFailure) -> &'static str {
     match reason {
         SubscribeFailure::Failed => "failed",
         SubscribeFailure::Unauthorized => "unauthorized",
+        SubscribeFailure::RateLimited => "rateLimited",
     }
 }
 

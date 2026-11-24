@@ -32,8 +32,8 @@ pub enum DisconnectReason {
     SlowConsumer,
     /// The egress channel was closed without a disconnect.
     DeadChannel,
-    /// The connection pushed commands into a stream whose inbox stayed full.
-    Busy,
+    /// The client kept sending more frames than its budget allows.
+    RateLimited,
     /// The hub is shutting down.
     Shutdown,
 }
@@ -49,7 +49,7 @@ impl DisconnectReason {
             DisconnectReason::SessionInvalid => "session_invalid",
             DisconnectReason::SlowConsumer => "slow_consumer",
             DisconnectReason::DeadChannel => "dead_channel",
-            DisconnectReason::Busy => "busy",
+            DisconnectReason::RateLimited => "rate_limited",
             DisconnectReason::Shutdown => "shutdown",
         }
     }

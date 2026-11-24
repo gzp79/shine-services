@@ -12,8 +12,10 @@ use validator::Validate;
 #[serde(rename_all = "camelCase")]
 pub struct BuilderConfig {
     pub db: DBConfig,
+    #[validate(nested)]
     pub ws: WsConfig,
     #[serde(default = "HubConfig::defaults")]
+    #[validate(nested)]
     pub hub: HubConfig,
     #[serde(default)]
     #[validate(nested)]

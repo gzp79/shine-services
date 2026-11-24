@@ -49,14 +49,14 @@ const CLOSE_CODE_DROPPED: u16 = 4000;
 fn close_code(reason: DisconnectReason) -> u16 {
     match reason {
         DisconnectReason::Shutdown => close_code::AWAY,
+        DisconnectReason::RateLimited => close_code::POLICY,
         DisconnectReason::Client
         | DisconnectReason::Replaced
         | DisconnectReason::RegistryInactive
         | DisconnectReason::HeartbeatInactive
         | DisconnectReason::SessionInvalid
         | DisconnectReason::SlowConsumer
-        | DisconnectReason::DeadChannel
-        | DisconnectReason::Busy => CLOSE_CODE_DROPPED,
+        | DisconnectReason::DeadChannel => CLOSE_CODE_DROPPED,
     }
 }
 

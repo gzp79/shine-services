@@ -26,11 +26,12 @@ use crate::{
 };
 use futures::{stream, StreamExt};
 use serde::{Deserialize, Serialize};
-use shine_core::tokio::TaskSupervisor;
+use shine_core::{tokio::TaskSupervisor, validation::non_zero_duration};
 use shine_game::replica::StreamId;
 use shine_infra::{
     serde::{consts, duration},
     session::{CurrentUserService, SessionKey},
+    sync::RateLimit,
     telemetry::link_span,
 };
 use std::collections::VecDeque;
@@ -43,6 +44,7 @@ use tokio::{
 };
 use tracing::{info_span, Instrument};
 use uuid::Uuid;
+use validator::Validate;
 
 /// Point-in-time counts of hub state, for status reporting.
 #[derive(Clone, Debug)]
@@ -51,8 +53,8 @@ pub struct HubStats {
     pub subscribers: usize,
 }
 
-/// Configuration for the hub's periodic connection consumers.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+/// Configuration for the hub's periodic connection consumers and its load limits.
+#[derive(Clone, Debug, Serialize, Deserialize, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct HubConfig {
     #[serde(default = "duration::seconds::<300>", with = "duration::seconds")]
@@ -63,15 +65,34 @@ pub struct HubConfig {
     pub stream_shutdown_timeout: Duration,
     #[serde(default = "consts::bool::<false>")]
     pub ping_enabled: bool,
+    /// Longest a call to the hub connection registry may take.
+    #[serde(default = "duration::seconds::<2>", with = "duration::seconds")]
+    #[validate(custom(function = "non_zero_duration"))]
+    pub registry_timeout: Duration,
+    /// Sockets served at the same time, counted from the upgrade to the close.
+    #[serde(default = "consts::usize::<10000>")]
+    #[validate(range(min = 1))]
+    pub max_connections: usize,
+    /// Connects of one user.
+    #[serde(default = "HubConfig::default_connect_rate")]
+    #[validate(nested)]
+    pub connect_rate: RateLimit,
 }
 
 impl HubConfig {
+    const fn default_connect_rate() -> RateLimit {
+        RateLimit::new(5, 0.1)
+    }
+
     pub const fn defaults() -> Self {
         Self {
             heartbeat: duration::seconds::<300>(),
             session_check: duration::seconds::<900>(),
             stream_shutdown_timeout: duration::seconds::<10>(),
             ping_enabled: false,
+            registry_timeout: duration::seconds::<2>(),
+            max_connections: 10_000,
+            connect_rate: Self::default_connect_rate(),
         }
     }
 }
@@ -312,8 +333,8 @@ impl HubService {
     }
 
     /// Queues a command of the connection, which has to be subscribed to the stream. It does not go through
-    /// the hub's loop. The sender sees its command come back with its version, in the stream. A connection
-    /// that pushes into an inbox that stays full is dropped as busy.
+    /// the hub's loop. The sender sees its command come back with its version, in the stream. A push into an
+    /// inbox that stays full is refused as busy; the connection stays.
     pub async fn send_stream_command(
         &self,
         connection_id: Uuid,
@@ -332,12 +353,6 @@ impl HubService {
         };
         match result {
             Ok(()) => stream_metrics().command_queued(stream_id.kind()),
-            Err(CommandFailure::Busy) => {
-                stream_metrics().command_refused(stream_id.kind(), CommandFailure::Busy);
-                if let Err(err) = self.request_drop(user_id, connection_id, DisconnectReason::Busy) {
-                    tracing::warn!("[{user_id}] Failed to drop the busy connection (hub stopped): {err:#?}");
-                }
-            }
             Err(reason) => stream_metrics().command_refused(stream_id.kind(), reason),
         }
         result

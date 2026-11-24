@@ -109,8 +109,10 @@ pub enum CommandFailure {
     Invalid,
     /// The command could not be queued; it may or may not have been.
     Failed,
-    /// The inbox of the stream stayed full; the connection is dropped as busy.
+    /// The inbox of the stream stayed full; the command was not queued, the connection stays.
     Busy,
+    /// The connection sent more frames than its budget allows; the command was not queued.
+    RateLimited,
 }
 
 /// Why a connection could not be subscribed to a stream.
@@ -118,6 +120,7 @@ pub enum CommandFailure {
 pub enum SubscribeFailure {
     Failed,
     Unauthorized,
+    RateLimited,
 }
 
 /// A change of the stream subscriptions of a connection, for the internal consumers of the hub bus. It

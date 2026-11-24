@@ -110,6 +110,7 @@ async fn every_drop_reason_maps_to_its_close_code() {
         (DisconnectReason::SlowConsumer, CLOSE_CODE_DROPPED),
         (DisconnectReason::DeadChannel, CLOSE_CODE_DROPPED),
         (DisconnectReason::Shutdown, close_code::AWAY),
+        (DisconnectReason::RateLimited, close_code::POLICY),
     ] {
         assert_eq!(
             forwarded(vec![dropped_event(reason)]).await,

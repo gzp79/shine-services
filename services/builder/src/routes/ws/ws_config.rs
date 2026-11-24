@@ -1,7 +1,10 @@
 use regex::bytes::Regex;
 use serde::{Deserialize, Serialize};
 use shine_core::{serde::default_from_serde, validation::non_zero_duration};
-use shine_infra::serde::{anchored, duration};
+use shine_infra::{
+    serde::{anchored, consts, duration},
+    sync::RateLimit,
+};
 use std::time::Duration;
 use validator::{Validate, ValidationError};
 
@@ -46,6 +49,39 @@ impl SocketTimeouts {
     }
 }
 
+/// What one socket may send. Every frame of the client costs a `frames` token, and a subscribe or an unsubscribe
+/// costs a `subscribes` token on top of it.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, Validate)]
+#[serde(rename_all = "camelCase")]
+pub struct SocketLimits {
+    #[serde(default = "SocketLimits::default_frames")]
+    #[validate(nested)]
+    pub frames: RateLimit,
+    #[serde(default = "SocketLimits::default_subscribes")]
+    #[validate(nested)]
+    pub subscribes: RateLimit,
+    /// Frames denied in a row before the socket is dropped.
+    #[serde(default = "consts::u32::<20>")]
+    #[validate(range(min = 1))]
+    pub violation_limit: u32,
+}
+
+impl Default for SocketLimits {
+    fn default() -> Self {
+        default_from_serde()
+    }
+}
+
+impl SocketLimits {
+    const fn default_frames() -> RateLimit {
+        RateLimit::new(60, 30.0)
+    }
+
+    const fn default_subscribes() -> RateLimit {
+        RateLimit::new(10, 2.0)
+    }
+}
+
 /// Raw WebSocket configuration loaded from config files.
 #[derive(Clone, Debug, Serialize, Deserialize, Validate)]
 #[serde(rename_all = "camelCase")]
@@ -58,6 +94,10 @@ pub struct WsConfig {
     #[serde(default)]
     #[validate(nested)]
     pub timeouts: SocketTimeouts,
+    /// What one socket may send.
+    #[serde(default)]
+    #[validate(nested)]
+    pub limits: SocketLimits,
 }
 
 impl WsConfig {

@@ -73,6 +73,7 @@ impl TestHub {
             session_check: options.session_check,
             stream_shutdown_timeout: Duration::from_secs(10),
             ping_enabled: options.ping_enabled,
+            ..HubConfig::defaults()
         };
 
         // URL_SAFE_NO_PAD: 86 'A' chars decode to 64 zero bytes, a valid cookie key for tests.
