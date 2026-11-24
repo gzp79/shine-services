@@ -63,7 +63,12 @@ export type StreamFrame =
     | { type: 'streamCheckpoint'; streamId: string; version: number; stateHash: string }
     | { type: 'streamReset'; streamId: string }
     | { type: 'streamUnsynced'; streamId: string }
-    | { type: 'streamNack'; streamId: string; commandId: string; reason: 'notSubscribed' | 'invalid' | 'failed' | 'busy' | 'rateLimited' }
+    | {
+          type: 'streamNack';
+          streamId: string;
+          commandId: string;
+          reason: 'notSubscribed' | 'invalid' | 'failed' | 'busy' | 'rateLimited';
+      }
     | {
           type: 'streamSubscribeFailed';
           streamId: string;
