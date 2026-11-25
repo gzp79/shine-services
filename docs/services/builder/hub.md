@@ -397,7 +397,7 @@ A *control command* is the hub's own input (connect, disconnect, registry change
 | `services/builder/src/services/hub/control_command.rs` | `ControlCommand` enum — the loop's input vocabulary. |
 | `services/builder/src/services/hub/hub_gateway.rs` | `HubGateway`: delivery to the connections, `send_control` to the loop (the one place that stamps and counts), `StreamEgress` for the workers. |
 | `services/builder/src/services/hub/hub_loop.rs` | `HubLoop`: the command loop and everything only it does (`process`, registry changes, shutdown, `publish`). |
-| `services/builder/src/services/hub/hub_registry_client.rs` | `HubRegistryClient`: the hub's calls to the Redis registry, counted by operation. |
+| `services/builder/src/services/hub/hub_registry.rs` | `HubRegistry`: the hub's calls to the Redis registry, counted by operation. |
 | `services/builder/src/services/hub/hub_connections.rs` | Addressable connection registry (`register_connection`, `unregister_connection`); keeps each connection's `SocketSender`; dead-connection detection. |
 | `services/builder/src/services/hub/hub_subscribers.rs` | Internal lossless fan-out subscribers. |
 | `services/builder/src/services/hub/hub_status.rs` | Health provider reporting live connection/subscriber counts. |
@@ -415,8 +415,8 @@ A *control command* is the hub's own input (connect, disconnect, registry change
 | `client/web/src/engine/net/websocket-stream-hub.ts` | Close codes, backoff with jitter, reset after a sync, guarded socket creation. |
 | `client/web/src/experiments/pixel-map/index.ts` | Resync on connect, paints only while live, replaced and signed-out states, resubscribe backoff. |
 | `crates/shine-game/src/replica/client_stream.rs` | `StreamStatus::Rejected` for an `unauthorized` subscribe failure. |
-| `services/builder/src/repositories/hub_registry/hub_registry.rs` | `HubRegistry` trait — cross-instance connection contract. |
-| `services/builder/src/repositories/hub_registry/redis/redis_hub_registry.rs` | Redis implementation: SET/EXPIRE/DEL, CAS transactions, pub/sub. |
+| `services/builder/src/repositories/hub_registry/hub_connections.rs` | `HubConnections` trait — cross-instance connection contract. |
+| `services/builder/src/repositories/hub_registry/redis/redis_hub_connections.rs` | Redis implementation: SET/EXPIRE/DEL, CAS transactions, pub/sub. |
 | `services/builder/src/repositories/hub_registry/redis/redis_hub_connection_db.rs` | Pooled context factory; registry-change listener with self-origin filtering. |
 | `services/builder/src/app_config.rs`, `services/builder/src/app_state.rs` | Hub configuration (`heartbeat`, `session_check`, `ping_enabled`) and application wiring. |
 

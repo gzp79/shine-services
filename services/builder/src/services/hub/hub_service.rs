@@ -14,7 +14,7 @@ use crate::{
             hub_connections::Connections,
             hub_gateway::{ControlMessage, HubGateway},
             hub_loop::HubLoop,
-            hub_registry_service::HubRegistryService,
+            hub_registry::HubRegistry,
             hub_subscribers::Subscribers,
             socket_channel::SocketSender,
             tasks::{run_background_task, BackgroundJoinHandler, Heartbeat, SessionChecker, StreamDispatcher},
@@ -163,7 +163,7 @@ impl HubServiceBuilder {
 
         let session_service = session_service.ok_or(HubServiceBuilderError::MissingSessionService)?;
         let hub_registry = hub_registry.ok_or(HubServiceBuilderError::MissingHubRegistry)?;
-        let hub_registry = HubRegistryService::new(hub_registry);
+        let hub_registry = HubRegistry::new(hub_registry);
         let subscribers = Subscribers::new();
 
         // All consumer subscriptions must be registered before the command loop starts dispatching: the
@@ -230,7 +230,7 @@ impl HubServiceBuilder {
     }
 
     fn start_registry_listener(
-        hub_registry: HubRegistryService,
+        hub_registry: HubRegistry,
         gateway: HubGateway,
         supervisor: TaskSupervisor,
     ) -> JoinHandle<()> {

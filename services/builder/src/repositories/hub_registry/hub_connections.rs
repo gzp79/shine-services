@@ -8,7 +8,7 @@ pub struct HubConnection {
     pub connection_id: Uuid,
 }
 
-pub trait HubRegistry {
+pub trait HubConnections {
     /// Creates or replaces the active connection for the user with the given connection id.
     ///
     /// At most one active connection may exist per user.

@@ -8,7 +8,7 @@ use crate::{
         command_log::pg::PgCommandLogDb,
         hub_registry::{
             redis::{hub_connection_key, RedisHubConnectionDb},
-            HubConnectionDb, HubRegistry,
+            HubConnectionDb, HubConnections,
         },
     },
     services::{socket_channel, standard_registry, HubConfig, HubService, StreamConfig, StreamRegistry, StreamsConfig},

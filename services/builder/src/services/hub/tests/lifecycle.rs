@@ -1,9 +1,9 @@
 //! Deterministic edge cases of the connection lifecycle on one hub.
 
-use crate::services::hub::{control_command::ControlCommand, hub_registry_service::HubRegistryService};
+use crate::services::hub::{control_command::ControlCommand, hub_registry::HubRegistry};
 use crate::{
     models::messages::{DisconnectReason, HubEvent, HubMessage, TopicKey},
-    repositories::hub_registry::{HubConnection, HubConnectionDb, HubRegistry},
+    repositories::hub_registry::{HubConnection, HubConnectionDb, HubConnections},
     services::socket_channel,
     testing::{
         hub::{Lifecycle, TestHub, TestHubOptions, TestSession},
@@ -544,7 +544,7 @@ async fn batched_heartbeat_refreshes_active_and_reports_stale() {
             connection_id: Uuid::new_v4(),
         },
     ];
-    let registry = HubRegistryService::new(test.registry.clone());
+    let registry = HubRegistry::new(test.registry.clone());
     let mut stale = registry.heartbeat_connections(&requested).await.unwrap();
     stale.sort_by_key(|c| c.user_id);
     let mut expected = vec![requested[1], requested[2]];

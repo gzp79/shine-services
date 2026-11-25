@@ -4,7 +4,7 @@ use crate::{
     services::hub::{
         control_command::ControlCommand,
         hub_gateway::HubGateway,
-        hub_registry_service::HubRegistryService,
+        hub_registry::HubRegistry,
         tasks::{BackgroundTask, ConnectionTracker},
     },
 };
@@ -12,12 +12,12 @@ use crate::{
 /// Periodic consumer that refreshes the Redis TTL of every locally-tracked connection and
 /// disconnects any the registry no longer holds as active.
 pub struct Heartbeat {
-    hub_registry: HubRegistryService,
+    hub_registry: HubRegistry,
     gateway: HubGateway,
 }
 
 impl Heartbeat {
-    pub fn new(hub_registry: HubRegistryService, gateway: HubGateway) -> Self {
+    pub fn new(hub_registry: HubRegistry, gateway: HubGateway) -> Self {
         Self { hub_registry, gateway }
     }
 }

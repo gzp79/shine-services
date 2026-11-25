@@ -3,7 +3,7 @@ mod hub_connections;
 mod hub_gateway;
 mod hub_loop;
 mod hub_metrics;
-mod hub_registry_service;
+mod hub_registry;
 mod hub_service;
 mod hub_status;
 mod hub_subscribers;

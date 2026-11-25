@@ -8,7 +8,7 @@ use crate::{
             hub_connections::{Connections, UnregisteredConnection},
             hub_gateway::{ControlMessage, HubGateway},
             hub_metrics::hub_metrics,
-            hub_registry_service::HubRegistryService,
+            hub_registry::HubRegistry,
             hub_subscribers::Subscribers,
             tasks::BackgroundJoinHandler,
         },
@@ -33,7 +33,7 @@ const SHUTDOWN_REGISTRY_TIMEOUT: Duration = Duration::from_secs(5);
 pub struct HubLoop {
     gateway: HubGateway,
     subscribers: Subscribers,
-    hub_registry: HubRegistryService,
+    hub_registry: HubRegistry,
     stream_registry: Option<StreamRegistry<RedisCommandInboxDb, PgCommandLogDb>>,
     supervisor: TaskSupervisor,
 }
@@ -60,7 +60,7 @@ impl HubLoop {
         gateway: HubGateway,
         mut control_receiver: mpsc::UnboundedReceiver<ControlMessage>,
         subscribers: Subscribers,
-        hub_registry: HubRegistryService,
+        hub_registry: HubRegistry,
         stream_registry: Option<StreamRegistry<RedisCommandInboxDb, PgCommandLogDb>>,
         supervisor: TaskSupervisor,
         background_tasks: Vec<BackgroundJoinHandler>,

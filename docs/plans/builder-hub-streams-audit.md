@@ -195,15 +195,15 @@ Only `broadcast` checks topics; sockets lack the `Stream` topic yet receive stre
 
 ### R18. Unversioned Redis keys and channel (Low)
 
-A mixed-version deploy makes instances drop each other's users (`redis_hub_registry.rs`, `redis_command_inbox_db.rs`); keys such as `hub-connection:` and `cmd-inbox:` have no environment prefix. Fix: version the key and channel, prefix by environment, treat an unknown format as foreign. Related: L12.
+A mixed-version deploy makes instances drop each other's users (`redis_hub_connections.rs`, `redis_command_inbox_db.rs`); keys such as `hub-connection:` and `cmd-inbox:` have no environment prefix. Fix: version the key and channel, prefix by environment, treat an unknown format as foreign. Related: L12.
 
 ### R19. Single-primary Redis assumed, undocumented (Low)
 
-`MGET` over many keys and a keyspace `SCAN` (`redis_hub_registry.rs`). Fix: document it, or make the calls cluster-safe and drop the `SCAN`.
+`MGET` over many keys and a keyspace `SCAN` (`redis_hub_connections.rs`). Fix: document it, or make the calls cluster-safe and drop the `SCAN`.
 
 ### R20. Dead code (Low)
 
-`list_connections` and its `SCAN` are test-only; `UserAlreadyConnected` is never built; `request_disconnect` has no `is_drop` assert (`hub_registry.rs`, `redis_hub_registry.rs`, `models/hub_error.rs`, `hub_service.rs`). Fix: delete or `cfg(test)`, assert.
+`list_connections` and its `SCAN` are test-only; `UserAlreadyConnected` is never built; `request_disconnect` has no `is_drop` assert (`hub_registry.rs`, `redis_hub_connections.rs`, `models/hub_error.rs`, `hub_service.rs`). Fix: delete or `cfg(test)`, assert.
 
 ### R21. Per-connection serialization (Low)
 
@@ -223,7 +223,7 @@ The socket write, ping and idle timeouts exist; the listener itself sets no TCP 
 
 | ID | Finding | Where | Fix |
 |---|---|---|---|
-| O2 | **Info-level spans and logs on hot paths.** A per-command hub span with the user id and registry spans. | `hub_service.rs`; `redis_hub_registry.rs` | `debug`. |
+| O2 | **Info-level spans and logs on hot paths.** A per-command hub span with the user id and registry spans. | `hub_service.rs`; `redis_hub_connections.rs` | `debug`. |
 | O5 | **Registry notices enqueue a command for users the instance does not hold.** | `redis_hub_connection_db.rs`; `hub_service.rs` | Filter in the listener. |
 | O6 | **Protocol gaps.** No version or connection id in `connected`; bad JSON, binary frames and bad stream ids are dropped silently; no close after repeated invalid frames; OpenAPI documents only `OK`. | `routes/ws/message.rs`; `connect.rs` | Document the schema; consider a close after repeated refusals. |
 

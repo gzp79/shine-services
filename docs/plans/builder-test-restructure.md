@@ -35,7 +35,7 @@ services/builder/
     ├── command_stream.rs
     ├── command_stream/…       # worker, relay, registry, config, access
     ├── repositories.rs
-    └── repositories/…         # pg_command_log, redis_command_inbox, redis_hub_registry
+    └── repositories/…         # pg_command_log, redis_command_inbox, redis_hub_connections
 ```
 
 Only top-level `tests/*.rs` files are separate binaries, so 3 link steps instead of ~15.

@@ -1,5 +1,5 @@
 use crate::models::HubError;
-use crate::repositories::hub_registry::{redis::RedisHubConnectionDbContext, HubConnection, HubRegistry};
+use crate::repositories::hub_registry::{redis::RedisHubConnectionDbContext, HubConnection, HubConnections};
 use redis::{AsyncCommands, Script};
 use shine_infra::db::redis::RedisError;
 use std::sync::LazyLock;
@@ -106,7 +106,7 @@ impl RedisHubConnectionDbContext<'_> {
     }
 }
 
-impl HubRegistry for RedisHubConnectionDbContext<'_> {
+impl HubConnections for RedisHubConnectionDbContext<'_> {
     #[instrument(level = "info", skip_all, fields(user_id = %user_id, ws.connection_id = %connection_id))]
     async fn create_connection(&mut self, user_id: Uuid, connection_id: Uuid) -> Result<(), HubError> {
         let key = self.to_redis_key(user_id);
@@ -202,5 +202,5 @@ impl HubRegistry for RedisHubConnectionDbContext<'_> {
 }
 
 #[cfg(test)]
-#[path = "redis_hub_registry_test.rs"]
-mod redis_hub_registry_test;
+#[path = "redis_hub_connections_test.rs"]
+mod redis_hub_connections_test;

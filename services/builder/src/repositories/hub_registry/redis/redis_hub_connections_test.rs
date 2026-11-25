@@ -2,7 +2,7 @@
 
 use crate::repositories::hub_registry::{
     redis::{hub_connection_key, RedisHubConnectionDb},
-    HubConnection, HubConnectionDb, HubRegistry,
+    HubConnection, HubConnectionDb, HubConnections,
 };
 use shine_infra_testing::db::redis::TestRedis;
 use shine_test::test;

@@ -1,18 +1,18 @@
 use crate::{
     models::HubError,
-    repositories::hub_registry::{redis::RedisHubConnectionDb, HubConnection, HubConnectionDb, HubRegistry},
+    repositories::hub_registry::{redis::RedisHubConnectionDb, HubConnection, HubConnectionDb, HubConnections},
     services::hub::hub_metrics::hub_metrics,
 };
 use uuid::Uuid;
 
 /// The hub's calls to the cross-instance registry of connections, in Redis. Every failed call is counted in the
-/// registry error counter by operation. It is a cheap handle: the command loop and the hub service hold one each.
+/// registry error counter by operation. It is a cheap handle: the command loop and the heartbeat hold one each.
 #[derive(Clone)]
-pub struct HubRegistryService {
+pub struct HubRegistry {
     db: RedisHubConnectionDb,
 }
 
-impl HubRegistryService {
+impl HubRegistry {
     pub fn new(db: RedisHubConnectionDb) -> Self {
         Self { db }
     }
