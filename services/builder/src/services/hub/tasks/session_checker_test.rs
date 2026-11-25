@@ -5,7 +5,7 @@ use ring::rand::SystemRandom;
 use shine_test::test;
 use std::{
     sync::atomic::{AtomicUsize, Ordering},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 fn connections(count: usize) -> Vec<(Uuid, Uuid, SessionKey)> {

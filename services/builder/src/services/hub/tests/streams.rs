@@ -2,8 +2,10 @@
 //! the connection's lifecycle, and it reaches the internal subscribers only.
 
 use crate::{
-    models::messages::{CommandFailure, HubEvent, HubMessage, StreamEvent, StreamMessage, SubscribeFailure, TopicKey},
-    services::command_stream::StreamEgress,
+    models::messages::{
+        CommandFailure, DisconnectReason, HubEvent, HubMessage, StreamEvent, StreamMessage, SubscribeFailure, TopicKey,
+    },
+    services::{command_stream::StreamEgress, hub::control_command::ControlCommand},
     testing::{
         command_stream::TestStreamId,
         hub::{TestEgress, TestHub, TestHubOptions},
@@ -38,10 +40,16 @@ async fn a_subscribe_reaches_the_internal_subscribers_and_never_the_sockets() {
     let (connection, mut socket) = test.connect(Uuid::new_v4(), 8, vec![TopicKey::Hub, TopicKey::Ping], None);
 
     test.hub
-        .request_stream_subscribe(connection, TestStreamId::new_chat_with("s1"))
+        .send_control(ControlCommand::SubscribeStream {
+            connection_id: connection,
+            stream_id: TestStreamId::new_chat_with("s1"),
+        })
         .unwrap();
     test.hub
-        .request_stream_unsubscribe(connection, TestStreamId::new_chat_with("s1"))
+        .send_control(ControlCommand::UnsubscribeStream {
+            connection_id: connection,
+            stream_id: TestStreamId::new_chat_with("s1"),
+        })
         .unwrap();
     test.wait_all_commands().await;
 
@@ -61,10 +69,16 @@ async fn a_subscribe_of_a_connection_that_is_not_registered_is_ignored() {
     let mut internal = test.hub.subscribe(vec![TopicKey::Stream]).await;
 
     test.hub
-        .request_stream_subscribe(Uuid::new_v4(), TestStreamId::new_chat_with("s1"))
+        .send_control(ControlCommand::SubscribeStream {
+            connection_id: Uuid::new_v4(),
+            stream_id: TestStreamId::new_chat_with("s1"),
+        })
         .unwrap();
     test.hub
-        .request_stream_unsubscribe(Uuid::new_v4(), TestStreamId::new_chat_with("s1"))
+        .send_control(ControlCommand::UnsubscribeStream {
+            connection_id: Uuid::new_v4(),
+            stream_id: TestStreamId::new_chat_with("s1"),
+        })
         .unwrap();
     test.wait_all_commands().await;
 
@@ -79,12 +93,20 @@ async fn a_subscribe_is_ordered_with_the_lifecycle_of_its_connection() {
     let (connection, _socket) = test.connect_ping(user, 8);
 
     test.hub
-        .request_stream_subscribe(connection, TestStreamId::new_chat_with("s1"))
+        .send_control(ControlCommand::SubscribeStream {
+            connection_id: connection,
+            stream_id: TestStreamId::new_chat_with("s1"),
+        })
         .unwrap();
-    test.hub.request_disconnection(user, connection).unwrap();
+    test.hub
+        .request_disconnect(user, connection, DisconnectReason::Client)
+        .unwrap();
     // Too late: the connection is gone.
     test.hub
-        .request_stream_subscribe(connection, TestStreamId::new_chat_with("s2"))
+        .send_control(ControlCommand::SubscribeStream {
+            connection_id: connection,
+            stream_id: TestStreamId::new_chat_with("s2"),
+        })
         .unwrap();
     test.wait_all_commands().await;
 
@@ -369,7 +391,7 @@ mod served {
             locker.batch_execute("COMMIT;").await.unwrap();
         });
 
-        test.hub.request_shutdown().unwrap();
+        test.hub.send_control(ControlCommand::Shutdown).unwrap();
         test.wait_shutdown_complete().await;
 
         // No waiting for the log: shutdown complete is the promise that the command is there, which can
@@ -394,7 +416,9 @@ mod served {
         let streams = test.stream_registry.unwrap().clone();
         assert_eq!(streams.worker_count(), 1);
 
-        test.hub.request_disconnection(user, connection).unwrap();
+        test.hub
+            .request_disconnect(user, connection, DisconnectReason::Client)
+            .unwrap();
 
         timeout(Duration::from_secs(5), async {
             while streams.worker_count() != 0 {
@@ -496,7 +520,9 @@ mod served {
         test.stream_subscribe(connection, user, &id).await.unwrap();
         next_stream_message(&mut socket).await;
 
-        test.hub.request_disconnection(user, connection).unwrap();
+        test.hub
+            .request_disconnect(user, connection, DisconnectReason::Client)
+            .unwrap();
         test.wait_all_commands().await;
 
         let result = test

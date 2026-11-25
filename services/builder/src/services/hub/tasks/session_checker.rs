@@ -1,9 +1,14 @@
-use super::connection_tracker::{spawn_connection_loop, ConnectionConsumer, ConnectionTracker};
-use crate::{models::messages::DisconnectReason, services::HubService};
+use crate::{
+    models::messages::DisconnectReason,
+    services::hub::{
+        control_command::ControlCommand,
+        hub_gateway::HubGateway,
+        tasks::{BackgroundTask, ConnectionTracker},
+    },
+};
 use futures::{stream, StreamExt};
 use shine_infra::session::{CurrentUserService, SessionKey, UserSessionError};
-use std::{future::Future, sync::Arc, time::Duration};
-use tokio::task::JoinHandle;
+use std::{future::Future, sync::Arc};
 use uuid::Uuid;
 
 /// Session lookups in flight at once. The lookups are independent Redis round trips, a sequential pass
@@ -14,25 +19,16 @@ const CHECK_CONCURRENCY: usize = 32;
 /// targeted disconnect on expiry.
 pub struct SessionChecker {
     session_service: Arc<CurrentUserService>,
-    hub_service: HubService,
+    gateway: HubGateway,
 }
 
 impl SessionChecker {
-    /// Starts the session checker on its own connection loop.
-    pub async fn start(
-        service: HubService,
-        session_service: Arc<CurrentUserService>,
-        interval: Duration,
-    ) -> JoinHandle<()> {
-        let consumer = SessionChecker {
-            session_service,
-            hub_service: service.clone(),
-        };
-        spawn_connection_loop(&service, interval, consumer).await
+    pub fn new(session_service: Arc<CurrentUserService>, gateway: HubGateway) -> Self {
+        Self { session_service, gateway }
     }
 }
 
-impl ConnectionConsumer for SessionChecker {
+impl BackgroundTask for SessionChecker {
     #[tracing::instrument(level = "debug", name = "hub session check", skip_all)]
     async fn on_tick(&mut self, tracker: &ConnectionTracker) {
         let connections: Vec<_> = tracker
@@ -58,10 +54,12 @@ impl ConnectionConsumer for SessionChecker {
                     tracing::info!("[{user_id}] session-invalid ({err}); requesting hub disconnect");
                     // Target the exact connection we validated. If the user reconnected with a new
                     // connection meanwhile, the hub ignores this stale id and keeps the fresh session.
-                    if let Err(err) =
-                        self.hub_service
-                            .request_drop(user_id, connection_id, DisconnectReason::SessionInvalid)
-                    {
+                    let command = ControlCommand::DisconnectUser {
+                        user_id,
+                        connection_id,
+                        reason: DisconnectReason::SessionInvalid,
+                    };
+                    if let Err(err) = self.gateway.send_control(command) {
                         tracing::error!("[{user_id}] Failed to send expiry disconnect command: {err:#?}");
                     }
                 }

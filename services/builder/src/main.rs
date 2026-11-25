@@ -46,10 +46,9 @@ impl WebApplication for Application {
 
         let hub_service = state.hub_service().clone();
         context.add_shutdown_hook(move || async move {
-            if let Err(err) = hub_service.request_shutdown() {
+            if let Err(err) = hub_service.shutdown().await {
                 tracing::warn!("Failed to send hub shutdown command from shutdown hook: {err:#?}");
             }
-            hub_service.wait_shutdown_complete().await;
         });
 
         *router = router.clone().nest(&format!("/{}", Self::AppConfig::NAME), ws_routes());

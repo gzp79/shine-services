@@ -285,7 +285,7 @@ async fn a_forced_drop_and_a_shutdown_close_the_sockets_with_their_reason() {
     let other = Client::open(&mut test, other_user).await;
 
     test.hub
-        .request_drop(
+        .request_disconnect(
             dropped_user,
             dropped_client.connection_id,
             DisconnectReason::SessionInvalid,
@@ -296,9 +296,8 @@ async fn a_forced_drop_and_a_shutdown_close_the_sockets_with_their_reason() {
         [close(CLOSE_CODE_SESSION_INVALID, "session_invalid")]
     );
 
-    test.hub.request_shutdown().unwrap();
+    test.hub.shutdown().await.unwrap();
     assert_eq!(other.finished().await, [close(close_code::AWAY, "shutdown")]);
-    test.wait_shutdown_complete().await;
 
     // Once the hub is gone a new socket cannot register, and is closed right away.
     let (to_server, server_rx) = socket::unbounded::<Result<WsMessage, Infallible>>();

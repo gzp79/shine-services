@@ -262,9 +262,11 @@ async fn serve_socket<S, R, E>(
                         // The socket ends its own connection: the close frame must not wait for the hub loop, which
                         // may be stalled. The hub's own close for the drop finds the reason set.
                         end_connection(&replies, DisconnectReason::RateLimited);
-                        if let Err(err) =
-                            hub_service.request_drop(current_user_id, connection_id, DisconnectReason::RateLimited)
-                        {
+                        if let Err(err) = hub_service.request_disconnect(
+                            current_user_id,
+                            connection_id,
+                            DisconnectReason::RateLimited,
+                        ) {
                             tracing::info!("[{current_user_id}] Failed to drop the socket (hub stopped): {err:#?}");
                         }
                         break;
@@ -579,7 +581,7 @@ fn open_connection(
     socket_sender: SocketSender,
 ) -> Option<Uuid> {
     link_span(&Span::current(), span_context);
-    match hub_service.request_connection(user_id, session_key, socket_sender, vec![TopicKey::Hub, TopicKey::Ping]) {
+    match hub_service.request_connect(user_id, session_key, socket_sender, vec![TopicKey::Hub, TopicKey::Ping]) {
         Ok(connection_id) => {
             Span::current().record("ws.connection_id", display(connection_id));
             Some(connection_id)
@@ -600,7 +602,7 @@ fn open_connection(
     fields(enduser.id = %user_id, ws.connection_id = %connection_id)
 )]
 fn close_connection(hub_service: &HubService, user_id: Uuid, connection_id: Uuid) {
-    if let Err(err) = hub_service.request_disconnection(user_id, connection_id) {
+    if let Err(err) = hub_service.request_disconnect(user_id, connection_id, DisconnectReason::Client) {
         tracing::info!("[{user_id}] Failed to send disconnect command (hub stopped): {err:#?}");
     }
 }

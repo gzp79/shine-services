@@ -1,4 +1,5 @@
 use crate::models::messages::{HubMessage, ToTopic, TopicKey};
+use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 
 struct Subscriber {
@@ -8,9 +9,9 @@ struct Subscriber {
 
 /// The internal, lossless fan-out subscribers (heartbeat, session checker). Each receives every
 /// message whose topic it subscribed to.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Subscribers {
-    subscribers: RwLock<Vec<Subscriber>>,
+    subscribers: Arc<RwLock<Vec<Subscriber>>>,
 }
 
 impl Subscribers {
@@ -18,9 +19,15 @@ impl Subscribers {
         Self::default()
     }
 
-    pub async fn subscribe(&self, topics: Vec<TopicKey>, tx: mpsc::UnboundedSender<HubMessage>) {
-        let mut subscribers = self.subscribers.write().await;
-        subscribers.push(Subscriber { topics, tx });
+    /// Subscribes to the topics on an unbounded, lossless channel.
+    pub async fn subscribe(&self, topics: Vec<TopicKey>) -> mpsc::UnboundedReceiver<HubMessage> {
+        let (tx, rx) = mpsc::unbounded_channel();
+        self.subscribers.write().await.push(Subscriber { topics, tx });
+        rx
+    }
+
+    pub async fn subscription_count(&self) -> usize {
+        self.subscribers.read().await.len()
     }
 
     /// Delivers to every subscriber whose topic set includes this message's topic, pruning any
@@ -44,11 +51,6 @@ impl Subscribers {
     /// Removes every subscriber, closing their channels.
     pub async fn clear(&self) {
         self.subscribers.write().await.clear();
-    }
-
-    /// Number of current internal subscribers, for status reporting.
-    pub async fn len(&self) -> usize {
-        self.subscribers.read().await.len()
     }
 }
 

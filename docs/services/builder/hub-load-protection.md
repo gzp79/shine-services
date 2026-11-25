@@ -33,13 +33,13 @@ flowchart LR
     C -- "GET /api/connect: connect()" --> A
     A -- "Ok(AdmissionPermit): on_upgrade, serve_socket" --> F
     A -- "Err(AdmissionError): 429 or 503" --> X
-    F -- "Verdict::Allow, frame is a subscribe or unsubscribe: ControlQueue::send" --> Q
+    F -- "Verdict::Allow, frame is a subscribe or unsubscribe: HubGateway::send_control" --> Q
     F -- "Verdict::Allow, frame is a stream command" --> S
     S -- "StreamRegistry::push" --> B
     B -- "room: queued" --> I
     B -- "timeout: Err(Busy), nack busy, connection stays" --> X
     F -- "Verdict::Deny, Verdict::Close" --> X
-    IN -- "ControlQueue::send" --> Q
+    IN -- "HubGateway::send_control" --> Q
     Q -- "process()" --> L
 ```
 

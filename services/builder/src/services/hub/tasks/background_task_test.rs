@@ -17,7 +17,7 @@ struct Probe {
     tx: mpsc::UnboundedSender<usize>,
 }
 
-impl ConnectionConsumer for Probe {
+impl BackgroundTask for Probe {
     async fn on_tick(&mut self, tracker: &ConnectionTracker) {
         let _ = self.tx.send(tracker.connections().len());
     }
@@ -27,7 +27,7 @@ impl ConnectionConsumer for Probe {
 async fn loop_feeds_current_connections_to_consumer() {
     let (sub_tx, sub_rx) = mpsc::unbounded_channel();
     let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
-    tokio::spawn(run_connection_loop(
+    tokio::spawn(background_task_loop(
         sub_rx,
         Duration::from_millis(5),
         None,
@@ -53,7 +53,7 @@ struct Rewaking {
     tx: mpsc::UnboundedSender<usize>,
 }
 
-impl ConnectionConsumer for Rewaking {
+impl BackgroundTask for Rewaking {
     async fn on_tick(&mut self, tracker: &ConnectionTracker) {
         self.wake.notify_one();
         let _ = self.tx.send(tracker.connections().len());
@@ -67,7 +67,7 @@ async fn steady_wakes_do_not_starve_lifecycle_events() {
     let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
     let wake = Arc::new(Notify::new());
     // No periodic tick within the test: only wakes drive the consumer.
-    tokio::spawn(run_connection_loop(
+    tokio::spawn(background_task_loop(
         sub_rx,
         Duration::from_secs(3600),
         Some(wake.clone()),

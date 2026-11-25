@@ -2,7 +2,7 @@
 
 Non-SDP plan. Not kept in sync with the code.
 
-Cleanup of the builder hub (`services/builder/src/services/hub`) after the close-reason work ([Hub](../services/builder/hub.md)): one place that delivers to connections and reports dead ones, one removal path for dead connections, and `HubService` that does not store the same state twice. Nothing here is implemented.
+Cleanup of the builder hub (`services/builder/src/services/hub`) after the close-reason work ([Hub](../services/builder/hub.md)): one place that delivers to connections and reports dead ones, one removal path for dead connections, and `HubService` that does not store the same state twice. Implemented: the gateway, `HubLoop` (`HubLoop::start` is the command loop's start), the registry client and the renames. The description below is the plan as written; [Hub](../services/builder/hub.md) describes the result.
 
 **Paths** are relative to `services/builder/src/services/hub/` unless they start with `services/`, `docs/` or `crates/`.
 
@@ -58,10 +58,10 @@ impl HubGateway {
     pub fn connection_count(&self) -> usize;
 
     // The one place that stamps the span and the time and counts the queue depth.
-    pub fn request(&self, command: ControlCommand) -> Result<(), HubError>;
+    pub fn send_control(&self, command: ControlCommand) -> Result<(), HubError>;
 }
 
-impl StreamEgress for HubGateway { /* send -> send_to_connection, notify_failed -> request(StreamFailed) */ }
+impl StreamEgress for HubGateway { /* send -> send_to_connection, notify_failed -> send_control(StreamFailed) */ }
 ```
 
 - `HubService::send_to_*`, `broadcast` and `send_control` delegate to it; the `request_*` methods only build their `ControlCommand`.
@@ -87,17 +87,17 @@ The command loop moves out of `HubService`, which is large (`process` and its he
 | Holds | Notes |
 |---|---|
 | The control receiver, the shutdown signalling, `process` and its helpers | exclusive to the loop |
-| The writer side of `Connections` | the gateway holds the other reference, for sends; `HubService` holds neither |
+| Nothing of `Connections` itself | the gateway owns them and hands the loop a crate-private reference, so the loop is the only writer by convention; `HubService` has none |
 | `subscribers`, `hub_registry`, `stream_registry` | shared with `HubService` (`subscribe`, the heartbeat task, `subscribe_stream` and `send_stream_command`) |
 
 `HubService` keeps the gateway, admission, the shared registries and `subscribers`, the supervisor and the ping flag. `start_dispatcher` becomes the loop's start (`start_command_loop`). The value of this step is mostly file size and clarity; the double storage is already gone after the gateway step.
 
 ## Steps
 
-1. Gateway: add `HubGateway`, move delivery and `request` into it, delete `HubStreamEgress`, `drop_dead`, `ControlQueue` and the second `StreamEgress` impl. Shrink `publish`.
+1. Gateway: add `HubGateway`, move delivery and `send_control` into it, delete `HubStreamEgress`, `drop_dead`, `ControlQueue` and the second `StreamEgress` impl. Shrink `publish`.
 2. Rename `start_dispatcher` to `start_command_loop`.
 3. `HubLoop`, if `hub_service.rs` is still hard to navigate.
-4. Naming, any time (each is a rename): `Connections` to `LocalConnections`, `DeadConnection` to `FailedSend`, `hub_command.rs` to `control_command.rs`, `request_disconnection` and `request_drop` to one `request_disconnect(reason)`, `RemovedConnection` to `UnregisteredConnection`.
+4. Naming, any time (each is a rename): `DeadConnection` to `FailedSend`, `hub_command.rs` to `control_command.rs`, `request_disconnection` and `request_drop` to one `request_disconnect(reason)`, `RemovedConnection` to `UnregisteredConnection`.
 
 ## Checks and open points
 

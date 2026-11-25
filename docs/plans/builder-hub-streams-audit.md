@@ -40,7 +40,6 @@ Method: static reading only. Line numbers drift, treat them as pointers.
 | R7 | Low | scalability | `SessionChecker` extends the session TTL and revokes slowly (lookups are bounded-concurrent now) |
 | R9 | Low | correctness | Registry listener not awaited, not retried |
 | R10 | Low | correctness | `Connected` sent before registration |
-| R11 | Low | correctness | One close code (4000) for every drop; reason lost when queue is full |
 | R12 | Low | robustness | No drop guard for a cancelled socket task |
 | R13 | Low | perf | Lifecycle events broadcast to every socket |
 | R15 | Low | correctness | Tracker tick starves lifecycle events |
@@ -52,7 +51,6 @@ Method: static reading only. Line numbers drift, treat them as pointers.
 | R21 | Low | perf | Per-connection JSON/base64 serialization |
 | R22 | Low | design | Raw `user_id` in commands |
 | R23 | Low | resource leak | No TCP keepalive / user timeout on the ws listener |
-| R24 | Low | lifecycle | The 1008 close frame of a budget drop is lost when the hub loop is stalled |
 | O2 | Low | logging | Info-level spans/logs on hot paths |
 | O5 | Low | perf | Registry notices enqueue commands for users the instance does not hold |
 | O6 | Low | protocol | Protocol gaps (no version/connection id, silent drops, OpenAPI) |
@@ -175,17 +173,13 @@ Fix, if needed: revoke by event (publish on logout), or a batched lookup (one pi
 
 `connect.rs` sends `Connected` right after queueing `ConnectUser`. If `create_registry_connection` fails, the command is dropped, `tx` closes and the client sees `Connected` then an unexplained close. Fix: have the hub send `Connected` once registered, or a reasoned close on failure.
 
-### R11. One close code for every drop; close reason lost (Low)
-
-`hub_connections.rs` sends the final `UserDisconnected` with `try_send`; for `SlowConsumer` (queue full by definition) it always fails, so the client gets `Close(None)`. All reasons except `Shutdown` share code 4000, so a client cannot tell `Replaced` from an error (reconnect ping-pong between two tabs). Fix: carry the reason in a side channel (`oneshot`/watch); distinct 4xxx codes: replaced (do not reconnect), session invalid (re-authenticate), transient (back off). See C5.
-
 ### R12. No drop guard (Low)
 
 A cancelled socket task (the `serve_socket` future dropped) leaves its entry registered (`connect.rs`). Fix: a guard that requests disconnection.
 
 ### R13. Lifecycle events fan out to every socket (Low)
 
-`connect.rs` subscribes each socket to `TopicKey::Hub` but `event_to_wire_message` drops hub events; the socket only needs its own disconnect, already delivered by `RemovedConnection::notify`. Every connect/disconnect costs a read-lock scan and N `try_send`s and uses the same 1000-slot queue that decides `SlowConsumer` eviction; a connect storm is O(N^2). `UserConnected` also carries the session key. Fix: do not subscribe sockets to `TopicKey::Hub`; keep the session key out of the broadcast.
+`connect.rs` subscribes each socket to `TopicKey::Hub` but `event_to_wire_message` drops hub events; the socket only needs its own disconnect, already delivered by the close reason of `UnregisteredConnection::close`. Every connect/disconnect costs a read-lock scan and N `try_send`s and uses the same 1000-slot queue that decides `SlowConsumer` eviction; a connect storm is O(N^2). `UserConnected` also carries the session key. Fix: do not subscribe sockets to `TopicKey::Hub`; keep the session key out of the broadcast.
 
 ### R15. Tracker tick starves lifecycle events (Low)
 
@@ -209,7 +203,7 @@ A mixed-version deploy makes instances drop each other's users (`redis_hub_regis
 
 ### R20. Dead code (Low)
 
-`list_connections` and its `SCAN` are test-only; `UserAlreadyConnected` is never built; `request_drop` has no `is_drop` assert (`hub_registry.rs`, `redis_hub_registry.rs`, `models/hub_error.rs`, `hub_service.rs`). Fix: delete or `cfg(test)`, assert.
+`list_connections` and its `SCAN` are test-only; `UserAlreadyConnected` is never built; `request_disconnect` has no `is_drop` assert (`hub_registry.rs`, `redis_hub_registry.rs`, `models/hub_error.rs`, `hub_service.rs`). Fix: delete or `cfg(test)`, assert.
 
 ### R21. Per-connection serialization (Low)
 
@@ -222,10 +216,6 @@ Every command carries the sender's raw `user_id` (`routes/ws/message.rs`); user 
 ### R23. No TCP keepalive / user timeout on the ws listener (Low)
 
 The socket write, ping and idle timeouts exist; the listener itself sets no TCP keepalive or user timeout, and the `sendDrain` abort has no test. Fix: set them on the accepted socket.
-
-### R24. The close frame of a budget drop needs the hub loop (Low)
-
-A socket over its frame budget asks the hub to drop it (`request_drop(RateLimited)`, `connect.rs`) and ends its receive task. The 1008 close frame is written by the send task only once the hub loop has handled the drop and queued `UserDisconnected` on the egress channel. If the loop is stalled for longer than `send_drain` (5 s), for example on a Redis call while `pool_timeout` is at its 30 s default, the send task is aborted and the client sees 1006 without a reason; a client that backs off on 1008 (C8) does not. A full egress queue loses the notice the same way (R11). Fix: hand the close reason to the socket's own send task through a side channel (a `oneshot` or `watch`) instead of through the hub, as proposed for R11.
 
 ---
 
@@ -247,7 +237,7 @@ A socket over its frame budget asks the hub to drop it (`request_drop(RateLimite
 | C2 | **Backoff resets on every open.** If the server accepts the upgrade and then closes, the client retries every second forever. | `client/web/src/engine/net/websocket-stream-hub.ts:129-131,166` | Reset after the first sync or a minimum open time. |
 | C3 | **A `failed` nack drops the pending command**, although the server says it may have been queued. | `client_stream.rs:253-257` | Keep it pending and resend (the server does not dedup, so a possible repeat is accepted), or mark it unknown. |
 | C4 | **A persistent checkpoint mismatch loops forever.** Every mismatch resubscribes with no counter. | `client_stream.rs:235-251` | A counter, then a move to `Unsynced`. |
-| C5 | **Stale state after a reconnect.** The stream is never reset to `Waiting`; paints are not gated by the connection state; `replaced` is never set although the type has it. | `pixel-map/index.ts:46-51,164-184`; `stream-hub.ts:1`; `pixel-map-ui.ts:14` | Reset or resync on reconnect; gate paints; handle `replaced` (no reconnect; needs distinct close codes, R11). |
+| C5 | **Stale state after a reconnect.** The stream is never reset to `Waiting`; paints are not gated by the connection state; `replaced` is never set although the type has it. | `pixel-map/index.ts:46-51,164-184`; `stream-hub.ts:1`; `pixel-map-ui.ts:14` | Reset or resync on reconnect; gate paints; handle `replaced` (no reconnect; the close codes are in [Hub](../services/builder/hub.md#ending-a-connection)). |
 | C6 | **Overlapping `Sync` tail records a bad hash.** `on_sync` still calls `apply_wire` and ignores a skipped outcome. The server sends non-overlapping tails today. | `client_stream.rs:189-193,220,305-308` | Honour `ApplyOutcome::Skipped`. |
 | C7 | **Snapshot decode accepts trailing bytes.** `decode_snapshot` uses `postcard::from_bytes`; state and chain hashes come from the same frame. | `crates/shine-game/src/replica/codec.rs:15-17,35-41`; `client_stream.rs:280-286` | Canonical check for snapshots; verify the chain hash against a checkpoint. |
 | C8 | **`StreamSubscribeFailed` is retried every 5 s forever**, including permanent reasons, and an `unsynced` resubscribe has no jitter, so after a server-side give-up every client of an instance comes back at once; `new WebSocket` is unguarded. | `client_stream.rs:155-159`; `websocket-stream-hub.ts:50` | Stop on permanent reasons; jittered backoff; try/catch into the backoff path. |

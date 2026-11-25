@@ -1,6 +1,6 @@
 use crate::{
     models::{
-        messages::{HubEvent, HubMessage, SubscribeFailure, TopicKey},
+        messages::{DisconnectReason, HubEvent, HubMessage, SubscribeFailure, TopicKey},
         HubError,
     },
     repositories::{
@@ -17,6 +17,7 @@ use crate::{
         hub::{HubEvents, TestEgress, TestSession},
     },
 };
+use shine_core::tokio::TaskSupervisor;
 use shine_game::replica::StreamId;
 use shine_infra::session::{CurrentUserService, SessionKey};
 use shine_infra_testing::db::{postgres::TestPg, redis::TestRedis};
@@ -57,6 +58,7 @@ impl Default for TestHubOptions {
 
 pub struct TestHub {
     pub hub: HubService,
+    pub supervisor: TaskSupervisor,
 
     pub stream_inbox: Option<TestInbox>,
     pub stream_log: Option<TestLog>,
@@ -95,7 +97,9 @@ impl TestHub {
         let mut stream_log = None;
         let mut stream_registry = None;
 
+        let supervisor = TaskSupervisor::new();
         let mut hub_builder = HubService::builder(hub_config)
+            .with_task_supervisor(supervisor.clone())
             .with_session_service(session_service)
             .with_hub_registry(registry.clone());
         if let Some(config) = options.with_streams {
@@ -122,6 +126,7 @@ impl TestHub {
         let events = hub.subscribe(vec![TopicKey::Hub]).await;
         TestHub {
             hub,
+            supervisor,
             stream_inbox,
             stream_log,
             stream_registry,
@@ -167,7 +172,7 @@ impl TestHub {
     ) -> (Uuid, TestEgress) {
         let (tx, rx) = socket_channel(capacity);
         let connection_id = hub
-            .request_connection(
+            .request_connect(
                 user_id,
                 session_key.unwrap_or_else(TestSession::new_random_key),
                 tx,
@@ -239,9 +244,10 @@ impl TestHub {
             let sentinel_user = Uuid::new_v4();
             let (tx, rx) = socket_channel(1);
             let connection_id = hub
-                .request_connection(sentinel_user, TestSession::new_random_key(), tx, Vec::new())
+                .request_connect(sentinel_user, TestSession::new_random_key(), tx, Vec::new())
                 .unwrap();
-            hub.request_disconnection(sentinel_user, connection_id).unwrap();
+            hub.request_disconnect(sentinel_user, connection_id, DisconnectReason::Client)
+                .unwrap();
             (sentinel_user, rx)
         };
 
@@ -334,7 +340,9 @@ impl TestHub {
 
     /// Disconnects the specified connection and waits until all commands are processed.
     pub async fn cleanup_connection(&mut self, user: Uuid, second: Uuid) {
-        self.hub.request_disconnection(user, second).unwrap();
+        self.hub
+            .request_disconnect(user, second, DisconnectReason::Client)
+            .unwrap();
         self.wait_all_commands().await;
     }
 }

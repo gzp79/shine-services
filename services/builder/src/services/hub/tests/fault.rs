@@ -1,5 +1,6 @@
 //! Hub behavior under Redis faults.
 
+use crate::services::hub::control_command::ControlCommand;
 use crate::{
     models::messages::{DisconnectReason, HubEvent, HubMessage, TopicKey},
     testing::hub::{Lifecycle, TestHub, TestHubOptions, TestSession},
@@ -105,7 +106,7 @@ async fn disconnect_during_an_outage_releases_the_socket_and_leaves_the_row_to_t
     let proxy = toxiproxy.proxy("redis").await;
     proxy.set_enabled(false).await;
     test.hub
-        .request_drop(user, connection, DisconnectReason::SessionInvalid)
+        .request_disconnect(user, connection, DisconnectReason::SessionInvalid)
         .unwrap();
     // No barrier while Redis is down: its sentinel connect would be rejected too.
     let seen = test
@@ -194,7 +195,7 @@ async fn shutdown_with_a_slow_registry_takes_no_longer_than_one_round_of_removal
         .await;
 
     let started = std::time::Instant::now();
-    test.hub.request_shutdown().unwrap();
+    test.hub.send_control(ControlCommand::Shutdown).unwrap();
     test.wait_for_shutdown_events().await;
     test.wait_shutdown_complete().await;
     let took = started.elapsed();

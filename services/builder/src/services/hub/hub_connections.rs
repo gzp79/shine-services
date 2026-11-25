@@ -9,23 +9,23 @@ use uuid::Uuid;
 
 /// A connection found dead during a send.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DeadConnection {
+pub struct FailedSend {
     pub user_id: Uuid,
     pub connection_id: Uuid,
     pub reason: DisconnectReason,
 }
 
-/// A connection taken out of the registry. Every removal has to end it with [`RemovedConnection::close`], which
+/// A connection taken out of the registry. Every removal has to end it with [`UnregisteredConnection::close`], which
 /// tells the socket why; dropping it without a reason is an error.
 #[must_use = "a removed connection has to be ended with close(reason)"]
-pub struct RemovedConnection {
+pub struct UnregisteredConnection {
     pub user_id: Uuid,
     pub connection_id: Uuid,
     socket_sender: SocketSender,
     closed: bool,
 }
 
-impl RemovedConnection {
+impl UnregisteredConnection {
     /// Ends the connection with the reason, unless something already did. Returns the reason the connection
     /// ended with, which is the given one only if nothing ended it first.
     pub fn close(mut self, reason: DisconnectReason) -> DisconnectReason {
@@ -35,7 +35,7 @@ impl RemovedConnection {
     }
 }
 
-impl Drop for RemovedConnection {
+impl Drop for UnregisteredConnection {
     fn drop(&mut self) {
         if !self.closed {
             tracing::error!(
@@ -74,7 +74,7 @@ impl Connections {
     }
 
     /// Registers a bounded egress channel as a user's connection.
-    pub async fn register_connection(
+    pub async fn register(
         &self,
         user_id: Uuid,
         connection_id: Uuid,
@@ -98,9 +98,14 @@ impl Connections {
         }
     }
 
+    /// Number of connected users, for status reporting.
+    pub async fn len(&self) -> usize {
+        self.registry.read().await.users.len()
+    }
+
     /// Removes a user's connection, only if it is still `connection_id` when given.
     #[must_use = "a removed connection has to be ended with close(reason)"]
-    pub async fn unregister_connection(&self, user_id: Uuid, connection_id: Option<Uuid>) -> Option<RemovedConnection> {
+    pub async fn unregister(&self, user_id: Uuid, connection_id: Option<Uuid>) -> Option<UnregisteredConnection> {
         let mut registry = self.registry.write().await;
         if let Some(expected) = connection_id {
             if registry.users.get(&user_id).copied() != Some(expected) {
@@ -113,7 +118,7 @@ impl Connections {
 
     /// Removes every connection.
     #[must_use = "a removed connection has to be ended with close(reason)"]
-    pub async fn unregister_all(&self) -> Vec<RemovedConnection> {
+    pub async fn unregister_all(&self) -> Vec<UnregisteredConnection> {
         let mut registry = self.registry.write().await;
         let users: Vec<_> = registry.users.drain().collect();
         users
@@ -122,15 +127,9 @@ impl Connections {
             .collect()
     }
 
-    fn take(registry: &mut Registry, user_id: Uuid, connection_id: Uuid) -> Option<RemovedConnection> {
-        let connection = registry.connections.remove(&connection_id)?;
-        hub_metrics().connection_removed();
-        Some(RemovedConnection {
-            user_id,
-            connection_id,
-            socket_sender: connection.socket_sender,
-            closed: false,
-        })
+    /// Whether the connection is registered.
+    pub async fn contains(&self, connection_id: Uuid) -> bool {
+        self.registry.read().await.connections.contains_key(&connection_id)
     }
 
     /// The user's active `(connection_id, session_key)`, when connected.
@@ -143,7 +142,7 @@ impl Connections {
 
     /// Sends a message to one connection. `Ok(false)` if the connection is unknown or already ended, `Err` carries
     /// the dead connection, to the first send that found it.
-    pub async fn send_to_connection(&self, connection_id: Uuid, message: HubMessage) -> Result<bool, DeadConnection> {
+    pub async fn send_to_connection(&self, connection_id: Uuid, message: HubMessage) -> Result<bool, FailedSend> {
         let registry = self.registry.read().await;
         let Some(data) = registry.connections.get(&connection_id) else {
             return Ok(false);
@@ -151,7 +150,7 @@ impl Connections {
         match try_send(&data.socket_sender, message) {
             Sent::Queued => Ok(true),
             Sent::Closed => Ok(false),
-            Sent::Failed(reason) => Err(DeadConnection {
+            Sent::Failed(reason) => Err(FailedSend {
                 user_id: data.user_id,
                 connection_id,
                 reason,
@@ -161,7 +160,7 @@ impl Connections {
 
     /// Sends a message to the user's active connection. `Err` carries the dead connection, to the first send that
     /// found it.
-    pub async fn send_to_user(&self, user_id: Uuid, message: HubMessage) -> Result<(), DeadConnection> {
+    pub async fn send_to_user(&self, user_id: Uuid, message: HubMessage) -> Result<(), FailedSend> {
         let registry = self.registry.read().await;
         let Some(&connection_id) = registry.users.get(&user_id) else {
             return Ok(());
@@ -171,13 +170,13 @@ impl Connections {
         };
         match try_send(&data.socket_sender, message) {
             Sent::Queued | Sent::Closed => Ok(()),
-            Sent::Failed(reason) => Err(DeadConnection { user_id, connection_id, reason }),
+            Sent::Failed(reason) => Err(FailedSend { user_id, connection_id, reason }),
         }
     }
 
     /// Broadcasts a message to every topic-matching connection. `Err` carries the dead connections, each to the
     /// first send that found it.
-    pub async fn broadcast(&self, message: HubMessage) -> Result<(), Vec<DeadConnection>> {
+    pub async fn broadcast(&self, message: HubMessage) -> Result<(), Vec<FailedSend>> {
         let topic = message.topic();
         let mut dead = Vec::new();
 
@@ -187,7 +186,7 @@ impl Connections {
                 continue;
             }
             if let Sent::Failed(reason) = try_send(&data.socket_sender, message.clone()) {
-                dead.push(DeadConnection {
+                dead.push(FailedSend {
                     user_id: data.user_id,
                     connection_id: *connection_id,
                     reason,
@@ -202,14 +201,15 @@ impl Connections {
         }
     }
 
-    /// Whether the connection is registered.
-    pub async fn contains(&self, connection_id: Uuid) -> bool {
-        self.registry.read().await.connections.contains_key(&connection_id)
-    }
-
-    /// Number of connected users, for status reporting.
-    pub async fn len(&self) -> usize {
-        self.registry.read().await.users.len()
+    fn take(registry: &mut Registry, user_id: Uuid, connection_id: Uuid) -> Option<UnregisteredConnection> {
+        let connection = registry.connections.remove(&connection_id)?;
+        hub_metrics().connection_removed();
+        Some(UnregisteredConnection {
+            user_id,
+            connection_id,
+            socket_sender: connection.socket_sender,
+            closed: false,
+        })
     }
 }
 

@@ -3,7 +3,7 @@
 use crate::{
     models::messages::{DisconnectReason, HubMessage, TopicKey},
     services::{
-        hub::hub_connections::{Connections, DeadConnection},
+        hub::hub_connections::{Connections, FailedSend},
         socket_channel,
     },
     testing::{hub::TestSession, TestMessage},
@@ -17,7 +17,7 @@ async fn directed_send_moves_to_the_one_connection() {
     let (tx, mut rx) = socket_channel(4);
     let (user_id, conn_id) = (Uuid::new_v4(), Uuid::new_v4());
     users
-        .register_connection(
+        .register(
             user_id,
             conn_id,
             TestSession::new_random_key(),
@@ -59,10 +59,10 @@ async fn send_to_user_follows_the_active_connection_and_reports_dead_ones() {
     let (new_tx, mut new_rx) = socket_channel(1);
     let (old_id, new_id) = (Uuid::new_v4(), Uuid::new_v4());
     users
-        .register_connection(user_id, old_id, TestSession::new_random_key(), old_tx, vec![])
+        .register(user_id, old_id, TestSession::new_random_key(), old_tx, vec![])
         .await;
     users
-        .register_connection(user_id, new_id, TestSession::new_random_key(), new_tx, vec![])
+        .register(user_id, new_id, TestSession::new_random_key(), new_tx, vec![])
         .await;
 
     // The user's latest registration is its active connection.
@@ -73,7 +73,7 @@ async fn send_to_user_follows_the_active_connection_and_reports_dead_ones() {
     assert!(users.send_to_user(user_id, TestMessage::new_ping("2")).await.is_ok());
     assert_eq!(
         users.send_to_user(user_id, TestMessage::new_ping("3")).await,
-        Err(DeadConnection {
+        Err(FailedSend {
             user_id,
             connection_id: new_id,
             reason: DisconnectReason::SlowConsumer
@@ -90,7 +90,7 @@ async fn full_channel_reports_dead_connection() {
     let (tx, _rx) = socket_channel(1);
     let (user_id, conn_id) = (Uuid::new_v4(), Uuid::new_v4());
     users
-        .register_connection(
+        .register(
             user_id,
             conn_id,
             TestSession::new_random_key(),
@@ -105,7 +105,7 @@ async fn full_channel_reports_dead_connection() {
         .is_ok()); // fills capacity 1
     assert_eq!(
         users.send_to_connection(conn_id, TestMessage::new_ping("2")).await,
-        Err(DeadConnection {
+        Err(FailedSend {
             user_id,
             connection_id: conn_id,
             reason: DisconnectReason::SlowConsumer
@@ -119,7 +119,7 @@ async fn closed_channel_reports_dead_connection() {
     let (tx, rx) = socket_channel(1);
     let (user_id, conn_id) = (Uuid::new_v4(), Uuid::new_v4());
     users
-        .register_connection(
+        .register(
             user_id,
             conn_id,
             TestSession::new_random_key(),
@@ -130,7 +130,7 @@ async fn closed_channel_reports_dead_connection() {
     drop(rx);
     assert_eq!(
         users.send_to_connection(conn_id, TestMessage::new_ping("1")).await,
-        Err(DeadConnection {
+        Err(FailedSend {
             user_id,
             connection_id: conn_id,
             reason: DisconnectReason::DeadChannel
@@ -146,7 +146,7 @@ async fn broadcast_clones_to_matching_topic_only() {
     let chat_conn = Uuid::new_v4();
     let hub_conn = Uuid::new_v4();
     users
-        .register_connection(
+        .register(
             Uuid::new_v4(),
             chat_conn,
             TestSession::new_random_key(),
@@ -155,7 +155,7 @@ async fn broadcast_clones_to_matching_topic_only() {
         )
         .await;
     users
-        .register_connection(
+        .register(
             Uuid::new_v4(),
             hub_conn,
             TestSession::new_random_key(),
@@ -177,10 +177,10 @@ async fn removed_connection_releases_its_endpoint_after_the_reason() {
     let (tx_b, mut rx_b) = socket_channel(4);
     let (user_a, conn_a) = (Uuid::new_v4(), Uuid::new_v4());
     users
-        .register_connection(user_a, conn_a, TestSession::new_random_key(), tx_a, vec![])
+        .register(user_a, conn_a, TestSession::new_random_key(), tx_a, vec![])
         .await;
     users
-        .register_connection(
+        .register(
             Uuid::new_v4(),
             Uuid::new_v4(),
             TestSession::new_random_key(),
@@ -211,7 +211,7 @@ async fn the_close_reason_reaches_a_full_connection() {
     let (tx, mut rx) = socket_channel(1);
     let (user_id, conn_id) = (Uuid::new_v4(), Uuid::new_v4());
     users
-        .register_connection(user_id, conn_id, TestSession::new_random_key(), tx, vec![])
+        .register(user_id, conn_id, TestSession::new_random_key(), tx, vec![])
         .await;
     assert_eq!(
         users.send_to_connection(conn_id, TestMessage::new_ping("1")).await,
@@ -219,7 +219,7 @@ async fn the_close_reason_reaches_a_full_connection() {
     );
 
     users
-        .unregister_connection(user_id, Some(conn_id))
+        .unregister(user_id, Some(conn_id))
         .await
         .unwrap()
         .close(DisconnectReason::Replaced);
@@ -235,7 +235,7 @@ async fn a_dead_connection_is_reported_to_the_first_send_only() {
     let (tx, _rx) = socket_channel(1);
     let (user_id, conn_id) = (Uuid::new_v4(), Uuid::new_v4());
     users
-        .register_connection(
+        .register(
             user_id,
             conn_id,
             TestSession::new_random_key(),
@@ -250,7 +250,7 @@ async fn a_dead_connection_is_reported_to_the_first_send_only() {
 
     assert_eq!(
         users.send_to_connection(conn_id, TestMessage::new_ping("2")).await,
-        Err(DeadConnection {
+        Err(FailedSend {
             user_id,
             connection_id: conn_id,
             reason: DisconnectReason::SlowConsumer
@@ -272,7 +272,7 @@ async fn a_connection_ended_by_someone_else_takes_no_more_messages() {
     let closer = tx.clone();
     let (user_id, conn_id) = (Uuid::new_v4(), Uuid::new_v4());
     users
-        .register_connection(
+        .register(
             user_id,
             conn_id,
             TestSession::new_random_key(),
@@ -295,17 +295,14 @@ async fn remove_connection_cas_ignores_stale_id() {
     let (tx, _rx) = socket_channel(1);
     let (user_id, conn_id) = (Uuid::new_v4(), Uuid::new_v4());
     users
-        .register_connection(user_id, conn_id, TestSession::new_random_key(), tx, vec![])
+        .register(user_id, conn_id, TestSession::new_random_key(), tx, vec![])
         .await;
 
     // stale id → no-op
-    assert!(users
-        .unregister_connection(user_id, Some(Uuid::new_v4()))
-        .await
-        .is_none());
+    assert!(users.unregister(user_id, Some(Uuid::new_v4())).await.is_none());
     assert_eq!(
         users
-            .unregister_connection(user_id, Some(conn_id))
+            .unregister(user_id, Some(conn_id))
             .await
             .map(|removed| removed.connection_id),
         Some(conn_id)
