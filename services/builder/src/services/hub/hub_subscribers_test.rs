@@ -25,5 +25,9 @@ async fn publish_prunes_closed_subscriber() {
 
     drop(rx);
     subscribers.publish(TestMessage::new_ping("gone")).await;
-    assert_eq!(subscribers.subscription_count().await, 0, "a closed subscriber is pruned on publish");
+    assert_eq!(
+        subscribers.subscription_count().await,
+        0,
+        "a closed subscriber is pruned on publish"
+    );
 }

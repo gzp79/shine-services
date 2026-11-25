@@ -4,7 +4,7 @@ use crate::{
     services::hub::{
         control_command::ControlCommand,
         hub_gateway::HubGateway,
-        hub_registry_client::HubRegistryService,
+        hub_registry_service::HubRegistryService,
         tasks::{BackgroundTask, ConnectionTracker},
     },
 };

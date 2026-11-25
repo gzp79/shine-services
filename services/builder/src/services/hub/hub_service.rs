@@ -14,7 +14,7 @@ use crate::{
             hub_connections::Connections,
             hub_gateway::{ControlMessage, HubGateway},
             hub_loop::HubLoop,
-            hub_registry_client::HubRegistryService,
+            hub_registry_service::HubRegistryService,
             hub_subscribers::Subscribers,
             socket_channel::SocketSender,
             tasks::{run_background_task, BackgroundJoinHandler, Heartbeat, SessionChecker, StreamDispatcher},
