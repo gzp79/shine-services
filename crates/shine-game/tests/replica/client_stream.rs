@@ -150,7 +150,7 @@ fn a_sync_with_a_snapshot_and_a_tail_rebuilds_the_state() {
 }
 
 #[test]
-fn a_snapshot_that_does_not_match_its_hash_leaves_the_stream_unsynced() {
+fn a_snapshot_that_does_not_match_its_hash_leaves_the_stream_desynced() {
     let mut server = Server::new();
     server.append(1, OTHER, paint(1, 1, 5));
     let mut snapshot = server.snapshot();
@@ -159,7 +159,7 @@ fn a_snapshot_that_does_not_match_its_hash_leaves_the_stream_unsynced() {
 
     let out = client.handle_message(&server.sync(Some(snapshot), 1));
 
-    assert_eq!(client.status(), StreamStatus::Unsynced);
+    assert_eq!(client.status(), StreamStatus::Desynced);
     assert!(out.is_empty());
 }
 
@@ -291,7 +291,7 @@ fn a_rate_limited_command_is_dropped_and_not_sent_again() {
 }
 
 #[test]
-fn a_rate_limited_subscribe_leaves_the_stream_unsynced() {
+fn a_rate_limited_subscribe_leaves_the_stream_desynced() {
     let server = Server::new();
     let mut client = live_client(&server);
     let failed = json!({"type": "streamSubscribeFailed", "streamId": "pixel-map:s", "reason": "rateLimited"});
@@ -299,7 +299,7 @@ fn a_rate_limited_subscribe_leaves_the_stream_unsynced() {
     let out = client.handle_message(&failed.to_string());
 
     assert!(out.is_empty());
-    assert_eq!(client.status(), StreamStatus::Unsynced);
+    assert_eq!(client.status(), StreamStatus::Desynced);
 }
 
 #[test]
@@ -351,14 +351,14 @@ fn a_reset_waits_for_the_next_sync_and_keeps_the_view() {
 }
 
 #[test]
-fn unsynced_stops_submits_and_keeps_the_pending_for_a_later_sync() {
+fn desynced_stops_submits_and_keeps_the_pending_for_a_later_sync() {
     let server = Server::new();
     let mut client = live_client(&server);
     client.submit(id(1), paint(2, 2, 6)).unwrap();
 
-    client.handle_message(&json!({"type": "streamUnsynced", "streamId": "pixel-map:s"}).to_string());
+    client.handle_message(&json!({"type": "streamDesynced", "streamId": "pixel-map:s"}).to_string());
 
-    assert_eq!(client.status(), StreamStatus::Unsynced);
+    assert_eq!(client.status(), StreamStatus::Desynced);
     assert_eq!(client.submit(id(2), paint(0, 0, 1)), Err(SubmitError::NotLive));
     assert_eq!(client.pending_count(), 1);
 
@@ -368,14 +368,14 @@ fn unsynced_stops_submits_and_keeps_the_pending_for_a_later_sync() {
 }
 
 #[test]
-fn a_subscribe_failure_leaves_the_stream_unsynced() {
+fn a_subscribe_failure_leaves_the_stream_desynced() {
     let mut client = client();
 
     client.handle_message(
         &json!({"type": "streamSubscribeFailed", "streamId": "pixel-map:s", "reason": "kindMismatch"}).to_string(),
     );
 
-    assert_eq!(client.status(), StreamStatus::Unsynced);
+    assert_eq!(client.status(), StreamStatus::Desynced);
 }
 
 #[test]

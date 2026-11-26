@@ -62,7 +62,7 @@ export type StreamFrame =
     | { type: 'streamCommands'; streamId: string; commands: StreamCommandFrame[] }
     | { type: 'streamCheckpoint'; streamId: string; version: number; stateHash: string }
     | { type: 'streamReset'; streamId: string }
-    | { type: 'streamUnsynced'; streamId: string }
+    | { type: 'streamDesynced'; streamId: string }
     | {
           type: 'streamNack';
           streamId: string;

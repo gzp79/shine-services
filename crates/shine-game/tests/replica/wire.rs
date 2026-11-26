@@ -52,7 +52,7 @@ fn the_other_server_messages_are_parsed() {
     let checkpoint =
         parse(json!({"type": "streamCheckpoint", "streamId": "s", "version": 8, "stateHash": "00000000000000ff"}));
     let reset = parse(json!({"type": "streamReset", "streamId": "s"}));
-    let unsynced = parse(json!({"type": "streamUnsynced", "streamId": "s"}));
+    let desynced = parse(json!({"type": "streamDesynced", "streamId": "s"}));
     let nack =
         parse(json!({"type": "streamNack", "streamId": "s", "commandId": command_id, "reason": "notSubscribed"}));
     let failed = parse(json!({"type": "streamSubscribeFailed", "streamId": "s", "reason": "kindMismatch"}));
@@ -63,7 +63,7 @@ fn the_other_server_messages_are_parsed() {
         Some(ServerMessage::StreamCheckpoint { version: 8, .. })
     ));
     assert!(matches!(reset, Some(ServerMessage::StreamReset { .. })));
-    assert!(matches!(unsynced, Some(ServerMessage::StreamUnsynced { .. })));
+    assert!(matches!(desynced, Some(ServerMessage::StreamDesynced { .. })));
     assert!(matches!(nack, Some(ServerMessage::StreamNack { command_id: id, .. }) if id == command_id));
     assert!(matches!(failed, Some(ServerMessage::StreamSubscribeFailed { .. })));
 }

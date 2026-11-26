@@ -19,7 +19,7 @@ pub enum StreamStatus {
     /// The state follows the server.
     Live,
     /// The server cannot serve the stream or its state cannot be trusted; subscribe again later.
-    Unsynced,
+    Desynced,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
@@ -152,10 +152,10 @@ impl<S: ReplayState> ClientStream<S> {
                 self.status = StreamStatus::Waiting;
                 Vec::new()
             }
-            ServerMessage::StreamUnsynced { stream_id } | ServerMessage::StreamSubscribeFailed { stream_id, .. }
+            ServerMessage::StreamDesynced { stream_id } | ServerMessage::StreamSubscribeFailed { stream_id, .. }
                 if self.is_mine(&stream_id) =>
             {
-                self.status = StreamStatus::Unsynced;
+                self.status = StreamStatus::Desynced;
                 Vec::new()
             }
             ServerMessage::StreamNack { stream_id, command_id, reason } if self.is_mine(&stream_id) => {
@@ -179,7 +179,7 @@ impl<S: ReplayState> ClientStream<S> {
         let mut replica = Replica::new();
         if let Some(snapshot) = snapshot {
             let Some(restored) = restore::<S>(&snapshot) else {
-                self.status = StreamStatus::Unsynced;
+                self.status = StreamStatus::Desynced;
                 return Vec::new();
             };
             replica = restored;
@@ -188,7 +188,7 @@ impl<S: ReplayState> ClientStream<S> {
         hashes.push_back((replica.version(), replica.hash()));
         for wire in &commands {
             if !apply_wire(&mut replica, &mut hashes, wire) {
-                self.status = StreamStatus::Unsynced;
+                self.status = StreamStatus::Desynced;
                 return Vec::new();
             }
         }

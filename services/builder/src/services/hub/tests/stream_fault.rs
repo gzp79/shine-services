@@ -81,16 +81,7 @@ async fn subscribing_while_postgres_is_gone_is_told_it_failed_and_works_after_it
             let message = next_stream_message(&mut socket, Duration::from_secs(30))
                 .await
                 .expect("no answer");
-            assert!(
-                matches!(
-                    &*message,
-                    StreamMessage::SubscribeFailed {
-                        reason: SubscribeFailure::Failed,
-                        ..
-                    }
-                ),
-                "{message:?}"
-            );
+            assert!(matches!(&*message, StreamMessage::Desynced { .. }), "{message:?}");
         }
     }
     // Nothing is subscribed, and the connection is still there.

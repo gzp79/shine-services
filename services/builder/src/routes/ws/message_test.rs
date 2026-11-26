@@ -100,10 +100,10 @@ fn the_other_stream_messages_have_their_own_frames() {
         json!({"type": "streamCheckpoint", "streamId": "chat:s", "version": 8, "stateHash": "00000000000000ff"})
     );
     assert_eq!(
-        frame(StreamMessage::Unsynced {
+        frame(StreamMessage::Desynced {
             stream_id: TestStreamId::new_chat_with("s")
         }),
-        json!({"type": "streamUnsynced", "streamId": "chat:s"})
+        json!({"type": "streamDesynced", "streamId": "chat:s"})
     );
     assert_eq!(
         frame(StreamMessage::CommandFailed {

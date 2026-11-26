@@ -93,7 +93,7 @@ pub enum WSMessageResponse {
         version: i64,
         state_hash: String,
     },
-    StreamUnsynced {
+    StreamDesynced {
         stream_id: String,
     },
     StreamNack {
@@ -176,7 +176,7 @@ pub fn stream_message_to_wire(message: &StreamMessage) -> WSMessageResponse {
             version: *version,
             state_hash: hex(*state_hash),
         },
-        StreamMessage::Unsynced { .. } => WSMessageResponse::StreamUnsynced { stream_id },
+        StreamMessage::Desynced { .. } => WSMessageResponse::StreamDesynced { stream_id },
         StreamMessage::CommandFailed { command_id, reason, .. } => WSMessageResponse::StreamNack {
             stream_id,
             command_id: *command_id,

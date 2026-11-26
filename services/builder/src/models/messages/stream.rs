@@ -50,26 +50,23 @@ impl From<&StoredSnapshot> for StreamSnapshot {
 /// it into frames.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StreamMessage {
-    /// The state to start from: the latest snapshot (none while the stream has no snapshot) and the
-    /// commands after it. It replaces whatever the subscriber had of the stream.
     Sync {
         stream_id: StreamId,
         snapshot: Option<StreamSnapshot>,
         commands: Vec<StreamCommand>,
     },
-    /// The commands after the last version the subscriber was sent, without gaps.
     Commands {
         stream_id: StreamId,
         commands: Vec<StreamCommand>,
     },
-    /// The state hash at a checkpoint version, to compare with the subscriber's own.
     Checkpoint {
         stream_id: StreamId,
         version: i64,
         state_hash: u64,
     },
-    /// The stream cannot be served now. The subscriber is dropped and has to subscribe again.
-    Unsynced { stream_id: StreamId },
+    Desynced {
+        stream_id: StreamId,
+    },
     CommandFailed {
         stream_id: StreamId,
         command_id: Uuid,
@@ -87,7 +84,7 @@ impl StreamMessage {
             StreamMessage::Sync { stream_id, .. }
             | StreamMessage::Commands { stream_id, .. }
             | StreamMessage::Checkpoint { stream_id, .. }
-            | StreamMessage::Unsynced { stream_id }
+            | StreamMessage::Desynced { stream_id }
             | StreamMessage::CommandFailed { stream_id, .. }
             | StreamMessage::SubscribeFailed { stream_id, .. } => stream_id,
         }

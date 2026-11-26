@@ -72,8 +72,8 @@ flowchart TB
 | to hub | `streamUnsubscribe` | Registry `close` → control queue → loop publishes `Unsubscribed`. | Frame bucket of the socket. |
 | to hub | `ping` | Receive task → `send_to_user` or `broadcast` → queue of the target. Off unless `ping_enabled`. | Frame bucket of the socket. |
 | to hub | connect, disconnect, drop | Control queue → loop → `Connections` and the Redis registry. | One entry per connection, bounded by the connection cap. |
-| to client | `streamSync`, `streamCommands`, `streamCheckpoint`, `streamUnsynced` | Worker → `StreamEgress::send` → `Connections` → queue. Ordered per connection. | A full queue drops the connection as `slow_consumer`. |
-| to client | `streamNack`, `streamSubscribeFailed` | The answer of a refused request goes from the receive task into the queue; a failed stream is answered by the hub. | Lost with a full queue; that client is dropped anyway. |
+| to client | `streamSync`, `streamCommands`, `streamCheckpoint`, `streamDesynced` | Worker → `StreamEgress::send` → `Connections` → queue. Ordered per connection. | A full queue drops the connection as `slow_consumer`. |
+| to client | `streamNack`, `streamSubscribeFailed` | The answer of a refused request goes from the receive task into the queue; a failed stream is answered by the hub with `streamDesynced`. | Lost with a full queue; that client is dropped anyway. |
 | to client | `ping` | Topic delivery → queue. | As stream data. |
 | to client | close frame | The close slot, see [Ending a connection](#ending-a-connection). | Cannot be full. |
 
@@ -118,7 +118,7 @@ sequenceDiagram
 
 A connection with a full or closed queue is found by every send to it. The sender closes the connection's slot, and `close` tells whether the caller was first: only the first sender queues the disconnect, the others find the connection closed and queue nothing. The close slot is the deduplication; the control queue keeps no state for it. The socket is told at once, and the loop counts and publishes the reason the slot holds, so the metric and the event are what the client was told.
 
-`notify_failed` queues `StreamFailed` on the same control queue. The loop closes the stream for every connection that has it open and answers each with `streamSubscribeFailed` through this same `send`.
+`notify_failed` queues `StreamFailed` on the same control queue. The loop closes the stream for every connection that has it open and answers each with `streamDesynced` through this same `send`.
 
 ### Next event of the send task
 
@@ -335,7 +335,7 @@ The web client reads the close code in `WebSocketStreamHub` and passes the outco
 | Socket creation | A `new WebSocket` that throws takes the same backoff path. |
 | After a reconnect | A stream goes back to waiting for its sync (`ClientStream::resync`); paints are only taken while the connection is live. |
 | Replaced, signed out | The pixel map shows the state and ignores resync requests; it never subscribes to a hub that will not reconnect. |
-| Subscribe failure | `unauthorized` ends in `StreamStatus::Rejected` and is not retried; the other failures leave the stream `Unsynced`, resubscribed after 5 s doubling to 60 s, jittered to 50–100 %. A sync resets the delay. |
+| Subscribe failure | `unauthorized` ends in `StreamStatus::Rejected` and is not retried; the other failures leave the stream `Desynced`, resubscribed after 5 s doubling to 60 s, jittered to 50–100 %. A sync resets the delay. |
 
 ## Metrics
 
@@ -467,7 +467,7 @@ A watch whose senders are all dropped without a reason is the `Gone` case; the h
 | 6 | A client that closes gets 1000 and no drop is counted | socket test, hub test |
 | 7 | The replaced socket of the real service closes 4001 `replaced` | Playwright (`ws_connect.ts`) |
 | 8 | Hub client: stops on 4001 and 4002, backs off with jitter, resets only after a sync, a throwing socket takes the backoff path | vitest |
-| 9 | `ClientStream`: `unauthorized` is `Rejected`, other failures `Unsynced` | Rust unit |
+| 9 | `ClientStream`: `unauthorized` is `Rejected`, other failures `Desynced` | Rust unit |
 | 10 | Many sends to one full or closed queue queue one `DisconnectUser`; a replaced connection is not removed by a late one | unit, hub test |
 
 </details>

@@ -1,5 +1,5 @@
 use crate::{
-    models::messages::{DisconnectReason, HubEvent, HubMessage, StreamEvent, StreamMessage, SubscribeFailure},
+    models::messages::{DisconnectReason, HubEvent, HubMessage, StreamEvent, StreamMessage},
     repositories::{command_inbox::redis::RedisCommandInboxDb, command_log::pg::PgCommandLogDb},
     services::{
         command_stream::StreamRegistry,
@@ -226,10 +226,7 @@ impl HubLoop {
                         stream_id: stream_id.clone(),
                     })
                     .await;
-                    let message = StreamMessage::SubscribeFailed {
-                        stream_id: stream_id.clone(),
-                        reason: SubscribeFailure::Failed,
-                    };
+                    let message = StreamMessage::Desynced { stream_id: stream_id.clone() };
                     StreamEgress::send(&self.gateway, connection_id, Arc::new(message)).await;
                 }
                 true

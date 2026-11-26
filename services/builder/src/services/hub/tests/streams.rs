@@ -204,10 +204,7 @@ mod served {
         for socket in [&mut first_socket, &mut second_socket] {
             assert_eq!(
                 *next_stream_message(socket).await,
-                StreamMessage::SubscribeFailed {
-                    stream_id: failed.clone(),
-                    reason: SubscribeFailure::Failed,
-                }
+                StreamMessage::Desynced { stream_id: failed.clone() }
             );
             assert!(matches!(socket.try_recv(), Err(TryRecvError::Empty)));
         }

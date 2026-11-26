@@ -61,7 +61,7 @@ Method: static reading only. Line numbers drift, treat them as pointers.
 | C5 | Medium | client | Stale state after a reconnect; `replaced` never set |
 | C6 | Low | client | Overlapping `Sync` tail records a bad hash |
 | C7 | Low | client | Snapshot decode accepts trailing bytes |
-| C8 | Low | client | `StreamSubscribeFailed` / `unsynced` retried every 5 s forever, no jitter |
+| C8 | Low | client | `StreamSubscribeFailed` / `desynced` retried every 5 s forever, no jitter |
 | C9 | Low | docs | `net/` missing from the `client-web-architecture` skill |
 
 ---
@@ -233,14 +233,14 @@ The socket write, ping and idle timeouts exist; the listener itself sets no TCP 
 
 | ID | Finding | Where | Fix |
 |---|---|---|---|
-| C1 | **No watchdog on `waiting` and `syncing`.** A lost `streamSync` strands the client; only `unsynced` has a retry timer, re-armed only by another frame. | `client/web/src/experiments/pixel-map/index.ts:98-103`; `crates/shine-game/src/replica/client_stream.rs:173-176` | Re-send the subscribe with backoff for any non-live status. |
+| C1 | **No watchdog on `waiting` and `syncing`.** A lost `streamSync` strands the client; only `desynced` has a retry timer, re-armed only by another frame. | `client/web/src/experiments/pixel-map/index.ts:98-103`; `crates/shine-game/src/replica/client_stream.rs:173-176` | Re-send the subscribe with backoff for any non-live status. |
 | C2 | **Backoff resets on every open.** If the server accepts the upgrade and then closes, the client retries every second forever. | `client/web/src/engine/net/websocket-stream-hub.ts:129-131,166` | Reset after the first sync or a minimum open time. |
 | C3 | **A `failed` nack drops the pending command**, although the server says it may have been queued. | `client_stream.rs:253-257` | Keep it pending and resend (the server does not dedup, so a possible repeat is accepted), or mark it unknown. |
-| C4 | **A persistent checkpoint mismatch loops forever.** Every mismatch resubscribes with no counter. | `client_stream.rs:235-251` | A counter, then a move to `Unsynced`. |
+| C4 | **A persistent checkpoint mismatch loops forever.** Every mismatch resubscribes with no counter. | `client_stream.rs:235-251` | A counter, then a move to `Desynced`. |
 | C5 | **Stale state after a reconnect.** The stream is never reset to `Waiting`; paints are not gated by the connection state; `replaced` is never set although the type has it. | `pixel-map/index.ts:46-51,164-184`; `stream-hub.ts:1`; `pixel-map-ui.ts:14` | Reset or resync on reconnect; gate paints; handle `replaced` (no reconnect; the close codes are in [Hub](../services/builder/hub.md#ending-a-connection)). |
 | C6 | **Overlapping `Sync` tail records a bad hash.** `on_sync` still calls `apply_wire` and ignores a skipped outcome. The server sends non-overlapping tails today. | `client_stream.rs:189-193,220,305-308` | Honour `ApplyOutcome::Skipped`. |
 | C7 | **Snapshot decode accepts trailing bytes.** `decode_snapshot` uses `postcard::from_bytes`; state and chain hashes come from the same frame. | `crates/shine-game/src/replica/codec.rs:15-17,35-41`; `client_stream.rs:280-286` | Canonical check for snapshots; verify the chain hash against a checkpoint. |
-| C8 | **`StreamSubscribeFailed` is retried every 5 s forever**, including permanent reasons, and an `unsynced` resubscribe has no jitter, so after a server-side give-up every client of an instance comes back at once; `new WebSocket` is unguarded. | `client_stream.rs:155-159`; `websocket-stream-hub.ts:50` | Stop on permanent reasons; jittered backoff; try/catch into the backoff path. |
+| C8 | **`StreamSubscribeFailed` is retried every 5 s forever**, including permanent reasons, and an `desynced` resubscribe has no jitter, so after a server-side give-up every client of an instance comes back at once; `new WebSocket` is unguarded. | `client_stream.rs:155-159`; `websocket-stream-hub.ts:50` | Stop on permanent reasons; jittered backoff; try/catch into the backoff path. |
 | C9 | **`net/` is missing from the `client-web-architecture` skill's layout table.** | `.claude/skills/client-web-architecture/SKILL.md:14-25` | Add a row. |
 
 ---
@@ -255,7 +255,7 @@ The socket write, ping and idle timeouts exist; the listener itself sets no TCP 
 | Rust, `shine-infra`: the prod TLS check is tested for rejections only; no test for accepting `sslmode=require` through the pool. Migrations under the `statement_timeout` need a database and have no test. | `crates/shine-infra/src/db/postgres/pg_connection.rs` |
 | Rust, builder: `ConnectUser` registry failure (R10) and `ensure_stream` (L8). | `services/builder/src/services/command_stream/` |
 | Rust, `shine-game` `client_stream`: mid-batch gap, a command that fails to decode, a checkpoint mismatch while `Waiting`, overlapping `Sync` tails, trailing snapshot bytes, `HASH_HISTORY` eviction at 256, a `failed` nack on a known pending command, a command folded into the snapshot but absent from the tail. | `crates/shine-game/tests/replica/client_stream.rs` |
-| TypeScript: only two tests exist for the hub. Missing: stale live after reconnect, a hang in waiting, an immediate close after open with growing delay, `connect()` twice, the `unsynced` timer re-arming, `resync()` while closed or replaced. Nothing tests the pixel map experiment's stream handling. | `client/web/src/engine/net/websocket-stream-hub.test.ts` |
+| TypeScript: only two tests exist for the hub. Missing: stale live after reconnect, a hang in waiting, an immediate close after open with growing delay, `connect()` twice, the `desynced` timer re-arming, `resync()` while closed or replaced. Nothing tests the pixel map experiment's stream handling. | `client/web/src/engine/net/websocket-stream-hub.test.ts` |
 | `shine-test` panic hook aborts the whole run on a background-thread panic (a failing test then shows no summary, only exit code `0xffffffff`); a test that expects a spawned-task panic cannot exist. The fuzz CI job uses an unpinned nightly and an uncached `cargo install`. | `crates/shine-test/src/lib.rs`; `.github/workflows/fuzz_ci.yml` |
 
 ---
@@ -281,4 +281,4 @@ No action needed.
 
 ## Not verified
 
-Redis pool checkout timeout (affects how long a `push` can park with Redis down), client-side handling of `Unsynced`/duplicate ids beyond what is listed above, and the `shine_infra` pub/sub listener internals beyond `redis_listener.rs`.
+Redis pool checkout timeout (affects how long a `push` can park with Redis down), client-side handling of `Desynced`/duplicate ids beyond what is listed above, and the `shine_infra` pub/sub listener internals beyond `redis_listener.rs`.

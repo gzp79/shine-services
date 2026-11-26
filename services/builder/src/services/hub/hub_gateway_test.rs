@@ -153,14 +153,14 @@ async fn the_gateway_delivers_stream_messages_to_the_workers_connections() {
     let (mut setup, connections) = Setup::new();
     let (_, connection_id, mut receiver) = connect(&connections, 4, vec![]).await;
     let stream_id = StreamId::parse("chat:t-1").unwrap();
-    let message = Arc::new(StreamMessage::Unsynced { stream_id: stream_id.clone() });
+    let message = Arc::new(StreamMessage::Desynced { stream_id: stream_id.clone() });
 
     assert!(StreamEgress::send(&setup.gateway, connection_id, message).await);
     assert!(
         !StreamEgress::send(
             &setup.gateway,
             Uuid::new_v4(),
-            Arc::new(StreamMessage::Unsynced { stream_id: stream_id.clone() })
+            Arc::new(StreamMessage::Desynced { stream_id: stream_id.clone() })
         )
         .await
     );
