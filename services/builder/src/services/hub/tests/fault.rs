@@ -1,8 +1,8 @@
 //! Hub behavior under Redis faults.
 
-use crate::services::hub::control_command::ControlCommand;
 use crate::{
-    models::messages::{DisconnectReason, HubEvent, HubMessage, TopicKey},
+    models::messages::{DisconnectReason, TopicKey},
+    services::hub::control_command::ControlCommand,
     testing::hub::{Lifecycle, TestHub, TestHubOptions, TestSession},
 };
 use shine_test::{

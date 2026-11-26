@@ -37,9 +37,6 @@ pub trait HubConnections {
         connections: &[HubConnection],
     ) -> impl Future<Output = Result<Vec<HubConnection>, HubError>> + Send;
 
-    /// Returns all currently connected users with their active connection ids.
-    fn list_connections(&mut self) -> impl Future<Output = Result<Vec<HubConnection>, HubError>> + Send;
-
     /// Returns the active connection for the user, or `None` if the user is not connected.
     fn find_connection_by_user(
         &mut self,

@@ -126,24 +126,6 @@ impl SocketReceiver {
             None => SocketMessage::Gone,
         }
     }
-
-    /// The next queued message, whatever the reason; `None` when the queue is empty or closed.
-    #[cfg(test)]
-    pub fn try_recv(&mut self) -> Result<HubMessage, mpsc::error::TryRecvError> {
-        self.rx.try_recv()
-    }
-
-    /// The next queued message; `None` when the queue is closed.
-    #[cfg(test)]
-    pub async fn recv(&mut self) -> Option<HubMessage> {
-        self.rx.recv().await
-    }
-
-    /// The reason the connection ended with, if it did.
-    #[cfg(test)]
-    pub fn close_reason(&self) -> Option<DisconnectReason> {
-        *self.close.borrow()
-    }
 }
 
 #[cfg(test)]

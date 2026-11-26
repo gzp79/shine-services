@@ -81,10 +81,6 @@ where
         &self.stream_id
     }
 
-    pub fn egress(&self) -> &E {
-        &self.egress
-    }
-
     pub fn subscribe(&mut self, connection_id: Uuid) {
         if self.subscribers.insert(connection_id, None).is_none() {
             stream_metrics().subscribers.add(1, &[self.kind_label()]);

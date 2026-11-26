@@ -5,7 +5,7 @@ use crate::{
     telemetry::TelemetryService,
     web::{
         middlewares::{PoweredBy, SecurityHeaders},
-        responses::ProblemConfig,
+        responses::{Problem, ProblemConfig},
         ApiUrl, FeatureConfig, WebAppConfig,
     },
 };
@@ -26,8 +26,11 @@ use tracing::{instrument, level_filters::LevelFilter};
 use tracing_log::LogTracer;
 use tracing_subscriber::EnvFilter;
 use utoipa::{
-    openapi::{ComponentsBuilder, OpenApi as OpenApiDoc, OpenApiBuilder},
-    OpenApi, ToResponse,
+    openapi::{
+        content::ContentBuilder, response::ResponseBuilder, ComponentsBuilder, OpenApi as OpenApiDoc, OpenApiBuilder,
+        Ref,
+    },
+    OpenApi, ToSchema,
 };
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_swagger_ui::{Config as SwaggerConfig, SwaggerUi};
@@ -42,18 +45,20 @@ struct ApiDoc;
 
 impl ApiDoc {
     pub fn with_default_components() -> OpenApiDoc {
-        #[derive(ToResponse)]
-        struct Problem {
-            r#type: String,
-            detail: Option<serde_json::Value>,
-            instance: Option<ApiUrl>,
-        }
-
         let mut doc = ApiDoc::openapi();
 
+        let problem = ResponseBuilder::new()
+            .description("Problem details of the failed request")
+            .content(
+                "application/json",
+                ContentBuilder::new()
+                    .schema(Some(Ref::from_schema_name(Problem::name())))
+                    .build(),
+            );
         let components: utoipa::openapi::Components = ComponentsBuilder::new()
             .schema_from::<ApiUrl>()
-            .response_from::<Problem>()
+            .schema_from::<Problem>()
+            .response(Problem::name(), problem.build())
             .build();
         let comp_doc = OpenApiBuilder::new().components(Some(components)).build();
         doc.merge(comp_doc);
@@ -476,5 +481,19 @@ mod test {
         let ended = timeout(Duration::from_millis(100), shutdown_signal(&handle, &supervisor)).await;
 
         assert!(ended.is_err());
+    }
+
+    #[test]
+    fn the_openapi_document_describes_the_problem_response_by_the_real_type() {
+        let doc = serde_json::to_value(ApiDoc::with_default_components()).unwrap();
+
+        let fields = &doc["components"]["schemas"]["Problem"]["properties"];
+        for field in ["status", "type", "instance", "detail", "extension", "sensitive"] {
+            assert!(fields.get(field).is_some(), "`{field}` is not described: {fields}");
+        }
+        assert_eq!(
+            doc["components"]["responses"]["Problem"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/Problem"
+        );
     }
 }

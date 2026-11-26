@@ -4,11 +4,9 @@ use crate::{
         command_inbox::redis::RedisCommandInboxDb, command_log::pg::PgCommandLogDb,
         hub_registry::redis::RedisHubConnectionDb,
     },
-    routes::ws::WsConfig,
     services::{standard_registry, HubService},
 };
 use anyhow::Error as AnyError;
-use regex::bytes::Regex;
 use shine_infra::{
     db::{postgres::PgConnectionPool, redis::RedisConnectionPool},
     web::{CoreServices, WebAppConfig},

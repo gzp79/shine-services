@@ -1,10 +1,12 @@
 //! Deterministic edge cases of the connection lifecycle on one hub.
 
-use crate::services::hub::{control_command::ControlCommand, hub_registry::HubRegistry};
 use crate::{
     models::messages::{DisconnectReason, HubEvent, HubMessage, TopicKey},
     repositories::hub_registry::{HubConnection, HubConnectionDb, HubConnections},
-    services::socket_channel,
+    services::{
+        hub::{control_command::ControlCommand, hub_registry::HubRegistry},
+        socket_channel,
+    },
     testing::{
         hub::{Lifecycle, TestHub, TestHubOptions, TestSession},
         TestMessage,

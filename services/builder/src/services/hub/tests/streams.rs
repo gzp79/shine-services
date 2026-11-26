@@ -401,7 +401,7 @@ mod served {
             "the hub shut down while the persistence was blocked"
         );
         assert_eq!(log.all_commands(&id).await.len(), 1);
-        assert_eq!(test.stream_registry.as_ref().unwrap().worker_count(), 0);
+        assert_eq!(test.stream_registry.as_ref().unwrap().running_worker_count(), 0);
     }
 
     #[test(serial = "hub-service")]
@@ -414,14 +414,14 @@ mod served {
         test.stream_subscribe(connection, user, &id).await.unwrap();
         next_stream_message(&mut socket).await;
         let streams = test.stream_registry.unwrap().clone();
-        assert_eq!(streams.worker_count(), 1);
+        assert_eq!(streams.running_worker_count(), 1);
 
         test.hub
             .request_disconnect(user, connection, DisconnectReason::Client)
             .unwrap();
 
         timeout(Duration::from_secs(5), async {
-            while streams.worker_count() != 0 {
+            while streams.running_worker_count() != 0 {
                 tokio::time::sleep(Duration::from_millis(5)).await;
             }
         })

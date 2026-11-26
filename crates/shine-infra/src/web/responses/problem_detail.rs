@@ -1,4 +1,4 @@
-use crate::serde::serde_status_code;
+use crate::{serde::serde_status_code, web::ApiUrl};
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
@@ -8,6 +8,7 @@ use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::fmt::{self, Display};
 use url::Url;
+use utoipa::ToSchema;
 
 pub trait ProblemType {
     const TYPE: &'static str;
@@ -23,21 +24,25 @@ pub mod problems {
 
 /// Implementation of a Problem Details response for HTTP APIs as of
 /// the specification [RFC-7807](https://datatracker.ietf.org/doc/html/rfc7807).
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct Problem {
     #[serde(rename = "status", with = "serde_status_code")]
+    #[schema(value_type = u16)]
     pub status: StatusCode,
     #[serde(rename = "type")]
     pub ty: &'static str,
     #[serde(rename = "instance")]
+    #[schema(value_type = Option<ApiUrl>)]
     pub instance: Option<Url>,
     #[serde(rename = "detail")]
     pub detail: String,
     #[serde(rename = "extension")]
+    #[schema(value_type = Object)]
     pub extension: JsonValue,
 
     // This property is returned only if service configuration allows it
     #[serde(rename = "sensitive")]
+    #[schema(value_type = Object)]
     pub sensitive: JsonValue,
 }
 

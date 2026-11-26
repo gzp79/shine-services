@@ -15,6 +15,15 @@
     {
       "label": "clippy",
       "type": "shell",
+      "command": "cargo clippy ${input:projects}",
+      "problemMatcher": [
+        "$rustc"
+      ],
+      "group": "build"
+    },
+    {
+      "label": "clippy (all targets, test cfg)",
+      "type": "shell",
       "command": "cargo clippy ${input:projects} --all-targets",
       "problemMatcher": [
         "$rustc"
@@ -24,7 +33,7 @@
     {
       "label": "clippy wasm",
       "type": "shell",
-      "command": "cargo clippy --target wasm32-unknown-unknown ${input:wasm-projects} --all-targets",
+      "command": "cargo clippy --target wasm32-unknown-unknown ${input:wasm-projects}",
       "problemMatcher": [
         "$rustc"
       ],
@@ -247,11 +256,26 @@
       "id": "env-task",
       "description": "Select env task",
       "options": [
-        { "label": "up", "value": "up" },
-        { "label": "up with observer", "value": "up-observe" },
-        { "label": "down", "value": "down" },
-        { "label": "status", "value": "status" },
-        { "label": "stop", "value": "stop all" }
+        {
+          "label": "up",
+          "value": "up"
+        },
+        {
+          "label": "up with observer",
+          "value": "up-observe"
+        },
+        {
+          "label": "down",
+          "value": "down"
+        },
+        {
+          "label": "status",
+          "value": "status"
+        },
+        {
+          "label": "stop",
+          "value": "stop all"
+        }
       ],
       "default": "up-observe"
     }

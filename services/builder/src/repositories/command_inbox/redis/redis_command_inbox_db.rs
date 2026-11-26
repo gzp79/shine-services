@@ -80,10 +80,6 @@ impl CommandInboxDb for RedisCommandInboxDb {
     {
         Ok(wake::listen(self, handler).await?)
     }
-
-    async fn unlisten(&self) -> Result<(), CommandStreamError> {
-        Ok(wake::unlisten(self).await?)
-    }
 }
 
 #[cfg(test)]

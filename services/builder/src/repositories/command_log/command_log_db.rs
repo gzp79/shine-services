@@ -45,6 +45,7 @@ pub trait CommandLogDb: Clone + Send + Sync {
     ) -> impl Future<Output = Result<Vec<StoredCommand>, CommandStreamError>> + Send;
 
     /// The last `count` commands, ordered by version.
+    #[allow(dead_code)]
     fn last_commands(
         &self,
         stream_id: &StreamId,
@@ -71,6 +72,7 @@ pub trait CommandLogDb: Clone + Send + Sync {
     ) -> impl Future<Output = Result<Option<StoredSnapshot>, CommandStreamError>> + Send;
 
     /// The version of the oldest stored snapshot, if there is one.
+    #[allow(dead_code)]
     fn oldest_snapshot_version(
         &self,
         stream_id: &StreamId,
@@ -92,6 +94,7 @@ pub trait CommandLogDb: Clone + Send + Sync {
     /// Reading the head first and bounding the whole check to it means a concurrent append is
     /// simply not part of this pass rather than a false positive: safe to call anytime, without
     /// blocking writers, even under load.
+    #[allow(dead_code)]
     fn check_consistency(
         &self,
         stream_id: &StreamId,

@@ -186,30 +186,6 @@ impl Default for StreamConfig {
     }
 }
 
-impl StreamConfig {
-    /// No periodic work: the recovery poll and the unload grace are an hour. The waits between the retries of
-    /// a failing inbox read or log call are a few milliseconds, so a test does not wait for them. Every
-    /// stream may be opened.
-    pub fn test_default() -> Self {
-        StreamConfig {
-            access: StreamAccessConfig::Any,
-            inbox: InboxConfig {
-                recovery_poll_interval: duration::seconds::<3600>(),
-                retry_min_delay: duration::milliseconds::<1>(),
-                retry_max_delay: duration::milliseconds::<5>(),
-                ..InboxConfig::default()
-            },
-            log: LogConfig {
-                retry_min_delay: duration::milliseconds::<1>(),
-                retry_max_delay: duration::milliseconds::<5>(),
-                ..LogConfig::default()
-            },
-            worker_unload_grace: duration::seconds::<3600>(),
-            ..Self::default()
-        }
-    }
-}
-
 /// The configuration of each stream kind.
 #[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[serde(rename_all = "camelCase")]
@@ -225,16 +201,6 @@ pub struct StreamsConfig {
 impl Default for StreamsConfig {
     fn default() -> Self {
         default_from_serde()
-    }
-}
-
-impl StreamsConfig {
-    /// The same configuration for every kind.
-    pub fn uniform(config: StreamConfig) -> Self {
-        Self {
-            chat: config.clone(),
-            pixel_map: config,
-        }
     }
 }
 

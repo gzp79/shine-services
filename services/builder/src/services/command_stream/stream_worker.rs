@@ -15,7 +15,7 @@ use shine_game::replica::{ReplayState, StreamId, StreamKind};
 use shine_infra::telemetry::label;
 use std::{
     sync::{Arc, Mutex},
-    time::{Duration, Instant},
+    time::Instant,
 };
 use tokio::{
     sync::{mpsc, oneshot, Notify},
@@ -36,7 +36,6 @@ enum Message {
 
 /// The two tasks of a running stream: the fast path for optimistic in-memory handling and the durable path for persistence.
 pub struct StreamWorker {
-    stream_id: StreamId,
     messages: mpsc::UnboundedSender<Message>,
     wake: Arc<Notify>,
     tasks: Mutex<Option<[JoinHandle<()>; 2]>>,
@@ -70,15 +69,10 @@ impl StreamWorker {
         stream_metrics().workers.add(1, &[kind_label(stream_id.kind())]);
 
         Arc::new(StreamWorker {
-            stream_id,
             messages: message_tx,
             wake,
             tasks: Mutex::new(Some([fast, durable])),
         })
-    }
-
-    pub fn stream_id(&self) -> &StreamId {
-        &self.stream_id
     }
 
     /// Adds or synchronizes a subscriber.

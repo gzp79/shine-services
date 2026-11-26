@@ -142,11 +142,13 @@ For a scenario that is reachable through a service's public interface, the two s
 answer different questions, so it lives in exactly one of them (plus, at most, a single
 smoke-level echo in the other):
 
-| Playwright (`tests/api-tests/`) | Rust (crate/service `*_test.rs`, `tests/` dirs) |
+| Playwright (`tests/api-tests/`) | Rust (see `rust-test-writing` for where) |
 |---|---|
 | **Contract**: do the real binary, real config, wiring and wire format work together as a client sees them? | **Behavior**: is the logic correct in every state? |
 | One happy path per feature, plus the gates that exist only at the HTTP/config layer: Origin, auth, CORS, headers, request validation. | Edge cases, invalid-input tables of the logic, ordering, races, limits, drop/close reasons, retry and backoff. |
 | Real mocks (SMTP, OIDC), real cookies, minted or real sessions. | Fake clocks, tiny timeouts, stalled loops, injected faults, in-process fakes. |
+
+Where the Rust tests live (bin vs lib crates, `*_test.rs`, fixtures, test-only helpers): `rust-test-writing` skill.
 
 Tie-breakers when it is not obvious:
 1. Only observable through a timing window, retry count or race → **Rust**.

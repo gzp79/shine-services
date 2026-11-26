@@ -1,7 +1,7 @@
-use crate::testing::hub::test_hub::BARRIER_TIMEOUT;
 use crate::{
     models::messages::{DisconnectReason, HubEvent, HubMessage},
     services::SocketReceiver,
+    testing::hub::test_hub::BARRIER_TIMEOUT,
 };
 use std::ops::{Deref, DerefMut};
 use tokio::{sync::mpsc::error::TryRecvError, task::JoinHandle};

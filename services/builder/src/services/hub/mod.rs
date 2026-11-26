@@ -18,4 +18,5 @@ pub use self::{
     socket_channel::{socket_channel, SocketMessage, SocketReceiver, SocketSender, WeakSocketSender},
 };
 
+#[cfg(test)]
 mod tests;

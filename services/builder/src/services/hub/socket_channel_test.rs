@@ -6,6 +6,23 @@ use tokio::time::timeout;
 
 const WAIT: Duration = Duration::from_secs(5);
 
+impl SocketReceiver {
+    /// The next queued message, whatever the reason; `None` when the queue is empty or closed.
+    pub fn try_recv(&mut self) -> Result<HubMessage, mpsc::error::TryRecvError> {
+        self.rx.try_recv()
+    }
+
+    /// The next queued message; `None` when the queue is closed.
+    pub async fn recv(&mut self) -> Option<HubMessage> {
+        self.rx.recv().await
+    }
+
+    /// The reason the connection ended with, if it did.
+    pub fn close_reason(&self) -> Option<DisconnectReason> {
+        *self.close.borrow()
+    }
+}
+
 fn ping_id(event: SocketMessage) -> String {
     match event {
         SocketMessage::Data(HubMessage::Ping(ping)) => ping.id,

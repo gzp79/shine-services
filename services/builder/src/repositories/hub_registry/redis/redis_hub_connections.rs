@@ -1,5 +1,7 @@
-use crate::models::HubError;
-use crate::repositories::hub_registry::{redis::RedisHubConnectionDbContext, HubConnection, HubConnections};
+use crate::{
+    models::HubError,
+    repositories::hub_registry::{redis::RedisHubConnectionDbContext, HubConnection, HubConnections},
+};
 use redis::{AsyncCommands, Script};
 use shine_infra::db::redis::RedisError;
 use std::sync::LazyLock;
@@ -65,11 +67,6 @@ impl RedisHubConnectionDbContext<'_> {
         format!("{}:{}", self.instance_id, user_id)
     }
 
-    fn user_id_from_redis_key(&self, key: &str) -> Option<Uuid> {
-        key.strip_prefix(HUB_CONNECTION_KEYSPACE)
-            .and_then(|raw| Uuid::parse_str(raw).ok())
-    }
-
     fn parse_connection_id(&self, value: Option<String>) -> Option<Uuid> {
         value.and_then(|raw| Uuid::parse_str(&raw).ok())
     }
@@ -87,22 +84,6 @@ impl RedisHubConnectionDbContext<'_> {
             .await
             .map_err(RedisError::RawError)?;
         Ok(held.into_iter().map(|held| held > 0).collect())
-    }
-
-    async fn find_redis_keys(&mut self) -> Result<Vec<String>, HubError> {
-        let pattern = format!("{HUB_CONNECTION_KEYSPACE}*");
-        let mut keys = vec![];
-        let mut iter = self
-            .client
-            .scan_match::<String, _>(pattern)
-            .await
-            .map_err(RedisError::RawError)?;
-
-        while let Some(key) = iter.next_item().await {
-            keys.push(key.map_err(RedisError::RawError)?);
-        }
-
-        Ok(keys)
     }
 }
 
@@ -152,30 +133,6 @@ impl HubConnections for RedisHubConnectionDbContext<'_> {
             );
         }
         Ok(stale)
-    }
-
-    #[instrument(level = "info", skip_all)]
-    async fn list_connections(&mut self) -> Result<Vec<HubConnection>, HubError> {
-        let keys = self.find_redis_keys().await?;
-        if keys.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let values: Vec<Option<String>> = self.client.mget(keys.clone()).await.map_err(RedisError::RawError)?;
-        let mut connections = Vec::with_capacity(values.len());
-
-        for (key, value) in keys.into_iter().zip(values) {
-            let Some(user_id) = self.user_id_from_redis_key(&key) else {
-                continue;
-            };
-            let Some(connection_id) = self.parse_connection_id(value) else {
-                continue;
-            };
-
-            connections.push(HubConnection { user_id, connection_id });
-        }
-
-        Ok(connections)
     }
 
     #[instrument(level = "info", skip_all, fields(user_id = %user_id))]

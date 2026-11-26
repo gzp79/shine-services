@@ -1,6 +1,3 @@
-//! The stream worker on a real Postgres and Redis, with a recording sink instead of the hub. The wake that
-//! the inbox listener will give a worker is simulated by calling `wake`.
-
 use crate::{
     models::{messages::StreamMessage, CommandStreamError},
     repositories::{
@@ -13,7 +10,7 @@ use crate::{
         TestMessage,
     },
 };
-use shine_game::replica::{encode_command, ChatCommand, ChatState, StreamId};
+use shine_game::replica::{ChatState, StreamId};
 use shine_test::test;
 use std::{
     sync::{
@@ -483,10 +480,6 @@ impl CommandInboxDb for FlakyInbox {
     {
         self.inner.listen(handler).await
     }
-
-    async fn unlisten(&self) -> Result<(), CommandStreamError> {
-        self.inner.unlisten().await
-    }
 }
 
 #[test]
@@ -763,7 +756,7 @@ async fn a_log_that_fails_for_a_moment_does_not_end_the_stream() {
     let id = TestStreamId::new_chat();
     let log = FlakyLog::new(h.log.db.clone());
     let worker = h.spawn_over_flaky_log(&id, log.clone());
-    let connection = h.subscribe(&worker).await;
+    let _connection = h.subscribe(&worker).await;
 
     log.fail_append.store(3, Ordering::Relaxed);
     h.send(&id, "a").await;

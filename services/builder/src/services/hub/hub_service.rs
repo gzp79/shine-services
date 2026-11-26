@@ -280,12 +280,6 @@ impl HubService {
         self.inner.admission.admit(user_id)
     }
 
-    /// Subscribes to a set of topics on the hub's message bus.
-    #[cfg(test)]
-    pub async fn subscribe(&self, topics: Vec<TopicKey>) -> mpsc::UnboundedReceiver<HubMessage> {
-        self.inner.subscribers.subscribe(topics).await
-    }
-
     /// Stops the hub: asks the command loop to shut down and returns once it has. The error is the failed send of
     /// the command, which means that the loop was gone already; the hub has stopped when this returns, either way.
     pub async fn shutdown(&self) -> Result<(), HubError> {
@@ -343,13 +337,6 @@ impl HubService {
         reason: DisconnectReason,
     ) -> Result<(), HubError> {
         self.send_control(ControlCommand::DisconnectUser { user_id, connection_id, reason })
-    }
-
-    /// Sends an egress message to a specific connection. Returns whether the message was queued for delivery.
-    #[cfg(test)]
-    #[tracing::instrument(level = "debug", skip_all, fields(ws.connection_id = %connection_id))]
-    pub async fn send_to_connection(&self, connection_id: Uuid, message: HubMessage) -> Result<bool, HubError> {
-        self.inner.gateway.send_to_connection(connection_id, message).await
     }
 
     /// Sends an egress message to a user's active connection.
@@ -436,3 +423,7 @@ impl StreamEgress for HubService {
         StreamEgress::notify_failed(&self.inner.gateway, stream_id).await
     }
 }
+
+#[cfg(test)]
+#[path = "hub_service_test.rs"]
+mod hub_service_test;

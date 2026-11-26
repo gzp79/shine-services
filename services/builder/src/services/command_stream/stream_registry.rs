@@ -363,17 +363,6 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
         }
     }
 
-    /// The workers that are running.
-    pub fn worker_count(&self) -> usize {
-        self.inner
-            .state
-            .lock()
-            .unwrap()
-            .workers()
-            .filter(|worker| !worker.is_finished())
-            .count()
-    }
-
     /// Forgets the streams that no connection has open and whose worker, if any, has ended. A new
     /// subscribe replaces an ended worker anyway; this only releases the streams nobody comes back to.
     pub fn purge(&self) {
@@ -383,11 +372,6 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
         streams.retain(|stream_id, stream| {
             open.contains(stream_id) || stream.worker.as_ref().is_some_and(|worker| !worker.is_finished())
         });
-    }
-
-    /// All the held workers.
-    pub fn workers_count(&self) -> usize {
-        self.inner.state.lock().unwrap().workers().count()
     }
 
     /// Starts to wake the workers on the wakes of the inbox. A listener that reconnected may have missed
@@ -401,10 +385,6 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
                 InboxWake::All => registry.wake_all(),
             })
             .await
-    }
-
-    pub async fn unlisten(&self) -> Result<(), CommandStreamError> {
-        self.inner.inbox.unlisten().await
     }
 
     /// Asks every worker to persist what is waiting and end.

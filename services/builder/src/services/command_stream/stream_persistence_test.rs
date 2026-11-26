@@ -1,6 +1,6 @@
 use super::*;
-use crate::models::CommandStreamError;
 use crate::{
+    models::CommandStreamError,
     repositories::{command_inbox::CommandInboxDb, command_log::CommandLogDb},
     services::command_stream::{LogConfig, StreamConfig},
     testing::command_stream::{ChatLog, TestInbox, TestLog, TestStreamId},

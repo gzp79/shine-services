@@ -9,22 +9,45 @@ use crate::{
     },
     services::command_stream::{
         stream_persistence::PersistenceWork, InboxConfig, PersistResult, StreamAccessConfig, StreamConfig,
-        StreamLogService, StreamPersistence, StreamRegistry, MAX_COMMAND_BYTES,
+        StreamLogService, StreamPersistence, StreamRegistry,
     },
     testing::{
         command_stream::{ChatLog, TestEgress, TestInbox, TestLog, TestStreamId},
         TestMessage,
     },
 };
-use shine_game::replica::{
-    encode_command, ChatCommand, ChatState, PixelMapCommand, PixelMapState, ReplayState, StreamId,
-};
+use shine_game::replica::{ChatState, PixelMapState, ReplayState, StreamId};
 use shine_test::test;
 use std::time::Duration;
 use tokio::time::{sleep, timeout};
 use uuid::Uuid;
 
 const WAIT_TIMEOUT: Duration = Duration::from_secs(5);
+
+impl<I: CommandInboxDb, L: CommandLogDb> StreamRegistry<I, L> {
+    /// The workers that are running.
+    pub fn running_worker_count(&self) -> usize {
+        self.inner
+            .state
+            .lock()
+            .unwrap()
+            .workers()
+            .filter(|worker| !worker.is_finished())
+            .count()
+    }
+
+    /// All the held workers.
+    pub fn worker_count(&self) -> usize {
+        self.inner.state.lock().unwrap().workers().count()
+    }
+}
+
+impl<L: CommandLogDb> StreamRegistry<RedisCommandInboxDb, L> {
+    /// Stops the handler of `listen`.
+    pub async fn unlisten(&self) -> Result<(), CommandStreamError> {
+        self.inner.inbox.unlisten().await
+    }
+}
 
 struct Harness {
     log: TestLog,
@@ -85,12 +108,16 @@ impl Harness {
 
 async fn wait_for_workers(registry: &StreamRegistry<RedisCommandInboxDb, PgCommandLogDb>, count: usize) {
     let result = timeout(WAIT_TIMEOUT, async {
-        while registry.worker_count() != count {
+        while registry.running_worker_count() != count {
             sleep(Duration::from_millis(5)).await;
         }
     })
     .await;
-    assert!(result.is_ok(), "{} workers, expected {count}", registry.worker_count());
+    assert!(
+        result.is_ok(),
+        "{} workers, expected {count}",
+        registry.running_worker_count()
+    );
 }
 
 fn short_grace() -> StreamConfig {
@@ -181,7 +208,7 @@ async fn a_stream_that_is_not_allowed_is_not_created() {
     // nothing is open for the connection, so it can neither push nor subscribe
     let pushed = h.registry.push(connection, &id, user, Uuid::new_v4(), &data).await;
     assert!(matches!(pushed, Err(CommandFailure::NotSubscribed)));
-    assert_eq!(h.registry.worker_count(), 0);
+    assert_eq!(h.registry.running_worker_count(), 0);
 }
 
 #[test]
@@ -356,9 +383,9 @@ async fn subscribers_of_a_stream_share_one_worker_and_streams_have_their_own() {
 
     let first = h.join(&a).await;
     let second = h.join(&a).await;
-    assert_eq!(h.registry.worker_count(), 1);
+    assert_eq!(h.registry.running_worker_count(), 1);
     h.join(&b).await;
-    assert_eq!(h.registry.worker_count(), 2);
+    assert_eq!(h.registry.running_worker_count(), 2);
 
     // One worker serves both: a single wake delivers to both.
     h.push_chat(&a, "to both").await;
@@ -491,7 +518,7 @@ async fn a_disconnect_releases_every_stream_of_the_connection() {
     let (chat, map) = (TestStreamId::new_chat(), TestStreamId::new_chat());
     let connection = h.join(&chat).await;
     h.join_as(connection, &map).await;
-    assert_eq!(h.registry.worker_count(), 2);
+    assert_eq!(h.registry.running_worker_count(), 2);
 
     h.registry.disconnect(connection);
 
@@ -513,7 +540,7 @@ async fn an_unsubscribe_releases_only_that_stream_and_a_stream_can_be_joined_aga
     let again = Uuid::new_v4();
     h.join_as(again, &a).await;
     assert_eq!(TestEgress::kinds(&h.egress.messages(again)), vec!["sync:0"]);
-    assert_eq!(h.registry.worker_count(), 2);
+    assert_eq!(h.registry.running_worker_count(), 2);
 }
 
 #[test]
@@ -525,9 +552,9 @@ async fn ended_workers_are_not_running_and_a_purge_forgets_them() {
     h.registry.close(connection, &id);
 
     wait_for_workers(&h.registry, 0).await;
-    assert_eq!(h.registry.workers_count(), 1, "an ended worker is held until a purge");
+    assert_eq!(h.registry.worker_count(), 1, "an ended worker is held until a purge");
     h.registry.purge();
-    assert_eq!(h.registry.workers_count(), 0);
+    assert_eq!(h.registry.worker_count(), 0);
 }
 
 #[test]
@@ -574,7 +601,7 @@ async fn a_subscribe_of_a_stream_closed_since_it_was_opened_starts_no_worker() {
     h.registry.disconnect(connection);
     h.registry.subscribe(connection, &gone).unwrap();
 
-    assert_eq!(h.registry.workers_count(), 0);
+    assert_eq!(h.registry.worker_count(), 0);
 }
 
 #[test]
@@ -604,7 +631,7 @@ async fn a_shutdown_persists_what_is_waiting_and_ends_every_worker() {
 
     h.registry.shutdown(WAIT_TIMEOUT).await;
 
-    assert_eq!(h.registry.worker_count(), 0);
+    assert_eq!(h.registry.running_worker_count(), 0);
     assert_eq!(h.log.all_commands(&a).await.len(), 1);
     assert_eq!(h.log.all_commands(&b).await.len(), 1);
 }

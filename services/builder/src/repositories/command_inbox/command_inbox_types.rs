@@ -18,10 +18,6 @@ impl InboxId {
     /// Before every entry: polling after it reads the inbox from its start.
     pub const START: InboxId = InboxId { ms: 0, seq: 0 };
 
-    pub const fn new(ms: u64, seq: u64) -> Self {
-        Self { ms, seq }
-    }
-
     pub fn parse(value: &str) -> Option<Self> {
         let (ms, seq) = value.split_once('-')?;
         Some(Self {
@@ -98,3 +94,7 @@ pub enum InboxWake {
     /// Notifications may have been lost: every stream should look.
     All,
 }
+
+#[cfg(test)]
+#[path = "command_inbox_types_test.rs"]
+mod command_inbox_types_test;

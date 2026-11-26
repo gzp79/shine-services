@@ -1,22 +1,32 @@
 use crate::{
-    models::messages::StreamMessage,
     repositories::{
         command_inbox::{redis::RedisCommandInboxDb, CommandInboxDb, InboxId},
         command_log::{pg::PgCommandLogDb, CommandLogDb, StoredCommand},
     },
     services::command_stream::{
-        stream_persistence::PersistenceWork, InboxConfig, LogConfig, PersistResult, StreamConfig, StreamLogService,
-        StreamPersistence, StreamRelay,
+        InboxConfig, LogConfig, PersistResult, StreamConfig, StreamEgress, StreamLogService, StreamPersistence,
+        StreamRelay,
     },
     testing::{
         command_stream::{ChatLog, TestEgress, TestInbox, TestLog, TestStreamId},
         TestMessage,
     },
 };
-use shine_game::replica::{ChatState, StreamId};
+use shine_game::replica::{ChatState, ReplayState, StreamId};
 use shine_test::test;
 use std::sync::Arc;
 use uuid::Uuid;
+
+impl<S, I, E> StreamRelay<S, I, E>
+where
+    S: ReplayState,
+    I: CommandInboxDb,
+    E: StreamEgress,
+{
+    pub fn egress(&self) -> &E {
+        &self.egress
+    }
+}
 
 type Relay = StreamRelay<ChatState, RedisCommandInboxDb, TestEgress>;
 type Persistence = StreamPersistence<ChatState, RedisCommandInboxDb, PgCommandLogDb>;
@@ -382,7 +392,7 @@ async fn giving_up_reports_the_failed_stream_and_sends_nothing() {
 
     relay.give_up().await;
 
-    assert_eq!(relay.egress().failed(), [stream_id.clone()]);
+    assert_eq!(relay.egress().failed(), std::slice::from_ref(&stream_id));
     for connection in [first, second] {
         assert!(relay.egress().messages(connection).is_empty(), "the egress tells them");
     }
