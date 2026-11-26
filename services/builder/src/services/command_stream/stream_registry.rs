@@ -199,6 +199,10 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
             tracing::info!("[{connection_id}] User {user_id} is not authorized for stream {stream_id}");
             return Err(CommandStreamError::Unauthorized);
         }
+        let is_new = !self.inner.state.lock().unwrap().streams.contains_key(stream_id);
+        if is_new {
+            self.log_head(stream_id).await;
+        }
         let mut state = self.inner.state.lock().unwrap();
         state.streams.entry(stream_id.clone()).or_insert_with(|| StreamState {
             worker: None,
@@ -210,6 +214,15 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
             .or_default()
             .insert(stream_id.clone());
         Ok(())
+    }
+
+    /// Logs the version the log is at the time of stream opening.
+    async fn log_head(&self, stream_id: &StreamId) {
+        match self.inner.log.head(stream_id).await {
+            Ok(Some(head)) => tracing::info!("[{stream_id}] Opened at version {}", head.version),
+            Ok(None) => tracing::info!("[{stream_id}] Opened, the stream has no log yet"),
+            Err(err) => tracing::warn!("[{stream_id}] The head of the stream could not be read: {err:#?}"),
+        }
     }
 
     /// Closes the stream for the connection and unsubscribes it from the stream's worker.

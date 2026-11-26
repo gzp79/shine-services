@@ -240,8 +240,25 @@ The socket write, ping and idle timeouts exist; the listener itself sets no TCP 
 | C5 | **Stale state after a reconnect.** The stream is never reset to `Waiting`; paints are not gated by the connection state; `replaced` is never set although the type has it. | `pixel-map/index.ts:46-51,164-184`; `stream-hub.ts:1`; `pixel-map-ui.ts:14` | Reset or resync on reconnect; gate paints; handle `replaced` (no reconnect; the close codes are in [Hub](../services/builder/hub.md#ending-a-connection)). |
 | C6 | **Overlapping `Sync` tail records a bad hash.** `on_sync` still calls `apply_wire` and ignores a skipped outcome. The server sends non-overlapping tails today. | `client_stream.rs:189-193,220,305-308` | Honour `ApplyOutcome::Skipped`. |
 | C7 | **Snapshot decode accepts trailing bytes.** `decode_snapshot` uses `postcard::from_bytes`; state and chain hashes come from the same frame. | `crates/shine-game/src/replica/codec.rs:15-17,35-41`; `client_stream.rs:280-286` | Canonical check for snapshots; verify the chain hash against a checkpoint. |
-| C8 | **`StreamSubscribeFailed` is retried every 5 s forever**, including permanent reasons, and an `desynced` resubscribe has no jitter, so after a server-side give-up every client of an instance comes back at once; `new WebSocket` is unguarded. | `client_stream.rs:155-159`; `websocket-stream-hub.ts:50` | Stop on permanent reasons; jittered backoff; try/catch into the backoff path. |
+| C8 | **`StreamSubscribeFailed` is retried every 5 s forever**, including permanent reasons, and a `desynced` resubscribe has no jitter, so after a server-side give-up every client of an instance comes back at once; `new WebSocket` is unguarded. | `client_stream.rs:155-159`; `websocket-stream-hub.ts:50` | Stop on permanent reasons; jittered backoff; try/catch into the backoff path. See "Desynced is a permanent error" below. |
 | C9 | **`net/` is missing from the `client-web-architecture` skill's layout table.** | `.claude/skills/client-web-architecture/SKILL.md:14-25` | Add a row. |
+
+### Desynced is a permanent error (client policy, not implemented)
+
+What the server sends: when a worker gives up (`StreamRelay::give_up` → `notify_failed` → the hub's `StreamFailed`), every connection that had the stream open gets `streamDesynced` (`StreamMessage::Desynced`, was `streamUnsynced`) and the stream is closed for it. It no longer sends `streamSubscribeFailed` for this: a failed subscribe request and a stream that stopped serving are different events. A successful reload is not a desync, the subscribers get a fresh `streamSync` (`accept_reload` → `reset_subscribers`).
+
+Why it is permanent: the worker gives up only after the retries of the inbox read and of the log calls are used up, or on a permanent error (`Corrupt`, `Diverged`). A client that resubscribes at once or after 5 s meets the same failure.
+
+What the client does today: `ClientStream` sets `StreamStatus::Desynced` for `streamDesynced` and for any `streamSubscribeFailed`, and `pixel-map/index.ts` resubscribes after a fixed 5 s, forever (C8). `hub.md` (section "Subscribe failure") describes more than exists: doubling from 5 s to 60 s, jitter, a reset on sync and a `Rejected` status for `unauthorized`. The code has none of these, and `StreamStatus` has only `Waiting`, `Live` and `Desynced`.
+
+Intended policy (decided in discussion, no code yet): treat `Desynced` as a permanent-ish error. The client waits much longer between tries, with growing delays and jitter, and eventually gives up in a terminal state that the UI shows as unavailable. A sync resets the counter.
+
+Open:
+- The delays, the cap and the number of tries before giving up.
+- The terminal status and what ends it (a hub reconnect, a user action).
+- Whether the logic lives in `ClientStream` (Rust, testable, the TS side only runs the timer) or in the TS client.
+- Whether `streamSubscribeFailed` reasons share the policy: `rateLimited` needs a short wait, `failed` the long one, `unauthorized` none (`Rejected`).
+- Update `hub.md` to match whatever is built, or cut the claims it makes now.
 
 ---
 
