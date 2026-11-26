@@ -37,7 +37,7 @@ mod tests {
 
     #[derive(Debug, Deserialize)]
     struct Required {
-        value: u32,
+        _value: u32,
     }
 
     #[test]
