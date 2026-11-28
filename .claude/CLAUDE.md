@@ -81,7 +81,8 @@ Project skills live in `.claude/skills/`; `sdp` comes from the `shine-skills` pl
 | `mesh-topology` | world/chunk/hex geometry |
 | `shine-skills:sdp` | **larger features or architectural changes**, or when explicitly asked to write/sync/update a design doc — keeps the design doc and code in agreement; detects which side is ahead (write doc / write code from doc / sync doc from code). Skip for small additions, helpers, or narrow changes to existing code; not required before writing code |
 | `local-development` | run services locally |
-| `api-test-writing` | writing or modifying tests under `tests/api-tests/` or `tests/mock-tests/` |
+| `rust-test-writing` | adding or modifying a `*_test.rs`, `tests/` dir, `src/testing/`, a testing crate or a test-only helper in `services/` or `crates/`; clippy with and without the test cfg |
+| `api-test-writing` | writing or modifying tests under `tests/api-tests/` or `tests/mock-tests/`, or deciding whether a test belongs in Playwright (contract: happy path + HTTP-layer gates) or Rust (behavior: edge cases, faults, timing) |
 
 ### Design docs
 Markdown files under `docs/<domain>/`. Domain subfolders:

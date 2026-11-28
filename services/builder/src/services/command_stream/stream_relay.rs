@@ -81,10 +81,6 @@ where
         &self.stream_id
     }
 
-    pub fn egress(&self) -> &E {
-        &self.egress
-    }
-
     pub fn subscribe(&mut self, connection_id: Uuid) {
         if self.subscribers.insert(connection_id, None).is_none() {
             stream_metrics().subscribers.add(1, &[self.kind_label()]);
@@ -93,15 +89,6 @@ where
 
     pub fn unsubscribe(&mut self, connection_id: Uuid) {
         self.remove_subscriber(&connection_id);
-    }
-
-    /// Forgets every subscriber: the stream ends or cannot be served any more.
-    pub fn release_subscribers(&mut self) {
-        let count = self.subscribers.len();
-        self.subscribers.clear();
-        if count > 0 {
-            stream_metrics().subscribers.add(-(count as i64), &[self.kind_label()]);
-        }
     }
 
     fn remove_subscriber(&mut self, connection_id: &Uuid) {
@@ -168,12 +155,12 @@ where
     }
 
     /// One read of the inbox from the read position. A failure that may pass, like Redis being out for a
-    /// moment, is tried again with growing waits, at most `inbox_max_retries` times, so the subscribers are
+    /// moment, is tried again with growing waits, at most `inbox.max_retries` times, so the subscribers are
     /// not dropped for it. The read changes nothing here until it succeeds, so repeating it is safe.
     async fn poll_inbox(&self, limit: usize) -> Result<InboxBatch, CommandStreamError> {
-        ExponentialBackoff::new(self.config.inbox_retry_min_delay, self.config.inbox_retry_max_delay)
+        ExponentialBackoff::new(self.config.inbox.retry_min_delay, self.config.inbox.retry_max_delay)
             .retry_if(
-                self.config.inbox_max_retries,
+                self.config.inbox.max_retries,
                 |result: &Result<InboxBatch, CommandStreamError>| result.as_ref().is_err_and(|err| err.is_transient()),
                 |retries| async move {
                     let result = self.inbox.poll(&self.stream_id, &self.read_index, limit).await;
@@ -206,7 +193,7 @@ where
         if room == 0 {
             return Ok(false);
         }
-        let limit = self.config.inbox_poll_limit.min(room);
+        let limit = self.config.inbox.poll_limit.min(room);
         let started = Instant::now();
         let batch = self.poll_inbox(limit).await?;
         let metrics = stream_metrics();
@@ -244,7 +231,7 @@ where
             taken += 1;
             let command_hash = command.content_hash();
             version += 1;
-            chain_hash = fold_chain_hash(chain_hash, version, command_hash);
+            chain_hash = fold_chain_hash(chain_hash, version, entry.command_id, entry.user_id, command_hash);
             self.optimistic.push(StoredCommand {
                 version,
                 command_id: entry.command_id,
@@ -300,13 +287,11 @@ where
         }
     }
 
-    /// The stream cannot be served: the subscribers are dropped and have to subscribe again.
+    /// The stream cannot be served: the egress is told, it closes the stream for every connection that
+    /// has it open and has them subscribe again.
     pub async fn give_up(&mut self) {
-        let message = Arc::new(StreamMessage::Unsynced {
-            stream_id: self.stream_id.clone(),
-        });
-        self.broadcast(message).await;
-        self.release_subscribers();
+        tracing::error!("Giving up on stream: {}", self.stream_id);
+        self.egress.notify_failed(&self.stream_id).await;
     }
 
     /// The version and chain hash of the last command the relay shows, optimistic ones included.
@@ -362,7 +347,13 @@ where
         let mut moved = false;
         for command in &mut self.optimistic {
             version += 1;
-            chain_hash = fold_chain_hash(chain_hash, version, command.command_hash);
+            chain_hash = fold_chain_hash(
+                chain_hash,
+                version,
+                command.command_id,
+                command.user_id,
+                command.command_hash,
+            );
             moved |= command.version != version;
             command.version = version;
             command.chain_hash = chain_hash;
@@ -446,6 +437,7 @@ where
     async fn broadcast(&mut self, message: Arc<StreamMessage>) {
         for connection_id in self.subscribers.keys().copied().collect::<Vec<_>>() {
             if !self.egress.send(connection_id, message.clone()).await {
+                tracing::debug!("[{connection_id}] Failed to send message to subscriber, removing.");
                 self.remove_subscriber(&connection_id);
             }
         }
@@ -456,6 +448,20 @@ where
             self.subscribers.insert(connection_id, Some(version));
         } else {
             self.remove_subscriber(&connection_id);
+        }
+    }
+}
+
+impl<S, I, E> Drop for StreamRelay<S, I, E>
+where
+    S: ReplayState,
+    I: CommandInboxDb,
+    E: StreamEgress,
+{
+    fn drop(&mut self) {
+        let count = self.subscribers.len();
+        if count > 0 {
+            stream_metrics().subscribers.add(-(count as i64), &[self.kind_label()]);
         }
     }
 }

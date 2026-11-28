@@ -1,11 +1,10 @@
 use crate::{
-    models::messages::StreamMessage,
     repositories::{
         command_inbox::{redis::RedisCommandInboxDb, CommandInboxDb, InboxId},
         command_log::{pg::PgCommandLogDb, CommandLogDb, StoredCommand},
     },
     services::command_stream::{
-        stream_persistence::PersistenceWork, PersistResult, StreamConfig, StreamLogService, StreamPersistence,
+        InboxConfig, LogConfig, PersistResult, StreamConfig, StreamEgress, StreamLogService, StreamPersistence,
         StreamRelay,
     },
     testing::{
@@ -13,10 +12,21 @@ use crate::{
         TestMessage,
     },
 };
-use shine_game::replica::{ChatState, StreamId};
+use shine_game::replica::{ChatState, ReplayState, StreamId};
 use shine_test::test;
 use std::sync::Arc;
 use uuid::Uuid;
+
+impl<S, I, E> StreamRelay<S, I, E>
+where
+    S: ReplayState,
+    I: CommandInboxDb,
+    E: StreamEgress,
+{
+    pub fn egress(&self) -> &E {
+        &self.egress
+    }
+}
 
 type Relay = StreamRelay<ChatState, RedisCommandInboxDb, TestEgress>;
 type Persistence = StreamPersistence<ChatState, RedisCommandInboxDb, PgCommandLogDb>;
@@ -238,7 +248,10 @@ async fn ingest_reads_a_page_and_tells_whether_there_is_more() {
     let log = TestLog::from_env().await;
     let stream_id = TestStreamId::new_chat();
     let config = StreamConfig {
-        inbox_poll_limit: 2,
+        inbox: InboxConfig {
+            poll_limit: 2,
+            ..InboxConfig::default()
+        },
         ..StreamConfig::default()
     };
     let (mut relay, _persistence) = setup_with(&stream_id, &inbox, &log, config).await;
@@ -368,7 +381,7 @@ async fn a_reload_sends_the_subscribers_a_new_sync() {
 }
 
 #[test]
-async fn giving_up_tells_the_subscribers_and_forgets_them() {
+async fn giving_up_reports_the_failed_stream_and_sends_nothing() {
     let inbox = TestInbox::from_env().await;
     let log = TestLog::from_env().await;
     let stream_id = TestStreamId::new_chat();
@@ -379,18 +392,10 @@ async fn giving_up_tells_the_subscribers_and_forgets_them() {
 
     relay.give_up().await;
 
+    assert_eq!(relay.egress().failed(), std::slice::from_ref(&stream_id));
     for connection in [first, second] {
-        assert_eq!(
-            relay
-                .egress()
-                .messages(connection)
-                .iter()
-                .map(|m| (**m).clone())
-                .collect::<Vec<_>>(),
-            [StreamMessage::Unsynced { stream_id: stream_id.clone() }]
-        );
+        assert!(relay.egress().messages(connection).is_empty(), "the egress tells them");
     }
-    assert!(relay.subscribers.is_empty(), "they have to subscribe again");
 }
 
 #[test]
@@ -421,7 +426,10 @@ async fn a_failed_persistence_is_an_error_of_the_relay_and_changes_nothing() {
 /// Like `setup`, with a snapshot at every second version, so a checkpoint comes with a few commands.
 async fn setup_snapshot_every_two(stream_id: &StreamId, inbox: &TestInbox, log: &TestLog) -> (Relay, Persistence) {
     let config = StreamConfig {
-        log_snapshot_every: 2,
+        log: LogConfig {
+            snapshot_every: 2,
+            ..LogConfig::default()
+        },
         ..StreamConfig::default()
     };
     let mut persistence = Persistence::new(

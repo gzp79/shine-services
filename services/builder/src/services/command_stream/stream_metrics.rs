@@ -173,6 +173,7 @@ impl StreamMetrics {
             CommandFailure::Invalid => "invalid",
             CommandFailure::Busy => "busy",
             CommandFailure::Failed => "failed",
+            CommandFailure::RateLimited => "rate_limited",
         };
         self.commands_pushed
             .add(1, &[kind_label(kind), label("outcome", outcome)]);

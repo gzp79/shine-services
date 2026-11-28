@@ -53,7 +53,4 @@ pub trait CommandInboxDb: Clone + Send + Sync {
     fn listen<F>(&self, handler: F) -> impl Future<Output = Result<(), CommandStreamError>> + Send
     where
         F: Fn(InboxWake) + Send + Sync + 'static;
-
-    /// Stops the handler of `listen`.
-    fn unlisten(&self) -> impl Future<Output = Result<(), CommandStreamError>> + Send;
 }

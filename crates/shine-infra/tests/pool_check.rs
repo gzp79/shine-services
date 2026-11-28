@@ -1,5 +1,8 @@
 use rustls::crypto::ring;
-use shine_infra::db::{postgres::create_postgres_pool, redis::create_redis_pool};
+use shine_infra::{
+    db::{postgres::create_postgres_pool, redis::create_redis_pool},
+    web::TEST_STAGE,
+};
 use shine_infra_testing::db::{postgres::get_postgres_cns, redis::get_redis_cns};
 use shine_test::test;
 
@@ -22,8 +25,8 @@ async fn test_pg_pool_check_recovers_from_cut_connections() {
     let _ = ring::default_provider().install_default();
 
     let cns = get_postgres_cns();
-    let pool = create_postgres_pool(&cns).await.unwrap();
-    let observer = create_postgres_pool(&cns).await.unwrap();
+    let pool = create_postgres_pool(TEST_STAGE, &cns).await.unwrap();
+    let observer = create_postgres_pool(TEST_STAGE, &cns).await.unwrap();
 
     let mut pids = Vec::new();
     {
@@ -53,8 +56,8 @@ async fn test_pg_pool_check_recovers_from_cut_connections() {
 #[test(serial = "pool-check")]
 async fn test_redis_pool_check_recovers_from_cut_connections() {
     let cns = get_redis_cns();
-    let pool = create_redis_pool(&cns).await.unwrap();
-    let observer = create_redis_pool(&cns).await.unwrap();
+    let pool = create_redis_pool(TEST_STAGE, &cns).await.unwrap();
+    let observer = create_redis_pool(TEST_STAGE, &cns).await.unwrap();
 
     let mut ids = Vec::new();
     {

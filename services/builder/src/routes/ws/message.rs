@@ -1,5 +1,6 @@
 use crate::{
     models::messages::{CommandFailure, StreamCommand, StreamMessage, SubscribeFailure},
+    routes::ws::socket_budget::BudgetKind,
     services::MAX_COMMAND_BYTES,
 };
 use base64::{engine::general_purpose::STANDARD, Engine};
@@ -31,6 +32,26 @@ pub enum WSMessageRequest {
         command: String,
     },
     Ping(PingRequest),
+}
+
+impl WSMessageRequest {
+    /// What the request costs from the budget of its socket.
+    pub fn budget_kind(&self) -> BudgetKind {
+        match self {
+            Self::StreamSubscribe { .. } => BudgetKind::Subscribe,
+            Self::StreamUnsubscribe { .. } | Self::StreamCommand { .. } | Self::Ping(_) => BudgetKind::Command,
+        }
+    }
+
+    /// The label of the request in the metrics.
+    pub fn metric_kind(&self) -> &'static str {
+        match self {
+            Self::StreamSubscribe { .. } => "stream_subscribe",
+            Self::StreamUnsubscribe { .. } => "stream_unsubscribe",
+            Self::StreamCommand { .. } => "stream_command",
+            Self::Ping(_) => "ping",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -72,7 +93,7 @@ pub enum WSMessageResponse {
         version: i64,
         state_hash: String,
     },
-    StreamUnsynced {
+    StreamDesynced {
         stream_id: String,
     },
     StreamNack {
@@ -120,6 +141,7 @@ fn nack_reason(reason: CommandFailure) -> &'static str {
         CommandFailure::Invalid => "invalid",
         CommandFailure::Failed => "failed",
         CommandFailure::Busy => "busy",
+        CommandFailure::RateLimited => "rateLimited",
     }
 }
 
@@ -127,6 +149,7 @@ fn subscribe_failure(reason: SubscribeFailure) -> &'static str {
     match reason {
         SubscribeFailure::Failed => "failed",
         SubscribeFailure::Unauthorized => "unauthorized",
+        SubscribeFailure::RateLimited => "rateLimited",
     }
 }
 
@@ -153,7 +176,7 @@ pub fn stream_message_to_wire(message: &StreamMessage) -> WSMessageResponse {
             version: *version,
             state_hash: hex(*state_hash),
         },
-        StreamMessage::Unsynced { .. } => WSMessageResponse::StreamUnsynced { stream_id },
+        StreamMessage::Desynced { .. } => WSMessageResponse::StreamDesynced { stream_id },
         StreamMessage::CommandFailed { command_id, reason, .. } => WSMessageResponse::StreamNack {
             stream_id,
             command_id: *command_id,

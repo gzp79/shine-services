@@ -6,6 +6,14 @@
     },
     "ws": {
       "allowedHosts": ["^ws\\.local\\.scytta\\.com(:\\d+)?$"]
+    },
+    "streams": {
+      "chat": {
+        "access": { "mode": "any" }
+      },
+      "pixelMap": {
+        "access": { "mode": "any" }
+      }
     }
   }
 }

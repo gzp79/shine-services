@@ -1,7 +1,9 @@
-use crate::models::messages::{DisconnectReason, HubMessage, TopicKey};
+use crate::{
+    models::messages::{DisconnectReason, TopicKey},
+    services::hub::socket_channel::SocketSender,
+};
 use shine_game::replica::StreamId;
 use shine_infra::session::SessionKey;
-use tokio::sync::mpsc;
 use uuid::Uuid;
 
 /// Control messages processed by the hub's command loop — the sole writer of connection state.
@@ -11,15 +13,11 @@ pub enum ControlCommand {
         user_id: Uuid,
         connection_id: Uuid,
         session_key: SessionKey,
-        tx: mpsc::Sender<HubMessage>,
+        socket_sender: SocketSender,
         topics: Vec<TopicKey>,
     },
     DisconnectUser {
         user_id: Uuid,
-        connection_id: Uuid,
-        reason: DisconnectReason,
-    },
-    DropConnection {
         connection_id: Uuid,
         reason: DisconnectReason,
     },
@@ -35,6 +33,10 @@ pub enum ControlCommand {
         connection_id: Uuid,
         stream_id: StreamId,
     },
+    /// The stream cannot be served any more: it is closed for every connection that has it open.
+    StreamFailed {
+        stream_id: StreamId,
+    },
     Shutdown,
 }
 
@@ -44,10 +46,10 @@ impl ControlCommand {
         match self {
             ControlCommand::ConnectUser { .. } => "connect_user",
             ControlCommand::DisconnectUser { .. } => "disconnect_user",
-            ControlCommand::DropConnection { .. } => "drop_connection",
             ControlCommand::HubRegistryChanged { .. } => "hub_registry_changed",
             ControlCommand::SubscribeStream { .. } => "subscribe_stream",
             ControlCommand::UnsubscribeStream { .. } => "unsubscribe_stream",
+            ControlCommand::StreamFailed { .. } => "stream_failed",
             ControlCommand::Shutdown => "shutdown",
         }
     }
@@ -58,9 +60,9 @@ impl ControlCommand {
             ControlCommand::ConnectUser { user_id, .. }
             | ControlCommand::DisconnectUser { user_id, .. }
             | ControlCommand::HubRegistryChanged { user_id } => Some(*user_id),
-            ControlCommand::DropConnection { .. }
-            | ControlCommand::SubscribeStream { .. }
+            ControlCommand::SubscribeStream { .. }
             | ControlCommand::UnsubscribeStream { .. }
+            | ControlCommand::StreamFailed { .. }
             | ControlCommand::Shutdown => None,
         }
     }
@@ -70,10 +72,11 @@ impl ControlCommand {
         match self {
             ControlCommand::ConnectUser { connection_id, .. }
             | ControlCommand::DisconnectUser { connection_id, .. }
-            | ControlCommand::DropConnection { connection_id, .. }
             | ControlCommand::SubscribeStream { connection_id, .. }
             | ControlCommand::UnsubscribeStream { connection_id, .. } => Some(*connection_id),
-            ControlCommand::HubRegistryChanged { .. } | ControlCommand::Shutdown => None,
+            ControlCommand::HubRegistryChanged { .. }
+            | ControlCommand::StreamFailed { .. }
+            | ControlCommand::Shutdown => None,
         }
     }
 }

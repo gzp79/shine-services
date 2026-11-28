@@ -100,10 +100,10 @@ fn the_other_stream_messages_have_their_own_frames() {
         json!({"type": "streamCheckpoint", "streamId": "chat:s", "version": 8, "stateHash": "00000000000000ff"})
     );
     assert_eq!(
-        frame(StreamMessage::Unsynced {
+        frame(StreamMessage::Desynced {
             stream_id: TestStreamId::new_chat_with("s")
         }),
-        json!({"type": "streamUnsynced", "streamId": "chat:s"})
+        json!({"type": "streamDesynced", "streamId": "chat:s"})
     );
     assert_eq!(
         frame(StreamMessage::CommandFailed {
@@ -119,5 +119,25 @@ fn the_other_stream_messages_have_their_own_frames() {
             reason: SubscribeFailure::Failed
         }),
         json!({"type": "streamSubscribeFailed", "streamId": "chat:s", "reason": "failed"})
+    );
+}
+
+#[test]
+fn a_rate_limited_refusal_names_its_reason() {
+    let command_id = Uuid::new_v4();
+    assert_eq!(
+        frame(StreamMessage::CommandFailed {
+            stream_id: TestStreamId::new_chat_with("s"),
+            command_id,
+            reason: CommandFailure::RateLimited
+        }),
+        json!({"type": "streamNack", "streamId": "chat:s", "commandId": command_id, "reason": "rateLimited"})
+    );
+    assert_eq!(
+        frame(StreamMessage::SubscribeFailed {
+            stream_id: TestStreamId::new_chat_with("s"),
+            reason: SubscribeFailure::RateLimited
+        }),
+        json!({"type": "streamSubscribeFailed", "streamId": "chat:s", "reason": "rateLimited"})
     );
 }

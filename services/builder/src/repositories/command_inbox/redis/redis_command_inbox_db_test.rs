@@ -1,10 +1,26 @@
 use crate::{
-    repositories::command_inbox::{CommandInboxDb, InboxEntry, InboxId, InboxWake},
+    models::CommandStreamError,
+    repositories::command_inbox::{
+        redis::{wake::WAKE_CHANNEL, RedisCommandInboxDb, RedisCommandInboxError},
+        CommandInboxDb, InboxEntry, InboxId, InboxWake,
+    },
     testing::command_stream::{TestInbox, TestStreamId},
 };
 
 use shine_test::test;
 use uuid::Uuid;
+
+impl RedisCommandInboxDb {
+    /// Stops the handler of `listen`.
+    pub async fn unlisten(&self) -> Result<(), CommandStreamError> {
+        let client = self.client().await?;
+        client
+            .unlisten(WAKE_CHANNEL)
+            .await
+            .map_err(RedisCommandInboxError::from)?;
+        Ok(())
+    }
+}
 
 fn entry(inbox_id: &InboxId, command_id: Uuid, user_id: Uuid, data: &[u8]) -> InboxEntry {
     InboxEntry {

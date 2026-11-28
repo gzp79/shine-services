@@ -92,7 +92,7 @@ pub struct AuthSessionMeta {
 
 impl AuthSessionMeta {
     pub fn new(config: &WebAppConfig<AppConfig>) -> Result<Self, AuthSessionError> {
-        let config_auth = &config.feature.auth;
+        let config_auth = &config.feature().auth;
         let config_auth_session = &config_auth.auth_session;
 
         let home_url = &config_auth.home_url;
@@ -127,7 +127,7 @@ impl AuthSessionMeta {
 
         let session_settings = {
             let key = B64
-                .decode(&config.service.session_secret)
+                .decode(&config.service().session_secret)
                 .map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?;
             let secret = Key::try_from(&key[..]).map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?;
             CookieSettings {

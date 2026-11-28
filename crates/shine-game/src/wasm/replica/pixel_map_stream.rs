@@ -7,7 +7,7 @@ use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(typescript_custom_section)]
 const TS_WASM_PIXEL_MAP_STREAM: &str = r#"
-export type PixelMapStreamStatus = "waiting" | "live" | "unsynced";
+export type PixelMapStreamStatus = "waiting" | "live" | "desynced";
 
 interface PixelMapStream {
     status(): PixelMapStreamStatus;
@@ -72,7 +72,7 @@ impl WasmPixelMapStream {
         match self.stream.status() {
             StreamStatus::Waiting => "waiting",
             StreamStatus::Live => "live",
-            StreamStatus::Unsynced => "unsynced",
+            StreamStatus::Desynced => "desynced",
         }
         .to_string()
     }

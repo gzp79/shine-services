@@ -3,15 +3,12 @@
 use super::*;
 use crate::testing::TestMessage;
 use shine_test::test;
-use tokio::sync::mpsc;
 
 #[test]
 async fn publish_delivers_to_matching_topic_only() {
     let subscribers = Subscribers::new();
-    let (tx_chat, mut rx_chat) = mpsc::unbounded_channel();
-    let (tx_hub, mut rx_hub) = mpsc::unbounded_channel();
-    subscribers.subscribe(vec![TopicKey::Ping], tx_chat).await;
-    subscribers.subscribe(vec![TopicKey::Hub], tx_hub).await;
+    let mut rx_chat = subscribers.subscribe(vec![TopicKey::Ping]).await;
+    let mut rx_hub = subscribers.subscribe(vec![TopicKey::Hub]).await;
 
     subscribers.publish(TestMessage::new_ping("hi")).await;
 
@@ -23,11 +20,14 @@ async fn publish_delivers_to_matching_topic_only() {
 #[test]
 async fn publish_prunes_closed_subscriber() {
     let subscribers = Subscribers::new();
-    let (tx, rx) = mpsc::unbounded_channel();
-    subscribers.subscribe(vec![TopicKey::Ping], tx).await;
-    assert_eq!(subscribers.len().await, 1);
+    let rx = subscribers.subscribe(vec![TopicKey::Ping]).await;
+    assert_eq!(subscribers.subscription_count().await, 1);
 
     drop(rx);
     subscribers.publish(TestMessage::new_ping("gone")).await;
-    assert_eq!(subscribers.len().await, 0, "a closed subscriber is pruned on publish");
+    assert_eq!(
+        subscribers.subscription_count().await,
+        0,
+        "a closed subscriber is pruned on publish"
+    );
 }

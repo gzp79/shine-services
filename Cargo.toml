@@ -18,6 +18,9 @@ exclude = [
 	"crates/shine-game/fuzz",
 ]
 
+[workspace.lints.clippy]
+disallowed_methods = "deny"
+
 [workspace.package]
 edition = "2021"
 version = "0.1.0"

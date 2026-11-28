@@ -3,6 +3,9 @@ name = "shine-infra"
 version.workspace = true
 edition.workspace = true
 
+[lints]
+workspace = true
+
 [features]
 default = [
     "ot_otlp",
@@ -107,6 +110,7 @@ axum-extra = { workspace = true, features = [
     "typed-header",
 ] }
 
+shine-core = { workspace = true, features = ["tokio"] }
 shine-infra-macros = { workspace = true }
 
 [dev-dependencies]

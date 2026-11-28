@@ -36,7 +36,6 @@ enum Message {
 
 /// The two tasks of a running stream: the fast path for optimistic in-memory handling and the durable path for persistence.
 pub struct StreamWorker {
-    stream_id: StreamId,
     messages: mpsc::UnboundedSender<Message>,
     wake: Arc<Notify>,
     tasks: Mutex<Option<[JoinHandle<()>; 2]>>,
@@ -70,15 +69,10 @@ impl StreamWorker {
         stream_metrics().workers.add(1, &[kind_label(stream_id.kind())]);
 
         Arc::new(StreamWorker {
-            stream_id,
             messages: message_tx,
             wake,
             tasks: Mutex::new(Some([fast, durable])),
         })
-    }
-
-    pub fn stream_id(&self) -> &StreamId {
-        &self.stream_id
     }
 
     /// Adds or synchronizes a subscriber.
@@ -224,34 +218,13 @@ async fn run_relay<S, I, E>(
         wake,
         in_flight: None,
     };
-    let stop = if relay_loop.preflight().await {
-        relay_loop.run(&config, &mut receiver).await
-    } else {
-        StopReason::GaveUp
-    };
-    // Whoever was queued before the stream ended, or while it was loading, is told to start again.
-    reject_queued(relay_loop.relay.egress(), relay_loop.relay.stream_id(), &mut receiver).await;
+
+    let stop = relay_loop.run(&config, &mut receiver).await;
 
     let kind = kind_label(relay_loop.relay.stream_id().kind());
-    relay_loop.relay.release_subscribers();
     let metrics = stream_metrics();
     metrics.workers.add(-1, std::slice::from_ref(&kind));
     metrics.worker_stops.add(1, &[kind, label("reason", stop.as_str())]);
-}
-
-/// Answers the subscribers that queued up while the stream was loading or ending.
-async fn reject_queued<E: StreamEgress>(
-    egress: &E,
-    stream_id: &StreamId,
-    receiver: &mut mpsc::UnboundedReceiver<Message>,
-) {
-    let message = Arc::new(crate::models::messages::StreamMessage::Unsynced { stream_id: stream_id.clone() });
-    receiver.close();
-    while let Some(queued) = receiver.recv().await {
-        if let Message::Subscribe(connection_id) = queued {
-            egress.send(connection_id, message.clone()).await;
-        }
-    }
 }
 
 /// What drives the relay: the relay itself holds no loop, so every message, answer and wake of the
@@ -268,7 +241,6 @@ where
     relay: StreamRelay<S, I, E>,
     persistence: mpsc::Sender<PersistenceRequest>,
     wake: Arc<Notify>,
-    /// The answer of the batch handed to the persistence. At most one is on its way.
     in_flight: Option<oneshot::Receiver<PersistResult>>,
 }
 
@@ -288,35 +260,22 @@ where
         Some(result)
     }
 
-    /// Reconciles the empty relay with the durable head before it may touch the inbox or a subscriber.
-    /// An existing empty stream is already current; a missing or non-empty stream takes the normal
-    /// reload path. Returns whether the stream is servable.
-    async fn preflight(&mut self) -> bool {
-        let Some(loading) = self.request(self.relay.reconcile_work()).await else {
-            tracing::warn!("[{}] The persistence of the stream is gone", self.relay.stream_id());
-            return false;
-        };
-        let Ok(result) = loading.await else {
-            tracing::warn!("[{}] The persistence of the stream is gone", self.relay.stream_id());
-            return false;
-        };
-        // Giving up at once on a failure: the relay holds nothing to serve, so there is no degraded stream
-        // to keep.
-        if let Err(error) = self.relay.accept(result) {
-            tracing::warn!("[{}] Failed to load the stream: {error:#?}", self.relay.stream_id());
-            return false;
-        }
-        true
-    }
-
     async fn run(&mut self, config: &StreamConfig, receiver: &mut mpsc::UnboundedReceiver<Message>) -> StopReason {
-        let mut poll = time::interval(config.inbox_recovery_poll_interval);
+        let mut poll = time::interval(config.inbox.recovery_poll_interval);
         poll.set_missed_tick_behavior(MissedTickBehavior::Skip);
         poll.tick().await;
         let wake = self.wake.clone();
         let mut close_timer = GraceTimer::new(config.worker_unload_grace);
 
-        let mut alive = self.process_inbox().await;
+        // Start reconciliation immediately; inbox polling is guarded until it completes.
+        if let Some(rx) = self.request(self.relay.reconcile_work()).await {
+            self.in_flight = Some(rx);
+        } else {
+            tracing::warn!("[{}] The persistence of the stream is gone", self.relay.stream_id());
+            return StopReason::GaveUp;
+        }
+
+        let mut alive = true;
         // Leaving the loop with a dead stream is the stream giving up.
         let mut stop = StopReason::GaveUp;
         while alive {
@@ -338,7 +297,7 @@ where
                     }
                 },
 
-                // Handle persistence results.
+                // Handle in-flight work: reconciliation during Loading, persistence during Serving.
                 result = async {
                     self.in_flight
                         .as_mut()
@@ -347,14 +306,21 @@ where
                 }, if self.in_flight.is_some() => {
                     self.in_flight = None;
                     alive = match result {
-                        Ok(result) => self.settle(result).await,
+                        Ok(result) => {
+                            if let Err(error) = self.relay.accept(result) {
+                                self.give_up(format!("Failed to accept result: {error:#?}")).await
+                            } else {
+                                self.wake.notify_one();
+                                true
+                            }
+                        }
                         Err(_) => self.give_up("The persistence of the stream is gone").await,
                     };
                 }
 
-                // Self notifying and periodic polling.
-                _ = wake.notified() => alive = self.process_inbox().await,
-                _ = poll.tick() => alive = self.process_inbox().await,
+                // Self notifying and periodic polling (guarded until in-flight reconciliation completes).
+                _ = wake.notified(), if self.in_flight.is_none() => alive = self.process_inbox().await,
+                _ = poll.tick(), if self.in_flight.is_none() => alive = self.process_inbox().await,
 
                 // Graceful shutdown after the no-subscriber grace period.
                 _ = close_timer.wait() => {
@@ -401,16 +367,6 @@ where
             }
             None => self.give_up("The persistence of the stream is gone").await,
         }
-    }
-
-    /// An answer of the persistence: only bookkeeping, the next pass tells the subscribers and submits
-    /// what piled up meanwhile. Returns whether the stream goes on.
-    async fn settle(&mut self, result: PersistResult) -> bool {
-        if let Err(error) = self.relay.accept(result) {
-            return self.give_up(format!("The persistence failed: {error:#?}")).await;
-        }
-        self.wake.notify_one();
-        true
     }
 
     /// Makes durable what is waiting and waits for the answer, so that once the stream has ended, every

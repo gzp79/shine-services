@@ -11,6 +11,7 @@ mod telemetry_router;
 mod telemetry_service;
 
 pub use self::{
+    log_metrics::SELF_TEST_TARGET,
     metric_label::{label, SECONDS_BUCKETS},
     otel_http::{current_span_context, link_span, record_user_id, RequestSpan, TRACE_ID_HEADER},
     otel_layer::*,

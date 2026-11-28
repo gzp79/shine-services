@@ -1,4 +1,4 @@
-use shine_infra::{db::postgres::create_postgres_pool, pg_prepared_statement};
+use shine_infra::{db::postgres::create_postgres_pool, pg_prepared_statement, web::TEST_STAGE};
 use shine_infra_testing::db::postgres::get_postgres_cns;
 use shine_test::test;
 
@@ -9,7 +9,7 @@ async fn test_stored_statements() {
     let _ = rustls::crypto::ring::default_provider().install_default();
 
     let cns = get_postgres_cns();
-    let pool = create_postgres_pool(&cns).await.unwrap();
+    let pool = create_postgres_pool(TEST_STAGE, &cns).await.unwrap();
     let c1 = pool.get().await.unwrap();
     let c2 = pool.get().await.unwrap();
 

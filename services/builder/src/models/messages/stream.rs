@@ -50,26 +50,23 @@ impl From<&StoredSnapshot> for StreamSnapshot {
 /// it into frames.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StreamMessage {
-    /// The state to start from: the latest snapshot (none while the stream has no snapshot) and the
-    /// commands after it. It replaces whatever the subscriber had of the stream.
     Sync {
         stream_id: StreamId,
         snapshot: Option<StreamSnapshot>,
         commands: Vec<StreamCommand>,
     },
-    /// The commands after the last version the subscriber was sent, without gaps.
     Commands {
         stream_id: StreamId,
         commands: Vec<StreamCommand>,
     },
-    /// The state hash at a checkpoint version, to compare with the subscriber's own.
     Checkpoint {
         stream_id: StreamId,
         version: i64,
         state_hash: u64,
     },
-    /// The stream cannot be served now. The subscriber is dropped and has to subscribe again.
-    Unsynced { stream_id: StreamId },
+    Desynced {
+        stream_id: StreamId,
+    },
     CommandFailed {
         stream_id: StreamId,
         command_id: Uuid,
@@ -87,7 +84,7 @@ impl StreamMessage {
             StreamMessage::Sync { stream_id, .. }
             | StreamMessage::Commands { stream_id, .. }
             | StreamMessage::Checkpoint { stream_id, .. }
-            | StreamMessage::Unsynced { stream_id }
+            | StreamMessage::Desynced { stream_id }
             | StreamMessage::CommandFailed { stream_id, .. }
             | StreamMessage::SubscribeFailed { stream_id, .. } => stream_id,
         }
@@ -109,16 +106,18 @@ pub enum CommandFailure {
     Invalid,
     /// The command could not be queued; it may or may not have been.
     Failed,
-    /// The inbox of the stream stayed full; the connection is dropped as busy.
+    /// The inbox of the stream stayed full; the command was not queued, the connection stays.
     Busy,
+    /// The connection sent more frames than its budget allows; the command was not queued.
+    RateLimited,
 }
 
 /// Why a connection could not be subscribed to a stream.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SubscribeFailure {
     Failed,
-    /// The stream may not be subscribed to by this connection.
     Unauthorized,
+    RateLimited,
 }
 
 /// A change of the stream subscriptions of a connection, for the internal consumers of the hub bus. It

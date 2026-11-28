@@ -14,7 +14,7 @@ interface World {
 
 
 
-export type PixelMapStreamStatus = "waiting" | "live" | "unsynced";
+export type PixelMapStreamStatus = "waiting" | "live" | "desynced";
 
 interface PixelMapStream {
     status(): PixelMapStreamStatus;

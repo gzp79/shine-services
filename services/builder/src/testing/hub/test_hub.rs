@@ -1,6 +1,6 @@
 use crate::{
     models::{
-        messages::{HubEvent, HubMessage, SubscribeFailure, TopicKey},
+        messages::{DisconnectReason, HubEvent, HubMessage, SubscribeFailure, TopicKey},
         HubError,
     },
     repositories::{
@@ -8,25 +8,28 @@ use crate::{
         command_log::pg::PgCommandLogDb,
         hub_registry::{
             redis::{hub_connection_key, RedisHubConnectionDb},
-            HubConnectionDb, HubRegistry,
+            HubConnectionDb, HubConnections,
         },
     },
-    services::{
-        standard_registry, HubConfig, HubService, StreamAuthorizeService, StreamConfig, StreamRegistry, StreamsConfig,
-    },
+    services::{socket_channel, standard_registry, HubConfig, HubService, StreamConfig, StreamRegistry, StreamsConfig},
     testing::{
         command_stream::{TestInbox, TestLog},
-        hub::{Egress, HubEvents, TestSession},
+        hub::{HubEvents, TestEgress, TestSession},
     },
 };
+use shine_core::tokio::TaskSupervisor;
 use shine_game::replica::StreamId;
 use shine_infra::session::{CurrentUserService, SessionKey};
-use shine_infra_testing::db::redis::TestRedis;
+use shine_infra_testing::db::{postgres::TestPg, redis::TestRedis};
 use std::{collections::HashMap, sync::Arc, time::Duration, vec};
 use tokio::{sync::mpsc, time::timeout};
 use uuid::Uuid;
 
 pub(super) const BARRIER_TIMEOUT: Duration = Duration::from_secs(30);
+/// A call to a Redis that is gone fails after 300 ms, and the pool gives up after as much.
+const FAST_REDIS: &str = "timeout=300&pool_timeout=300";
+/// A call to a Postgres that is gone fails after a second (the parameters are in seconds).
+const FAST_PG: &str = "connect_timeout=1&pool_timeout=1";
 const IDLE: Duration = Duration::from_secs(3600);
 
 /// Hub configuration of a test. The background consumers idle unless a test shortens their interval, and
@@ -35,6 +38,9 @@ pub struct TestHubOptions {
     pub heartbeat: Duration,
     pub session_check: Duration,
     pub ping_enabled: bool,
+    /// The inbox and the log of the streams give up on a Redis or a Postgres that is gone within a second,
+    /// instead of waiting for the pools. For tests that break them.
+    pub fast_failing_stores: bool,
     pub with_streams: Option<StreamConfig>,
 }
 
@@ -44,6 +50,7 @@ impl Default for TestHubOptions {
             heartbeat: IDLE,
             session_check: IDLE,
             ping_enabled: true,
+            fast_failing_stores: false,
             with_streams: None,
         }
     }
@@ -51,6 +58,7 @@ impl Default for TestHubOptions {
 
 pub struct TestHub {
     pub hub: HubService,
+    pub supervisor: TaskSupervisor,
 
     pub stream_inbox: Option<TestInbox>,
     pub stream_log: Option<TestLog>,
@@ -75,6 +83,7 @@ impl TestHub {
             session_check: options.session_check,
             stream_shutdown_timeout: Duration::from_secs(10),
             ping_enabled: options.ping_enabled,
+            ..HubConfig::defaults()
         };
 
         // URL_SAFE_NO_PAD: 86 'A' chars decode to 64 zero bytes, a valid cookie key for tests.
@@ -88,13 +97,20 @@ impl TestHub {
         let mut stream_log = None;
         let mut stream_registry = None;
 
+        let supervisor = TaskSupervisor::new();
         let mut hub_builder = HubService::builder(hub_config)
+            .with_task_supervisor(supervisor.clone())
             .with_session_service(session_service)
-            .with_hub_registry(registry.clone())
-            .with_stream_authorize_service(StreamAuthorizeService::new);
+            .with_hub_registry(registry.clone());
         if let Some(config) = options.with_streams {
-            let si = TestInbox::new(redis.clone(), 60).await;
-            let sl = TestLog::from_env().await;
+            let (si, sl) = if options.fast_failing_stores {
+                (
+                    TestInbox::new(TestRedis::from_env_with(FAST_REDIS).await, 60).await,
+                    TestLog::new(TestPg::from_env_with(FAST_PG).await).await,
+                )
+            } else {
+                (TestInbox::new(redis.clone(), 60).await, TestLog::from_env().await)
+            };
             hub_builder = hub_builder
                 .with_stream_registry(|egress| {
                     let sr = standard_registry(si.db.clone(), sl.db.clone(), egress, StreamsConfig::uniform(config))?;
@@ -110,6 +126,7 @@ impl TestHub {
         let events = hub.subscribe(vec![TopicKey::Hub]).await;
         TestHub {
             hub,
+            supervisor,
             stream_inbox,
             stream_log,
             stream_registry,
@@ -141,7 +158,7 @@ impl TestHub {
         capacity: usize,
         topics: Vec<TopicKey>,
         session_key: Option<SessionKey>,
-    ) -> (Uuid, Egress) {
+    ) -> (Uuid, TestEgress) {
         Self::connect_to(&self.hub, user_id, capacity, topics, session_key)
     }
 
@@ -152,24 +169,24 @@ impl TestHub {
         capacity: usize,
         topics: Vec<TopicKey>,
         session_key: Option<SessionKey>,
-    ) -> (Uuid, Egress) {
-        let (tx, rx) = mpsc::channel(capacity);
+    ) -> (Uuid, TestEgress) {
+        let (tx, rx) = socket_channel(capacity);
         let connection_id = hub
-            .request_connection(
+            .request_connect(
                 user_id,
                 session_key.unwrap_or_else(TestSession::new_random_key),
                 tx,
                 topics,
             )
             .unwrap();
-        (connection_id, Egress::new(rx))
+        (connection_id, TestEgress::new(rx))
     }
 
-    pub fn connect_ping(&self, user_id: Uuid, capacity: usize) -> (Uuid, Egress) {
+    pub fn connect_ping(&self, user_id: Uuid, capacity: usize) -> (Uuid, TestEgress) {
         self.connect(user_id, capacity, vec![TopicKey::Ping], None)
     }
 
-    pub fn connect_ping_to(hub: &HubService, user_id: Uuid, capacity: usize) -> (Uuid, Egress) {
+    pub fn connect_ping_to(hub: &HubService, user_id: Uuid, capacity: usize) -> (Uuid, TestEgress) {
         Self::connect_to(hub, user_id, capacity, vec![TopicKey::Ping], None)
     }
 
@@ -225,11 +242,12 @@ impl TestHub {
         // create a sentinel connection to act as a barrier for all previous commands
         let (sentinel_user, _sentinel_rx) = {
             let sentinel_user = Uuid::new_v4();
-            let (tx, rx) = mpsc::channel(1);
+            let (tx, rx) = socket_channel(1);
             let connection_id = hub
-                .request_connection(sentinel_user, TestSession::new_random_key(), tx, Vec::new())
+                .request_connect(sentinel_user, TestSession::new_random_key(), tx, Vec::new())
                 .unwrap();
-            hub.request_disconnection(sentinel_user, connection_id).unwrap();
+            hub.request_disconnect(sentinel_user, connection_id, DisconnectReason::Client)
+                .unwrap();
             (sentinel_user, rx)
         };
 
@@ -322,7 +340,9 @@ impl TestHub {
 
     /// Disconnects the specified connection and waits until all commands are processed.
     pub async fn cleanup_connection(&mut self, user: Uuid, second: Uuid) {
-        self.hub.request_disconnection(user, second).unwrap();
+        self.hub
+            .request_disconnect(user, second, DisconnectReason::Client)
+            .unwrap();
         self.wait_all_commands().await;
     }
 }

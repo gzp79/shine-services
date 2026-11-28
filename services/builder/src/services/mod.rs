@@ -1,11 +1,12 @@
 mod command_stream;
 mod hub;
-mod stream_authorize;
 
 pub use self::{
     command_stream::{standard_registry, stream_metrics, StreamEgress, StreamsConfig, MAX_COMMAND_BYTES},
-    hub::{HubConfig, HubService, HubStatus},
-    stream_authorize::StreamAuthorizeService,
+    hub::{
+        hub_metrics, socket_channel, HubConfig, HubService, HubStatus, SocketMessage, SocketReceiver, SocketSender,
+        WeakSocketSender,
+    },
 };
 
 #[cfg(test)]

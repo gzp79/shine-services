@@ -6,7 +6,8 @@ use crate::{
     },
     services::command_stream::{
         stream_metrics::{kind_label, stream_metrics},
-        StreamConfig, StreamEgress, StreamLogService, StreamWorker,
+        AllowListStreamAccess, AnyStreamAccess, StreamAccess, StreamAccessConfig, StreamConfig, StreamEgress,
+        StreamLogService, StreamWorker,
     },
 };
 use futures::future::join_all;
@@ -18,6 +19,7 @@ use std::{
     time::Duration,
 };
 use uuid::Uuid;
+use validator::Validate;
 
 /// Longest command, as JSON text, that is queued.
 pub const MAX_COMMAND_BYTES: usize = 16 * 1024;
@@ -28,6 +30,7 @@ struct KindEntry {
     spawn: Box<dyn Fn(StreamId) -> Arc<StreamWorker> + Send + Sync>,
     is_valid_command: Box<dyn Fn(&[u8]) -> bool + Send + Sync>,
     backpressure: Box<dyn Fn(StreamId) -> Backpressure + Send + Sync>,
+    access: Box<dyn Fn() -> Arc<dyn StreamAccess> + Send + Sync>,
 }
 
 /// A stream that is open for at least one connection, or served by a worker.
@@ -77,57 +80,93 @@ impl<I: CommandInboxDb, L: CommandLogDb> Clone for StreamRegistry<I, L> {
     }
 }
 
-/// Collects the kinds of streams to serve, at startup. The registry made from it serves exactly those.
+/// A kind as registered: what `register` collected, which `build` turns into the kind's entry.
+type Registration<I> = Box<dyn FnOnce(I) -> Result<KindEntry, CommandStreamError>>;
+
+/// Collects the kinds of streams to serve, at startup. It only collects: `build` makes the entries of the
+/// registry, which serves exactly the registered kinds.
 pub struct StreamRegistryBuilder<I: CommandInboxDb, L: CommandLogDb> {
     inbox: I,
     log: L,
-    kinds: HashMap<StreamKind, KindEntry>,
-    duplicate: Option<StreamKind>,
+    kinds: HashMap<StreamKind, Registration<I>>,
 }
 
 impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistryBuilder<I, L> {
-    /// Registers the kind `S::KIND`: its streams are served over `service` and send through `egress`.
-    pub fn register<S, E>(mut self, service: StreamLogService<I, L>, egress: E, config: StreamConfig) -> Self
+    /// Registers the kind `S::KIND`: its streams are served over `service` and send through `egress`, and
+    /// the ones that may be opened are given by `config.access`. Nothing is made yet, but a kind that is
+    /// registered twice or has an invalid access fails here.
+    pub fn register<S, E>(
+        mut self,
+        service: StreamLogService<I, L>,
+        egress: E,
+        config: StreamConfig,
+    ) -> Result<Self, CommandStreamError>
     where
         S: ReplayState,
         E: StreamEgress,
     {
-        let inbox = self.inbox.clone();
-        let backpressure = {
-            let (inbox, config) = (self.inbox.clone(), config.clone());
-            Box::new(move |stream_id| inbox_backpressure(&inbox, stream_id, &config))
-        };
-        let entry = KindEntry {
-            spawn: Box::new(move |stream_id| {
-                StreamWorker::start::<S, I, L, E>(
-                    service.clone(),
-                    inbox.clone(),
-                    egress.clone(),
-                    stream_id,
-                    config.clone(),
-                )
-            }),
-            is_valid_command: Box::new(|data| {
-                decode_command::<S>(data).is_ok_and(|command| S::is_well_formed(&command))
-            }),
-            backpressure,
-        };
-        if self.kinds.insert(S::KIND, entry).is_some() {
-            self.duplicate.get_or_insert(S::KIND);
+        if self.kinds.contains_key(&S::KIND) {
+            return Err(CommandStreamError::DuplicateKind(S::KIND));
         }
-        self
+        config.access.validate().map_err(CommandStreamError::internal)?;
+
+        let registration = move |inbox: I| {
+            let access = Self::create_access(S::KIND, &config.access)?;
+            let backpressure = {
+                let (inbox, config) = (inbox.clone(), config.clone());
+                Box::new(move |stream_id| inbox_backpressure(&inbox, stream_id, &config))
+            };
+            Ok(KindEntry {
+                spawn: Box::new(move |stream_id| {
+                    StreamWorker::start::<S, I, L, E>(
+                        service.clone(),
+                        inbox.clone(),
+                        egress.clone(),
+                        stream_id,
+                        config.clone(),
+                    )
+                }),
+                is_valid_command: Box::new(|data| {
+                    decode_command::<S>(data).is_ok_and(|command| S::is_well_formed(&command))
+                }),
+                backpressure,
+                access: Box::new(move || access.clone()),
+            })
+        };
+        self.kinds.insert(S::KIND, Box::new(registration));
+        Ok(self)
     }
 
-    /// Fails if a kind was registered twice.
-    pub fn build(self) -> Result<StreamRegistry<I, L>, CommandStreamError> {
-        if let Some(kind) = self.duplicate {
-            return Err(CommandStreamError::DuplicateKind(kind));
+    /// Makes the access of the streams of `kind`.
+    fn create_access(
+        kind: StreamKind,
+        config: &StreamAccessConfig,
+    ) -> Result<Arc<dyn StreamAccess>, CommandStreamError> {
+        match config {
+            StreamAccessConfig::Any => Ok(Arc::new(AnyStreamAccess)),
+            StreamAccessConfig::AllowList { ids } => {
+                let streams = ids
+                    .iter()
+                    .map(|id| StreamId::new(kind, id.as_str()))
+                    .collect::<Result<HashSet<_>, _>>()
+                    .map_err(CommandStreamError::internal)?;
+                Ok(Arc::new(AllowListStreamAccess::new(streams)))
+            }
         }
+    }
+
+    /// Makes the entry of every registered kind.
+    pub fn build(self) -> Result<StreamRegistry<I, L>, CommandStreamError> {
+        let kinds = self
+            .kinds
+            .into_iter()
+            .map(|(kind, registration)| registration(self.inbox.clone()).map(|entry| (kind, entry)))
+            .collect::<Result<HashMap<_, _>, _>>()?;
         Ok(StreamRegistry {
             inner: Arc::new(Inner {
                 log: self.log,
                 inbox: self.inbox,
-                kinds: self.kinds,
+                kinds,
                 state: Mutex::new(State::default()),
             }),
         })
@@ -140,17 +179,30 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
             inbox,
             log,
             kinds: HashMap::new(),
-            duplicate: None,
         }
     }
 
-    /// Opens the stream for the connection and accepts commands for it right away.
-    pub fn open(&self, connection_id: Uuid, stream_id: &StreamId) -> Result<(), CommandStreamError> {
+    /// Opens the stream for the connection and accepts commands for it right away. Nothing is created for
+    /// a stream that the user may not open.
+    pub async fn open(
+        &self,
+        connection_id: Uuid,
+        user_id: Uuid,
+        stream_id: &StreamId,
+    ) -> Result<(), CommandStreamError> {
         let entry = self
             .inner
             .kinds
             .get(&stream_id.kind())
             .ok_or(CommandStreamError::StreamNotFound)?;
+        if !(entry.access)().allows(user_id, stream_id).await {
+            tracing::info!("[{connection_id}] User {user_id} is not authorized for stream {stream_id}");
+            return Err(CommandStreamError::Unauthorized);
+        }
+        let is_new = !self.inner.state.lock().unwrap().streams.contains_key(stream_id);
+        if is_new {
+            self.log_head(stream_id).await;
+        }
         let mut state = self.inner.state.lock().unwrap();
         state.streams.entry(stream_id.clone()).or_insert_with(|| StreamState {
             worker: None,
@@ -164,6 +216,15 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
         Ok(())
     }
 
+    /// Logs the version the log is at the time of stream opening.
+    async fn log_head(&self, stream_id: &StreamId) {
+        match self.inner.log.head(stream_id).await {
+            Ok(Some(head)) => tracing::info!("[{stream_id}] Opened at version {}", head.version),
+            Ok(None) => tracing::info!("[{stream_id}] Opened, the stream has no log yet"),
+            Err(err) => tracing::warn!("[{stream_id}] The head of the stream could not be read: {err:#?}"),
+        }
+    }
+
     /// Closes the stream for the connection and unsubscribes it from the stream's worker.
     pub fn close(&self, connection_id: Uuid, stream_id: &StreamId) {
         let mut state = self.inner.state.lock().unwrap();
@@ -174,6 +235,24 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
             }
         }
         state.unsubscribe_worker(connection_id, stream_id);
+    }
+
+    /// Closes stream for every connection that has it open and returns the
+    /// connections.
+    pub fn close_stream(&self, stream_id: &StreamId) -> Vec<Uuid> {
+        let mut state = self.inner.state.lock().unwrap();
+        let mut closed = Vec::new();
+        state.connections.retain(|connection_id, streams| {
+            if streams.remove(stream_id) {
+                closed.push(*connection_id);
+            }
+            !streams.is_empty()
+        });
+        for connection_id in &closed {
+            state.unsubscribe_worker(*connection_id, stream_id);
+        }
+        state.streams.remove(stream_id);
+        closed
     }
 
     /// The connection is gone: closes all its streams.
@@ -241,6 +320,7 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
     /// Subscribes the connection to the stream's worker. If there is no worker, it starts a new one to process
     /// the commands for the stream in the background.
     pub fn subscribe(&self, connection_id: Uuid, stream_id: &StreamId) -> Result<(), CommandStreamError> {
+        tracing::info!("[{}] Subscribing connection {}", stream_id, connection_id);
         let entry = self
             .inner
             .kinds
@@ -257,6 +337,11 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
                 .is_some_and(|streams| streams.contains(stream_id));
 
             let Some(stream) = state.streams.get_mut(stream_id).filter(|_| is_open) else {
+                tracing::info!(
+                    "[{}] Stream not open for connection {}, returning early",
+                    stream_id,
+                    connection_id
+                );
                 return Ok(());
             };
             stream
@@ -267,11 +352,13 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
         let subscribed = running.is_some_and(|worker| worker.subscribe(connection_id));
         if !subscribed {
             // Start a new worker for the stream.
+            tracing::debug!("[{}] Starting new worker for connection {}", stream_id, connection_id);
             let worker = (entry.spawn)(stream_id.clone());
             worker.subscribe(connection_id);
             stream.worker = Some(worker);
         }
 
+        tracing::info!("[{}] Successfully subscribed connection {}", stream_id, connection_id);
         Ok(())
     }
 
@@ -289,17 +376,6 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
         }
     }
 
-    /// The workers that are running.
-    pub fn worker_count(&self) -> usize {
-        self.inner
-            .state
-            .lock()
-            .unwrap()
-            .workers()
-            .filter(|worker| !worker.is_finished())
-            .count()
-    }
-
     /// Forgets the streams that no connection has open and whose worker, if any, has ended. A new
     /// subscribe replaces an ended worker anyway; this only releases the streams nobody comes back to.
     pub fn purge(&self) {
@@ -309,11 +385,6 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
         streams.retain(|stream_id, stream| {
             open.contains(stream_id) || stream.worker.as_ref().is_some_and(|worker| !worker.is_finished())
         });
-    }
-
-    /// All the held workers.
-    pub fn workers_count(&self) -> usize {
-        self.inner.state.lock().unwrap().workers().count()
     }
 
     /// Starts to wake the workers on the wakes of the inbox. A listener that reconnected may have missed
@@ -327,10 +398,6 @@ impl<I: CommandInboxDb + 'static, L: CommandLogDb + 'static> StreamRegistry<I, L
                 InboxWake::All => registry.wake_all(),
             })
             .await
-    }
-
-    pub async fn unlisten(&self) -> Result<(), CommandStreamError> {
-        self.inner.inbox.unlisten().await
     }
 
     /// Asks every worker to persist what is waiting and end.
@@ -356,10 +423,10 @@ fn inbox_backpressure<I: CommandInboxDb + 'static>(
     let inbox = inbox.clone();
     let kind = stream_id.kind();
     Backpressure::new(
-        config.inbox_backpressure_low,
-        config.inbox_backpressure_high,
-        config.inbox_backpressure_poll_period,
-        Some(config.inbox_backpressure_timeout),
+        config.inbox.backpressure_low,
+        config.inbox.backpressure_high,
+        config.inbox.backpressure_poll_period,
+        Some(config.inbox.backpressure_timeout),
         Some(Arc::new(move |waited, released| {
             stream_metrics().push_throttled(kind, waited, released);
         })),

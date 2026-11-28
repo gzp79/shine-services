@@ -14,7 +14,8 @@ use async_trait::async_trait;
 use bb8::{ManageConnection, Pool as BB8Pool, PooledConnection, RunError};
 use redis::{
     aio::{ConnectionLike, MultiplexedConnection},
-    AsyncConnectionConfig, Client, Cmd, ErrorKind, Pipeline, RedisFuture, Value,
+    io::tcp::{socket2::TcpKeepalive, TcpSettings},
+    AsyncConnectionConfig, Client, Cmd, ErrorKind, IntoConnectionInfo, Pipeline, RedisFuture, Value,
 };
 use std::{
     ops::{Deref, DerefMut},
@@ -36,8 +37,8 @@ pub use shine_infra_macros::RedisJsonValue;
 pub struct RedisConnection {
     listener: RedisListener,
     client: MultiplexedConnection,
-    /// Set once a command sees a dropped connection or another unrecoverable error, so `has_broken`
-    /// can report it without an extra PING on every get from the pool.
+    /// Set once a command sees a dropped connection, a timeout or another unrecoverable error, so
+    /// `has_broken` can report it without an extra PING on every get from the pool.
     broken: Arc<AtomicBool>,
 }
 
@@ -61,14 +62,36 @@ impl RedisConnection {
     }
 }
 
+/// Whether the error shows that the connection is no longer usable. A response that times out counts: the
+/// link may be dead without any error (a failover, a dropped NAT entry), and every later command would wait
+/// for its own timeout on it. Replacing a healthy connection that was only slow costs one reconnect.
+fn is_broken(err: &RedisRawError) -> bool {
+    err.is_connection_dropped() || err.is_unrecoverable_error() || err.is_timeout()
+}
+
 /// Marks `broken` when `result` shows the connection is no longer usable, so a later `has_broken`
 /// check can evict it without probing every checkout with a PING.
 fn mark_if_broken<T>(broken: &Arc<AtomicBool>, result: &Result<T, RedisRawError>) {
-    if let Err(err) = result {
-        if err.is_connection_dropped() || err.is_unrecoverable_error() {
-            broken.store(true, Ordering::Relaxed);
-        }
+    if result.as_ref().is_err_and(is_broken) {
+        broken.store(true, Ordering::Relaxed);
     }
+}
+
+/// TCP settings of the connections. A link that died without a reset gives no error, and would hang until the
+/// kernel gives up after minutes. The kernel is asked to notice it sooner: keepalive probes find an idle
+/// connection that is gone (about a minute), and, on Linux, a user timeout finds one that has data nobody
+/// acknowledges.
+fn tcp_settings() -> TcpSettings {
+    let keepalive = TcpKeepalive::new().with_time(Duration::from_secs(30));
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    let keepalive = keepalive.with_interval(Duration::from_secs(10));
+    #[cfg(target_os = "linux")]
+    let keepalive = keepalive.with_retries(3);
+
+    let settings = TcpSettings::default().set_keepalive(keepalive);
+    #[cfg(target_os = "linux")]
+    let settings = settings.set_user_timeout(Duration::from_secs(15));
+    settings
 }
 
 impl ConnectionLike for RedisConnection {
@@ -171,7 +194,8 @@ impl RedisConnectionManager {
         wake_interval: Option<Duration>,
         max_reconnect_backoff: Duration,
     ) -> Result<Self, RedisRawError> {
-        let client = Client::open(raw_cns)?;
+        let info = raw_cns.into_connection_info()?.set_tcp_settings(tcp_settings());
+        let client = Client::open(info)?;
         let listener = RedisListener::new(client.clone(), connect_timeout, wake_interval, max_reconnect_backoff);
         Ok(Self { client, conn_config, listener })
     }
@@ -293,7 +317,7 @@ impl StatusProvider for RedisPoolStatus {
 ///   connect and per-command response timeout (default: redis-rs defaults, 1s connect / 500ms response)
 /// - `pool_timeout`: custom parameter in MILLISECONDS for bb8 pool (acquiring connection from pool, including waiting for connection to be established if pool is exhausted)
 /// - `max_size`: custom parameter for the maximum number of pooled connections (default 10)
-pub async fn create_redis_pool(cns: &str) -> Result<RedisConnectionPool, RedisConnectionError> {
+pub async fn create_redis_pool(_stage: &str, cns: &str) -> Result<RedisConnectionPool, RedisConnectionError> {
     let to_redis_err = |e: CnsParamError| {
         RunError::User(RedisRawError::from((
             ErrorKind::InvalidClientConfig,
@@ -365,6 +389,7 @@ pub async fn create_redis_pool(cns: &str) -> Result<RedisConnectionPool, RedisCo
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::web::TEST_STAGE;
 
     // Degenerate pool params are rejected before any network I/O, so these run without a server.
     fn err_kind(err: RedisConnectionError) -> ErrorKind {
@@ -375,27 +400,48 @@ mod test {
     }
 
     #[tokio::test]
+    async fn the_connections_probe_for_a_link_that_died_silently() {
+        let manager = RedisConnectionManager::new(
+            "redis://localhost",
+            AsyncConnectionConfig::new(),
+            Duration::from_secs(1),
+            None,
+            Duration::from_secs(1),
+        )
+        .unwrap();
+
+        let info = manager.client.get_connection_info();
+        assert!(info.tcp_settings().keepalive().is_some());
+    }
+
+    #[tokio::test]
     async fn max_size_zero_is_rejected_not_panicked() {
-        let err = create_redis_pool("redis://localhost?max_size=0").await.unwrap_err();
+        let err = create_redis_pool(TEST_STAGE, "redis://localhost?max_size=0")
+            .await
+            .unwrap_err();
         assert_eq!(err_kind(err), ErrorKind::InvalidClientConfig);
     }
 
     #[tokio::test]
     async fn max_size_overflowing_u32_is_rejected() {
         let cns = format!("redis://localhost?max_size={}", u32::MAX as u64 + 1);
-        let err = create_redis_pool(&cns).await.unwrap_err();
+        let err = create_redis_pool(TEST_STAGE, &cns).await.unwrap_err();
         assert_eq!(err_kind(err), ErrorKind::InvalidClientConfig);
     }
 
     #[tokio::test]
     async fn pool_timeout_zero_is_rejected() {
-        let err = create_redis_pool("redis://localhost?pool_timeout=0").await.unwrap_err();
+        let err = create_redis_pool(TEST_STAGE, "redis://localhost?pool_timeout=0")
+            .await
+            .unwrap_err();
         assert_eq!(err_kind(err), ErrorKind::InvalidClientConfig);
     }
 
     #[tokio::test]
     async fn timeout_zero_is_rejected() {
-        let err = create_redis_pool("redis://localhost?timeout=0").await.unwrap_err();
+        let err = create_redis_pool(TEST_STAGE, "redis://localhost?timeout=0")
+            .await
+            .unwrap_err();
         assert_eq!(err_kind(err), ErrorKind::InvalidClientConfig);
     }
 }

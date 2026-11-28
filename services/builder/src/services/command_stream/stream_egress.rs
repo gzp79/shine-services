@@ -1,4 +1,5 @@
 use crate::models::messages::StreamMessage;
+use shine_game::replica::StreamId;
 use std::{future::Future, sync::Arc};
 use uuid::Uuid;
 
@@ -11,4 +12,8 @@ pub trait StreamEgress: Clone + Send + Sync + 'static {
     ///
     /// Messages to one connection arrive in the order they were sent.
     fn send(&self, connection_id: Uuid, message: Arc<StreamMessage>) -> impl Future<Output = bool> + Send;
+
+    /// Reports that the stream cannot be served any more. Whoever owns the connections closes the stream
+    /// for all of them, and tells them to subscribe again.
+    fn notify_failed(&self, stream_id: &StreamId) -> impl Future<Output = ()> + Send;
 }

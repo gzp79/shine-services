@@ -13,14 +13,18 @@
   "builder": {
     "hub": {
       "heartbeat": 300,
-      "sessionCheck": 2
+      "sessionCheck": 2,
+      "pingEnabled": true
+    },
+    "ws": {
+      "limits": { "frames": { "burst": 1000, "perSecond": 1000 } }
     },
     "streams": {
       "chat": {
-        "inboxRecoveryPollInterval": 1
+        "inbox": { "recoveryPollInterval": 1 }
       },
       "pixelMap": {
-        "inboxRecoveryPollInterval": 1
+        "inbox": { "recoveryPollInterval": 1 }
       }
     }
   }

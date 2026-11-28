@@ -3,6 +3,9 @@ name = "shine-test"
 version.workspace = true
 edition.workspace = true
 
+[lints]
+workspace = true
+
 [features]
 # Client of the toxiproxy API, to inject network faults (native only).
 toxiproxy = ["dep:reqwest", "dep:serde_json", "tokio/rt"]

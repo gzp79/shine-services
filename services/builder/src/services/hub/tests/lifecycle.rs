@@ -2,7 +2,11 @@
 
 use crate::{
     models::messages::{DisconnectReason, HubEvent, HubMessage, TopicKey},
-    repositories::hub_registry::{HubConnection, HubConnectionDb, HubRegistry},
+    repositories::hub_registry::{HubConnection, HubConnectionDb, HubConnections},
+    services::{
+        hub::{control_command::ControlCommand, hub_registry::HubRegistry},
+        socket_channel,
+    },
     testing::{
         hub::{Lifecycle, TestHub, TestHubOptions, TestSession},
         TestMessage,
@@ -50,22 +54,30 @@ async fn stale_unknown_and_repeated_disconnects_are_noops() {
     let user = Uuid::new_v4();
 
     // Unknown user and unknown connection.
-    test.hub.request_disconnection(Uuid::new_v4(), Uuid::new_v4()).unwrap();
     test.hub
-        .request_drop(user, Uuid::new_v4(), DisconnectReason::SessionInvalid)
+        .request_disconnect(Uuid::new_v4(), Uuid::new_v4(), DisconnectReason::Client)
+        .unwrap();
+    test.hub
+        .request_disconnect(user, Uuid::new_v4(), DisconnectReason::SessionInvalid)
         .unwrap();
     let (first, _first_rx) = test.connect_ping(user, 8);
     let (second, mut second_rx) = test.connect_ping(user, 8);
     // Stale ids of the replaced connection must not touch the active one.
-    test.hub.request_disconnection(user, first).unwrap();
     test.hub
-        .request_drop(user, first, DisconnectReason::SessionInvalid)
+        .request_disconnect(user, first, DisconnectReason::Client)
         .unwrap();
-    test.hub.request_disconnection(user, second).unwrap();
-    // Repeats after the removal are no-ops, so a late forced drop is not counted.
-    test.hub.request_disconnection(user, second).unwrap();
     test.hub
-        .request_drop(user, second, DisconnectReason::HeartbeatInactive)
+        .request_disconnect(user, first, DisconnectReason::SessionInvalid)
+        .unwrap();
+    test.hub
+        .request_disconnect(user, second, DisconnectReason::Client)
+        .unwrap();
+    // Repeats after the removal are no-ops, so a late forced drop is not counted.
+    test.hub
+        .request_disconnect(user, second, DisconnectReason::Client)
+        .unwrap();
+    test.hub
+        .request_disconnect(user, second, DisconnectReason::HeartbeatInactive)
         .unwrap();
     let seen = test.wait_all_commands().await;
 
@@ -93,7 +105,7 @@ async fn forced_drop_tells_the_socket_why() {
 
     let (connection, mut rx) = test.connect_ping(user, 8);
     test.hub
-        .request_drop(user, connection, DisconnectReason::SessionInvalid)
+        .request_disconnect(user, connection, DisconnectReason::SessionInvalid)
         .unwrap();
     let seen = test.wait_all_commands().await;
 
@@ -118,7 +130,9 @@ async fn client_close_while_connect_is_queued_is_not_a_drop() {
     let user = Uuid::new_v4();
     let (connection, rx) = test.connect_ping(user, 8);
     drop(rx);
-    test.hub.request_disconnection(user, connection).unwrap();
+    test.hub
+        .request_disconnect(user, connection, DisconnectReason::Client)
+        .unwrap();
     let seen = test.wait_all_commands().await;
 
     assert_eq!(
@@ -133,7 +147,9 @@ async fn client_close_while_connect_is_queued_is_not_a_drop() {
     let hub_user = Uuid::new_v4();
     let (hub_connection, hub_rx) = test.connect(hub_user, 8, vec![TopicKey::Hub], None);
     drop(hub_rx);
-    test.hub.request_disconnection(hub_user, hub_connection).unwrap();
+    test.hub
+        .request_disconnect(hub_user, hub_connection, DisconnectReason::Client)
+        .unwrap();
     let seen = test.wait_all_commands().await;
 
     assert_eq!(
@@ -190,7 +206,7 @@ async fn slow_consumer_is_dropped_and_its_channel_released() {
     rx.drain()
         .assert_closed()
         .assert_pings(&["b-0", "b-1"])
-        .assert_disconnects(&[]);
+        .assert_disconnects(&[DisconnectReason::SlowConsumer]);
     assert_eq!(seen.drops(), BTreeMap::from([(DisconnectReason::SlowConsumer, 1)]));
     test.assert_consistent([user], &HashMap::new()).await;
 }
@@ -220,7 +236,9 @@ async fn send_to_user_reaches_only_the_active_connection() {
         .unwrap();
 
     // Once disconnected, the user is unknown again.
-    test.hub.request_disconnection(user, second).unwrap();
+    test.hub
+        .request_disconnect(user, second, DisconnectReason::Client)
+        .unwrap();
     test.wait_all_commands().await;
     test.send_to_user(user, TestMessage::new_ping("too-late"))
         .await
@@ -270,7 +288,7 @@ async fn send_to_user_prunes_a_dead_or_slow_connection_once() {
     slow_rx
         .drain()
         .assert_pings(&["s-0"])
-        .assert_disconnects(&[])
+        .assert_disconnects(&[DisconnectReason::SlowConsumer])
         .assert_closed();
     test.assert_consistent([gone_user, slow_user], &HashMap::new()).await;
 }
@@ -334,13 +352,13 @@ async fn shutdown_drops_every_connection_and_publishes_nothing_after() {
     let mut receivers: Vec<_> = users.iter().map(|user| test.connect_ping(*user, 8).1).collect();
     test.wait_all_commands().await;
 
-    test.hub.request_shutdown().unwrap();
+    test.hub.send_control(ControlCommand::Shutdown).unwrap();
     // Commands queued behind the Shutdown are never processed.
     let late_user = Uuid::new_v4();
-    let _ = test.hub.request_connection(
+    let _ = test.hub.request_connect(
         late_user,
         SessionKey::new_random(&SystemRandom::new()).unwrap(),
-        tokio::sync::mpsc::channel(1).0,
+        socket_channel(1).0,
         vec![],
     );
 
@@ -366,16 +384,19 @@ async fn shutdown_drops_every_connection_and_publishes_nothing_after() {
 async fn a_stopped_hub_refuses_every_request() {
     let mut test = TestHub::default_from_env().await;
     let (user, connection) = (Uuid::new_v4(), Uuid::new_v4());
-    test.hub.request_shutdown().unwrap();
+    test.hub.send_control(ControlCommand::Shutdown).unwrap();
     test.wait_for_shutdown_events().await;
     test.wait_shutdown_complete().await;
 
     // A socket that connects while the hub stops must be able to tell, to close itself.
     let session = SessionKey::new_random(&SystemRandom::new()).unwrap();
-    let (tx, _rx) = tokio::sync::mpsc::channel(1);
-    assert!(test.hub.request_connection(user, session, tx, vec![]).is_err());
-    assert!(test.hub.request_disconnection(user, connection).is_err());
-    assert!(test.hub.request_shutdown().is_err());
+    let (tx, _rx) = socket_channel(1);
+    assert!(test.hub.request_connect(user, session, tx, vec![]).is_err());
+    assert!(test
+        .hub
+        .request_disconnect(user, connection, DisconnectReason::Client)
+        .is_err());
+    assert!(test.hub.shutdown().await.is_err());
     // Waiting for a stop that already happened returns at once.
     test.wait_shutdown_complete().await;
 }
@@ -388,8 +409,12 @@ async fn registry_change_drops_only_a_connection_the_registry_no_longer_holds() 
     test.wait_all_commands().await;
 
     // A change notice while the registry still holds this connection is a no-op.
-    test.hub.notify_registry_changed(user).unwrap();
-    test.hub.notify_registry_changed(Uuid::new_v4()).unwrap();
+    test.hub
+        .send_control(ControlCommand::HubRegistryChanged { user_id: user })
+        .unwrap();
+    test.hub
+        .send_control(ControlCommand::HubRegistryChanged { user_id: Uuid::new_v4() })
+        .unwrap();
     let seen = test.wait_all_commands().await;
     assert_eq!(seen.lifecycle_of(user), []);
     rx.drain().assert_open();
@@ -400,7 +425,9 @@ async fn registry_change_drops_only_a_connection_the_registry_no_longer_holds() 
         let mut context = test.direct_registry.create_context().await.unwrap();
         context.create_connection(user, winner).await.unwrap();
     }
-    test.hub.notify_registry_changed(user).unwrap();
+    test.hub
+        .send_control(ControlCommand::HubRegistryChanged { user_id: user })
+        .unwrap();
     let seen = test.wait_all_commands().await;
 
     assert_eq!(seen.lifecycle_of(user), [Lifecycle::Disconnected(connection)]);
@@ -450,7 +477,9 @@ async fn heartbeat_refreshes_live_rows_and_drops_expired_ones() {
     test.assert_consistent([live_user, expired_user], &HashMap::from([(live_user, live)]))
         .await;
 
-    test.hub.request_disconnection(live_user, live).unwrap();
+    test.hub
+        .request_disconnect(live_user, live, DisconnectReason::Client)
+        .unwrap();
     test.wait_all_commands().await;
 }
 
@@ -488,7 +517,9 @@ async fn session_check_drops_only_connections_with_an_invalid_session() {
     valid_rx.drain().assert_open();
     assert_eq!(seen.drops(), BTreeMap::from([(DisconnectReason::SessionInvalid, 1)]));
 
-    test.hub.request_disconnection(valid_user, valid).unwrap();
+    test.hub
+        .request_disconnect(valid_user, valid, DisconnectReason::Client)
+        .unwrap();
     test.wait_all_commands().await;
 }
 
@@ -515,7 +546,8 @@ async fn batched_heartbeat_refreshes_active_and_reports_stale() {
             connection_id: Uuid::new_v4(),
         },
     ];
-    let mut stale = test.hub.heartbeat_registry_connections(&requested).await.unwrap();
+    let registry = HubRegistry::new(test.registry.clone());
+    let mut stale = registry.heartbeat_connections(&requested).await.unwrap();
     stale.sort_by_key(|c| c.user_id);
     let mut expected = vec![requested[1], requested[2]];
     expected.sort_by_key(|c| c.user_id);
@@ -524,14 +556,45 @@ async fn batched_heartbeat_refreshes_active_and_reports_stale() {
         "only the mismatching / missing entries are reported stale"
     );
 
-    assert!(test.hub.heartbeat_registry_connection(active_a, conn_a).await.unwrap());
-    assert!(!test
-        .hub
-        .heartbeat_registry_connection(active_a, Uuid::new_v4())
-        .await
-        .unwrap());
+    assert!(registry.heartbeat_connection(active_a, conn_a).await.unwrap());
+    assert!(!registry.heartbeat_connection(active_a, Uuid::new_v4()).await.unwrap());
 
-    test.hub.request_disconnection(active_a, conn_a).unwrap();
-    test.hub.request_disconnection(active_b, conn_b).unwrap();
+    test.hub
+        .request_disconnect(active_a, conn_a, DisconnectReason::Client)
+        .unwrap();
+    test.hub
+        .request_disconnect(active_b, conn_b, DisconnectReason::Client)
+        .unwrap();
     test.wait_all_commands().await;
+}
+
+/// Every task ends when the hub shuts down, that is not a failure to report.
+#[test(serial = "hub-service")]
+async fn a_shutdown_does_not_report_the_ending_tasks_as_failed() {
+    let mut test = TestHub::from_env(TestHubOptions {
+        with_streams: Some(crate::services::command_stream::StreamConfig::test_default()),
+        ..Default::default()
+    })
+    .await;
+    let (_connection, _rx) = test.connect_ping(Uuid::new_v4(), 8);
+    test.wait_all_commands().await;
+
+    test.hub.send_control(ControlCommand::Shutdown).unwrap();
+    test.wait_for_shutdown_events().await;
+    test.wait_shutdown_complete().await;
+
+    let failed = tokio::time::timeout(Duration::from_millis(300), test.supervisor.wait_failed()).await;
+    assert!(failed.is_err(), "a task was reported failed on a shutdown: {failed:?}");
+}
+
+#[test(serial = "hub-service")]
+async fn a_task_that_ends_while_the_hub_runs_is_reported_as_failed() {
+    let test = TestHub::default_from_env().await;
+    let waiting = tokio::time::timeout(Duration::from_millis(100), test.supervisor.wait_failed()).await;
+    assert!(waiting.is_err(), "a healthy hub reported a failed task: {waiting:?}");
+
+    test.supervisor.task_ended("heartbeat");
+
+    let failed = tokio::time::timeout(Duration::from_secs(5), test.supervisor.wait_failed()).await;
+    assert_eq!(failed, Ok("heartbeat".to_string()));
 }

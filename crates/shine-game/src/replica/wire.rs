@@ -42,7 +42,7 @@ pub enum ServerMessage {
     StreamReset {
         stream_id: String,
     },
-    StreamUnsynced {
+    StreamDesynced {
         stream_id: String,
     },
     StreamNack {

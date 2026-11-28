@@ -17,6 +17,14 @@
     },
     "ws": {
       "allowedHosts": ["^ws\\.scytta\\.com(:443)?$"]
+    },
+    "streams": {
+      "chat": {
+        "access": { "mode": "allowList", "ids": ["global"] }
+      },
+      "pixelMap": {
+        "access": { "mode": "allowList", "ids": ["pixel-demo"] }
+      }
     }
   }
 }

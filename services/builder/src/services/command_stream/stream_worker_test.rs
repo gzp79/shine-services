@@ -1,19 +1,16 @@
-//! The stream worker on a real Postgres and Redis, with a recording sink instead of the hub. The wake that
-//! the inbox listener will give a worker is simulated by calling `wake`.
-
 use crate::{
     models::{messages::StreamMessage, CommandStreamError},
     repositories::{
         command_inbox::{redis::RedisCommandInboxDb, CommandInboxDb, InboxBatch, InboxId, InboxWake},
-        command_log::{pg::PgCommandLogDb, CommandLogDb},
+        command_log::{pg::PgCommandLogDb, CommandLogDb, ConsistencyReport, StoredCommand, StoredSnapshot, StreamHead},
     },
-    services::command_stream::{StreamConfig, StreamLogService, StreamWorker},
+    services::command_stream::{InboxConfig, LogConfig, StreamConfig, StreamLogService, StreamWorker},
     testing::{
         command_stream::{ChatLog, TestEgress, TestInbox, TestLog, TestStreamId},
         TestMessage,
     },
 };
-use shine_game::replica::{encode_command, ChatCommand, ChatState, StreamId};
+use shine_game::replica::{ChatState, StreamId};
 use shine_test::test;
 use std::{
     sync::{
@@ -49,7 +46,7 @@ async fn harness() -> Harness {
 impl Harness {
     /// A worker for the stream, over a service that snapshots every `every` versions.
     fn spawn(&self, stream: &StreamId, every: i64, mut config: StreamConfig) -> Arc<StreamWorker> {
-        config.log_snapshot_every = every;
+        config.log.snapshot_every = every;
         self.spawn_with(stream, config)
     }
 
@@ -90,7 +87,7 @@ impl Harness {
 async fn a_subscriber_is_synced_and_then_gets_the_new_commands_in_order_exactly_once() {
     let h = harness().await;
     let id = TestStreamId::new_chat();
-    let worker = h.spawn(&id, 100, StreamConfig::quiet());
+    let worker = h.spawn(&id, 100, StreamConfig::test_default());
 
     let connection = h.subscribe(&worker).await;
     assert_eq!(
@@ -131,8 +128,11 @@ async fn a_backlog_larger_than_one_poll_is_worked_off_without_waiting_for_anothe
     let worker = h.spawn_with(
         &id,
         StreamConfig {
-            inbox_poll_limit: 5,
-            ..StreamConfig::quiet()
+            inbox: InboxConfig {
+                poll_limit: 5,
+                ..StreamConfig::test_default().inbox
+            },
+            ..StreamConfig::test_default()
         },
     );
     let connection = h.subscribe(&worker).await;
@@ -153,7 +153,7 @@ async fn a_backlog_larger_than_one_poll_is_worked_off_without_waiting_for_anothe
 async fn a_late_subscriber_gets_the_snapshot_and_the_tail_and_then_only_newer_commands() {
     let h = harness().await;
     let id = TestStreamId::new_chat();
-    let worker = h.spawn(&id, 4, StreamConfig::quiet());
+    let worker = h.spawn(&id, 4, StreamConfig::test_default());
     let early = h.subscribe(&worker).await;
     for i in 0..10 {
         h.send(&id, &format!("m{i}")).await;
@@ -205,8 +205,11 @@ async fn the_recovery_poll_delivers_when_no_wake_comes() {
         &id,
         100,
         StreamConfig {
-            inbox_recovery_poll_interval: Duration::from_millis(50),
-            ..StreamConfig::quiet()
+            inbox: InboxConfig {
+                recovery_poll_interval: Duration::from_millis(50),
+                ..StreamConfig::test_default().inbox
+            },
+            ..StreamConfig::test_default()
         },
     );
     let connection = h.subscribe(&worker).await;
@@ -220,7 +223,7 @@ async fn the_recovery_poll_delivers_when_no_wake_comes() {
 async fn a_subscriber_that_cannot_be_sent_to_is_forgotten() {
     let h = harness().await;
     let id = TestStreamId::new_chat();
-    let worker = h.spawn(&id, 100, StreamConfig::quiet());
+    let worker = h.spawn(&id, 100, StreamConfig::test_default());
     let steady = h.subscribe(&worker).await;
     let flaky = h.subscribe(&worker).await;
     h.send(&id, "a").await;
@@ -252,7 +255,7 @@ async fn a_subscriber_that_cannot_be_sent_to_is_forgotten() {
 fn short_grace_config() -> StreamConfig {
     StreamConfig {
         worker_unload_grace: Duration::from_millis(300),
-        ..StreamConfig::quiet()
+        ..StreamConfig::test_default()
     }
 }
 
@@ -316,27 +319,26 @@ async fn commands_waiting_in_the_inbox_are_persisted_before_the_worker_unloads()
 }
 
 #[test]
-async fn a_subscriber_queued_while_the_worker_ends_is_told_to_start_again() {
+async fn a_subscriber_queued_while_the_worker_stops_is_not_served() {
     let h = harness().await;
     let id = TestStreamId::new_chat();
-    let worker = h.spawn(&id, 100, StreamConfig::quiet());
+    let worker = h.spawn(&id, 100, StreamConfig::test_default());
     h.subscribe(&worker).await;
     let late = Uuid::new_v4();
 
     assert!(worker.stop());
-    let queued = worker.subscribe(late);
+    worker.subscribe(late);
 
     wait_finished(&worker).await;
-    if queued {
-        h.egress.wait(late, |m| TestEgress::kinds(m) == ["unsynced"]).await;
-    }
+    assert!(h.egress.messages(late).is_empty());
+    assert!(h.egress.failed().is_empty(), "stopping is not a stream failure");
 }
 
 #[test]
 async fn a_stopped_worker_ends_and_takes_no_more_subscribers() {
     let h = harness().await;
     let id = TestStreamId::new_chat();
-    let worker = h.spawn(&id, 100, StreamConfig::quiet());
+    let worker = h.spawn(&id, 100, StreamConfig::test_default());
     h.subscribe(&worker).await;
 
     assert!(worker.stop());
@@ -352,7 +354,7 @@ async fn a_stopped_worker_ends_and_takes_no_more_subscribers() {
 async fn commands_waiting_in_the_inbox_are_persisted_before_the_worker_ends() {
     let h = harness().await;
     let id = TestStreamId::new_chat();
-    let worker = h.spawn(&id, 100, StreamConfig::quiet());
+    let worker = h.spawn(&id, 100, StreamConfig::test_default());
     h.subscribe(&worker).await;
     h.send(&id, "last words").await;
 
@@ -372,7 +374,7 @@ async fn a_log_contradicting_the_worker_resets_the_subscribers_and_syncs_them_ag
     let id = TestStreamId::new_chat();
     h.log.db.ensure_stream(&id).await.unwrap();
     ChatLog::new("seed", 3).persist(&h.log.db, &id, 1, 3).await.unwrap();
-    let worker = h.spawn(&id, 100, StreamConfig::quiet());
+    let worker = h.spawn(&id, 100, StreamConfig::test_default());
     let connection = h.subscribe(&worker).await;
     // The log is replaced behind the worker's back by another, longer history.
     h.log
@@ -410,15 +412,13 @@ async fn a_stream_that_cannot_be_loaded_tells_the_waiting_subscribers_and_ends()
     room.commands[1].data = b"{not a command".to_vec();
     h.log.db.ensure_stream(&id).await.unwrap();
     room.persist(&h.log.db, &id, 1, 3).await.unwrap();
-    let worker = h.spawn(&id, 100, StreamConfig::quiet());
+    let worker = h.spawn(&id, 100, StreamConfig::test_default());
     let connection = Uuid::new_v4();
     assert!(worker.subscribe(connection));
 
-    h.egress
-        .wait(connection, |m| TestEgress::kinds(m) == ["unsynced"])
-        .await;
-
     wait_finished(&worker).await;
+    assert_eq!(h.egress.failed(), [id]);
+    assert!(h.egress.messages(connection).is_empty());
     assert!(!worker.subscribe(Uuid::new_v4()));
 }
 
@@ -480,10 +480,6 @@ impl CommandInboxDb for FlakyInbox {
     {
         self.inner.listen(handler).await
     }
-
-    async fn unlisten(&self) -> Result<(), CommandStreamError> {
-        self.inner.unlisten().await
-    }
 }
 
 #[test]
@@ -497,8 +493,11 @@ async fn a_stream_that_fails_is_given_up_and_its_subscribers_are_told() {
         transient: false,
     };
     let config = StreamConfig {
-        inbox_recovery_poll_interval: Duration::from_millis(30),
-        ..StreamConfig::quiet()
+        inbox: InboxConfig {
+            recovery_poll_interval: Duration::from_millis(30),
+            ..StreamConfig::test_default().inbox
+        },
+        ..StreamConfig::test_default()
     };
     let service = StreamLogService::new(flaky.clone(), h.log.db.clone(), config.clone());
     let worker = StreamWorker::start::<ChatState, _, _, _>(service, flaky, h.egress.clone(), id.clone(), config);
@@ -506,10 +505,9 @@ async fn a_stream_that_fails_is_given_up_and_its_subscribers_are_told() {
 
     fail.store(usize::MAX, Ordering::Relaxed);
 
-    h.egress
-        .wait(connection, |m| TestEgress::kinds(m) == ["sync:0", "unsynced"])
-        .await;
     wait_finished(&worker).await;
+    assert_eq!(h.egress.failed(), [id]);
+    assert_eq!(TestEgress::kinds(&h.egress.messages(connection)), ["sync:0"]);
     assert!(!worker.subscribe(Uuid::new_v4()));
 }
 
@@ -523,7 +521,7 @@ async fn a_subscriber_is_told_to_retry_without_a_sync_when_the_inbox_read_fails(
         fail: fail.clone(),
         transient: false,
     };
-    let config = StreamConfig::quiet();
+    let config = StreamConfig::test_default();
     let service = StreamLogService::new(flaky.clone(), h.log.db.clone(), config.clone());
     let worker = StreamWorker::start::<ChatState, _, _, _>(service, flaky, h.egress.clone(), id.clone(), config);
     h.subscribe(&worker).await;
@@ -532,10 +530,9 @@ async fn a_subscriber_is_told_to_retry_without_a_sync_when_the_inbox_read_fails(
 
     assert!(worker.subscribe(connection));
 
-    h.egress
-        .wait(connection, |m| TestEgress::kinds(m) == ["unsynced"])
-        .await;
     wait_finished(&worker).await;
+    assert_eq!(h.egress.failed(), [id]);
+    assert!(h.egress.messages(connection).is_empty());
 }
 
 #[test]
@@ -548,7 +545,7 @@ async fn an_inbox_that_fails_for_a_moment_does_not_end_the_stream() {
         fail: fail.clone(),
         transient: true,
     };
-    let config = StreamConfig::quiet();
+    let config = StreamConfig::test_default();
     let service = StreamLogService::new(flaky.clone(), h.log.db.clone(), config.clone());
     let worker = StreamWorker::start::<ChatState, _, _, _>(service, flaky, h.egress.clone(), id.clone(), config);
     let connection = h.subscribe(&worker).await;
@@ -560,13 +557,7 @@ async fn an_inbox_that_fails_for_a_moment_does_not_end_the_stream() {
     h.egress.wait(connection, |m| TestEgress::versions(m, &id) == [1]).await;
     assert_eq!(fail.load(Ordering::Relaxed), 0, "the failing reads were all spent");
     assert!(!worker.is_finished());
-    assert!(
-        !h.egress
-            .messages(connection)
-            .iter()
-            .any(|m| matches!(**m, StreamMessage::Unsynced { .. })),
-        "the subscriber was not dropped"
-    );
+    assert!(h.egress.failed().is_empty(), "the subscriber was not dropped");
 }
 
 /// How many times the inbox is read until a worker over an inbox that always fails (an outage) gives up.
@@ -579,8 +570,11 @@ async fn reads_until_given_up(h: &Harness, max_retries: u32) -> usize {
         transient: true,
     };
     let config = StreamConfig {
-        inbox_max_retries: max_retries,
-        ..StreamConfig::quiet()
+        inbox: InboxConfig {
+            max_retries,
+            ..StreamConfig::test_default().inbox
+        },
+        ..StreamConfig::test_default()
     };
     let service = StreamLogService::new(flaky.clone(), h.log.db.clone(), config.clone());
     let worker = StreamWorker::start::<ChatState, _, _, _>(service, flaky, h.egress.clone(), id.clone(), config);
@@ -590,17 +584,16 @@ async fn reads_until_given_up(h: &Harness, max_retries: u32) -> usize {
 
     assert!(worker.subscribe(connection));
 
-    h.egress
-        .wait(connection, |m| TestEgress::kinds(m) == ["unsynced"])
-        .await;
     wait_finished(&worker).await;
+    assert_eq!(h.egress.failed(), [id]);
+    assert!(h.egress.messages(connection).is_empty());
     usize::MAX - fail.load(Ordering::Relaxed)
 }
 
 #[test]
 async fn an_inbox_that_keeps_failing_ends_the_stream_once_the_retries_are_spent() {
     let h = harness().await;
-    let retries = StreamConfig::quiet().inbox_max_retries;
+    let retries = StreamConfig::test_default().inbox.max_retries;
 
     let reads = reads_until_given_up(&h, retries).await;
 
@@ -622,7 +615,7 @@ async fn a_worker_stopped_over_a_contradicting_log_leaves_its_commands_in_the_in
     let id = TestStreamId::new_chat();
     h.log.db.ensure_stream(&id).await.unwrap();
     ChatLog::new("seed", 3).persist(&h.log.db, &id, 1, 3).await.unwrap();
-    let worker = h.spawn(&id, 100, StreamConfig::quiet());
+    let worker = h.spawn(&id, 100, StreamConfig::test_default());
     h.subscribe(&worker).await;
     h.log
         .exec(&format!(
@@ -642,4 +635,183 @@ async fn a_worker_stopped_over_a_contradicting_log_leaves_its_commands_in_the_in
     wait_finished(&worker).await;
     assert_eq!(h.log.all_commands(&id).await.len(), 4, "the log keeps its own history");
     assert_eq!(h.inbox.len(&id).await, 1, "the command was not lost");
+}
+
+/// A command log that fails the next calls when told to, as a database outage does: `fail_append` is how many
+/// appends and `fail_read` how many loads of the stream's head and history.
+#[derive(Clone)]
+struct FlakyLog {
+    inner: PgCommandLogDb,
+    fail_append: Arc<AtomicUsize>,
+    fail_read: Arc<AtomicUsize>,
+}
+
+impl FlakyLog {
+    fn new(inner: PgCommandLogDb) -> Self {
+        Self {
+            inner,
+            fail_append: Arc::new(AtomicUsize::new(0)),
+            fail_read: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    fn outage(counter: &AtomicUsize) -> Result<(), CommandStreamError> {
+        let failing = counter
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |left| left.checked_sub(1))
+            .is_ok();
+        if failing {
+            return Err(CommandStreamError::service_unavailable(
+                "PostgreSQL",
+                std::io::Error::other("injected failure"),
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl CommandLogDb for FlakyLog {
+    async fn ensure_stream(&self, stream_id: &StreamId) -> Result<StreamHead, CommandStreamError> {
+        Self::outage(&self.fail_read)?;
+        self.inner.ensure_stream(stream_id).await
+    }
+
+    async fn head(&self, stream_id: &StreamId) -> Result<Option<StreamHead>, CommandStreamError> {
+        Self::outage(&self.fail_read)?;
+        self.inner.head(stream_id).await
+    }
+
+    async fn append(
+        &self,
+        stream_id: &StreamId,
+        commands: &[StoredCommand],
+        baseline_hash: u64,
+    ) -> Result<StreamHead, CommandStreamError> {
+        Self::outage(&self.fail_append)?;
+        self.inner.append(stream_id, commands, baseline_hash).await
+    }
+
+    async fn commands_after(
+        &self,
+        stream_id: &StreamId,
+        after: i64,
+        limit: i64,
+    ) -> Result<Vec<StoredCommand>, CommandStreamError> {
+        self.inner.commands_after(stream_id, after, limit).await
+    }
+
+    async fn last_commands(&self, stream_id: &StreamId, count: i64) -> Result<Vec<StoredCommand>, CommandStreamError> {
+        self.inner.last_commands(stream_id, count).await
+    }
+
+    async fn try_store_snapshot(
+        &self,
+        stream_id: &StreamId,
+        snapshot: &StoredSnapshot,
+    ) -> Result<(), CommandStreamError> {
+        self.inner.try_store_snapshot(stream_id, snapshot).await
+    }
+
+    async fn latest_snapshot(
+        &self,
+        stream_id: &StreamId,
+        at_or_before: i64,
+    ) -> Result<Option<StoredSnapshot>, CommandStreamError> {
+        self.inner.latest_snapshot(stream_id, at_or_before).await
+    }
+
+    async fn oldest_snapshot_version(&self, stream_id: &StreamId) -> Result<Option<i64>, CommandStreamError> {
+        self.inner.oldest_snapshot_version(stream_id).await
+    }
+
+    async fn prune(&self, stream_id: &StreamId, kept_snapshot_count: i64) -> Result<Option<i64>, CommandStreamError> {
+        self.inner.prune(stream_id, kept_snapshot_count).await
+    }
+
+    async fn check_consistency(&self, stream_id: &StreamId) -> Result<ConsistencyReport, CommandStreamError> {
+        self.inner.check_consistency(stream_id).await
+    }
+}
+
+impl Harness {
+    /// A worker whose command log is flaky.
+    fn spawn_over_flaky_log(&self, stream: &StreamId, log: FlakyLog) -> Arc<StreamWorker> {
+        self.spawn_over_flaky_log_with(stream, log, StreamConfig::test_default())
+    }
+
+    fn spawn_over_flaky_log_with(&self, stream: &StreamId, log: FlakyLog, config: StreamConfig) -> Arc<StreamWorker> {
+        let service = StreamLogService::new(self.inbox.db.clone(), log, config.clone());
+        StreamWorker::start::<ChatState, _, _, _>(
+            service,
+            self.inbox.db.clone(),
+            self.egress.clone(),
+            stream.clone(),
+            config,
+        )
+    }
+}
+
+#[test]
+async fn a_log_that_fails_for_a_moment_does_not_end_the_stream() {
+    let h = harness().await;
+    let id = TestStreamId::new_chat();
+    let log = FlakyLog::new(h.log.db.clone());
+    let worker = h.spawn_over_flaky_log(&id, log.clone());
+    let _connection = h.subscribe(&worker).await;
+
+    log.fail_append.store(3, Ordering::Relaxed);
+    h.send(&id, "a").await;
+    worker.wake();
+
+    h.log.wait_commands(&id, 1).await;
+    assert_eq!(
+        log.fail_append.load(Ordering::Relaxed),
+        0,
+        "the failing appends were all spent"
+    );
+    assert!(!worker.is_finished());
+    assert!(h.egress.failed().is_empty(), "the subscriber was not dropped");
+}
+
+#[test]
+async fn a_log_that_fails_for_a_moment_while_loading_does_not_end_the_stream() {
+    let h = harness().await;
+    let id = TestStreamId::new_chat();
+    let log = FlakyLog::new(h.log.db.clone());
+    log.fail_read.store(3, Ordering::Relaxed);
+    let worker = h.spawn_over_flaky_log(&id, log.clone());
+    let connection = Uuid::new_v4();
+
+    assert!(worker.subscribe(connection));
+
+    h.egress.wait(connection, |m| !m.is_empty()).await;
+    assert_eq!(TestEgress::kinds(&h.egress.messages(connection)), ["sync:0"]);
+    assert!(!worker.is_finished());
+}
+
+#[test]
+async fn a_log_that_keeps_failing_ends_the_stream_once_the_retries_are_spent() {
+    let h = harness().await;
+    let id = TestStreamId::new_chat();
+    let log = FlakyLog::new(h.log.db.clone());
+    let config = StreamConfig {
+        log: LogConfig {
+            max_retries: 2,
+            ..StreamConfig::test_default().log
+        },
+        ..StreamConfig::test_default()
+    };
+    let worker = h.spawn_over_flaky_log_with(&id, log.clone(), config);
+    h.subscribe(&worker).await;
+
+    log.fail_append.store(usize::MAX, Ordering::Relaxed);
+    h.send(&id, "a").await;
+    worker.wake();
+
+    wait_finished(&worker).await;
+    assert_eq!(h.egress.failed(), [id]);
+    assert_eq!(
+        usize::MAX - log.fail_append.load(Ordering::Relaxed),
+        3,
+        "the first append and every retry"
+    );
 }

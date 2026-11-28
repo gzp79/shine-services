@@ -1,10 +1,11 @@
 use super::*;
 use crate::{
+    models::CommandStreamError,
     repositories::{command_inbox::CommandInboxDb, command_log::CommandLogDb},
-    services::command_stream::StreamConfig,
+    services::command_stream::{LogConfig, StreamConfig},
     testing::command_stream::{ChatLog, TestInbox, TestLog, TestStreamId},
 };
-use shine_game::replica::{ChatState, StreamId};
+use shine_game::replica::{fold_chain_hash, ChatState, StreamId};
 use shine_test::test;
 
 async fn fixture() -> (TestInbox, TestLog) {
@@ -44,13 +45,76 @@ async fn loading_takes_the_latest_snapshot_and_tail() {
     assert_eq!(&*tail, &room.commands[7..]);
 }
 
+// The chain only folds the stored hashes, so a row whose data was replaced still replays, unless the
+// data is hashed again when it is read.
+#[test]
+async fn a_command_whose_data_does_not_match_its_stored_hash_is_corrupt_on_load() {
+    let (inbox, log) = fixture().await;
+    let id = TestStreamId::new_chat();
+    log.db.ensure_stream(&id).await.unwrap();
+    let mut commands = ChatLog::new("a", 3).commands;
+    // The hash of the third command is not the hash of its data, and the chain is folded from that
+    // hash, so every chain check passes.
+    let parent_chain_hash = commands[1].chain_hash;
+    let forged = &mut commands[2];
+    forged.command_hash ^= 1;
+    forged.chain_hash = fold_chain_hash(
+        parent_chain_hash,
+        forged.version,
+        forged.command_id,
+        forged.user_id,
+        forged.command_hash,
+    );
+    log.db.append(&id, &commands, 0).await.unwrap();
+
+    let loaded = persistence(id, &inbox, &log, StreamConfig::default())
+        .reload("the stream is starting")
+        .await;
+
+    assert!(
+        matches!(
+            &loaded,
+            PersistResult::Failed {
+                error: CommandStreamError::Corrupt(_)
+            }
+        ),
+        "{loaded:?}"
+    );
+}
+
+#[test]
+async fn a_snapshot_whose_state_does_not_match_its_stored_hash_is_corrupt_on_load() {
+    let (inbox, log) = fixture().await;
+    let (id, room) = log.seeded_chat_log(6).await;
+    let mut snapshot = room.snapshot_at(4);
+    snapshot.hash ^= 1;
+    log.db.try_store_snapshot(&id, &snapshot).await.unwrap();
+
+    let loaded = persistence(id, &inbox, &log, StreamConfig::default())
+        .reload("the stream is starting")
+        .await;
+
+    assert!(
+        matches!(
+            &loaded,
+            PersistResult::Failed {
+                error: CommandStreamError::Corrupt(_)
+            }
+        ),
+        "{loaded:?}"
+    );
+}
+
 #[test]
 async fn persistence_appends_replays_and_returns_a_snapshot() {
     let (inbox, log) = fixture().await;
     let stream_id = TestStreamId::new_chat();
     let room = ChatLog::new("persist", 4);
     let config = StreamConfig {
-        log_snapshot_every: 2,
+        log: LogConfig {
+            snapshot_every: 2,
+            ..LogConfig::default()
+        },
         ..StreamConfig::default()
     };
     let mut persistence = persistence(stream_id.clone(), &inbox, &log, config);

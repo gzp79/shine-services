@@ -1,7 +1,9 @@
-use crate::models::HubError;
-use crate::repositories::hub_registry::{
-    redis::{RedisHubRegistryBuildError, HUB_REGISTRY_CHANGED_CHANNEL},
-    HubConnectionDb, HubConnectionDbContext,
+use crate::{
+    models::HubError,
+    repositories::hub_registry::{
+        redis::{RedisHubRegistryBuildError, HUB_REGISTRY_CHANGED_CHANNEL},
+        HubConnectionDb, HubConnectionDbContext,
+    },
 };
 use shine_infra::db::redis::{RedisConnectionPool, RedisError, RedisPooledConnection};
 use uuid::Uuid;

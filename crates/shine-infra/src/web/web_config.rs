@@ -8,6 +8,7 @@ use std::{
     fmt::{self, Debug},
     marker::PhantomData,
     path::PathBuf,
+    sync::Arc,
 };
 
 use super::{CoreConfig, ServiceConfig};
@@ -20,16 +21,58 @@ pub trait FeatureConfig: Debug {
 }
 
 #[derive(Debug, Clone)]
-pub struct WebAppConfig<F>
+struct Inner<F>
 where
     F: FeatureConfig,
 {
-    pub core: CoreConfig,
-    pub service: ServiceConfig,
-    pub telemetry: TelemetryConfig,
+    core: CoreConfig,
+    service: ServiceConfig,
+    telemetry: TelemetryConfig,
 
-    //#[serde(flatten)]
-    pub feature: F,
+    feature: F,
+}
+
+pub struct WebAppConfig<F>(Arc<Inner<F>>)
+where
+    F: FeatureConfig;
+
+impl<F> Clone for WebAppConfig<F>
+where
+    F: FeatureConfig,
+{
+    fn clone(&self) -> Self {
+        WebAppConfig(Arc::clone(&self.0))
+    }
+}
+
+impl<F> WebAppConfig<F>
+where
+    F: FeatureConfig,
+{
+    pub fn core(&self) -> &CoreConfig {
+        &self.0.core
+    }
+
+    pub fn service(&self) -> &ServiceConfig {
+        &self.0.service
+    }
+
+    pub fn telemetry(&self) -> &TelemetryConfig {
+        &self.0.telemetry
+    }
+
+    pub fn feature(&self) -> &F {
+        &self.0.feature
+    }
+}
+
+impl<F> Debug for WebAppConfig<F>
+where
+    F: FeatureConfig,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
 }
 
 impl<'de, F> Deserialize<'de> for WebAppConfig<F>
@@ -136,7 +179,7 @@ where
                 let telemetry = telemetry.ok_or_else(|| SerdeError::missing_field("telemetry"))?;
                 let feature = feature.ok_or_else(|| SerdeError::missing_field(F::NAME))?;
 
-                Ok(WebAppConfig {
+                Ok(WebAppConfig(Arc::new(Inner {
                     core: CoreConfig {
                         stage: core_stage,
                         version: core_version,
@@ -147,7 +190,7 @@ where
                     service,
                     telemetry,
                     feature,
-                })
+                })))
             }
         }
 
@@ -165,10 +208,10 @@ where
         let config = builder.build().await?;
 
         let cfg: Self = config.try_deserialize()?;
-        tracing::info!("Config loaded [{}]", cfg.core.root_file);
+        tracing::info!("Config loaded [{}]", cfg.core().root_file);
         tracing::trace!("Config: {cfg:#?}");
 
-        if pre_init != cfg.core {
+        if pre_init != *cfg.core() {
             Err(anyhow!("Core config mismatch"))
         } else {
             Ok(cfg)

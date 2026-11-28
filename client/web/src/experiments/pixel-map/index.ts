@@ -95,10 +95,10 @@ export class PixelMapExperiment extends Experiment {
         for (const reply of stream.handle_message(JSON.stringify(frame))) this.sendFrame(reply);
         const status = stream.status();
         this.connectionState = status === 'live' ? 'live' : 'syncing';
-        if (status === 'unsynced' && this.resubscribeTimer === null) {
+        if (status === 'desynced' && this.resubscribeTimer === null) {
             this.resubscribeTimer = setTimeout(() => {
                 this.resubscribeTimer = null;
-                if (stream.status() === 'unsynced') void this.subscription.subscribe();
+                if (stream.status() === 'desynced') void this.subscription.subscribe();
             }, 5000);
         }
     }

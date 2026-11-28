@@ -4,9 +4,8 @@ use crate::{
     session::CurrentUserService,
     telemetry::TelemetryService,
     web::{
-        compile_anchored_bytes,
         middlewares::{PoweredBy, SecurityHeaders},
-        responses::ProblemConfig,
+        responses::{Problem, ProblemConfig},
         ApiUrl, FeatureConfig, WebAppConfig,
     },
 };
@@ -17,16 +16,21 @@ use axum::{
     Extension,
 };
 use axum_server::Handle;
+use regex::bytes::Regex;
 use serde::de::DeserializeOwned;
+use shine_core::tokio::TaskSupervisor;
 use std::{env, fmt::Debug, fs, future::Future, net::SocketAddr, pin::Pin, time::Duration as StdDuration};
-use tokio::{net::TcpListener, runtime::Runtime, signal, time::sleep};
+use tokio::{net::TcpListener, runtime::Runtime, signal, sync::Notify, time::sleep};
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tracing::{instrument, level_filters::LevelFilter};
 use tracing_log::LogTracer;
 use tracing_subscriber::EnvFilter;
 use utoipa::{
-    openapi::{ComponentsBuilder, OpenApi as OpenApiDoc, OpenApiBuilder},
-    OpenApi, ToResponse,
+    openapi::{
+        content::ContentBuilder, response::ResponseBuilder, ComponentsBuilder, OpenApi as OpenApiDoc, OpenApiBuilder,
+        Ref,
+    },
+    OpenApi, ToSchema,
 };
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_swagger_ui::{Config as SwaggerConfig, SwaggerUi};
@@ -41,18 +45,20 @@ struct ApiDoc;
 
 impl ApiDoc {
     pub fn with_default_components() -> OpenApiDoc {
-        #[derive(ToResponse)]
-        struct Problem {
-            r#type: String,
-            detail: Option<serde_json::Value>,
-            instance: Option<ApiUrl>,
-        }
-
         let mut doc = ApiDoc::openapi();
 
+        let problem = ResponseBuilder::new()
+            .description("Problem details of the failed request")
+            .content(
+                "application/json",
+                ContentBuilder::new()
+                    .schema(Some(Ref::from_schema_name(Problem::name())))
+                    .build(),
+            );
         let components: utoipa::openapi::Components = ComponentsBuilder::new()
             .schema_from::<ApiUrl>()
-            .response_from::<Problem>()
+            .schema_from::<Problem>()
+            .response(Problem::name(), problem.build())
             .build();
         let comp_doc = OpenApiBuilder::new().components(Some(components)).build();
         doc.merge(comp_doc);
@@ -61,7 +67,28 @@ impl ApiDoc {
     }
 }
 
-async fn shutdown_signal() {
+/// Lets the application ask for the shutdown of the running web app, as a termination signal does: the
+/// shutdown hooks run, then the server drains and stops. For a service that cannot go on without something
+/// that ended, so the platform restarts it instead of leaving it half alive.
+#[derive(Clone, Default)]
+pub struct ShutdownHandle {
+    requested: Arc<Notify>,
+}
+
+impl ShutdownHandle {
+    /// Asks for the shutdown. It is kept if nobody waits for it yet.
+    pub fn request(&self, reason: &str) {
+        tracing::warn!("Shutdown requested: {reason}");
+        self.requested.notify_one();
+    }
+
+    async fn requested(&self) {
+        self.requested.notified().await;
+    }
+}
+
+/// Waits for a reason to stop.
+async fn shutdown_signal(requested: &ShutdownHandle, supervisor: &TaskSupervisor) {
     let ctrl_c = async {
         signal::ctrl_c().await.expect("failed to install Ctrl+C handler");
         tracing::warn!("Received ctrl-c, shutting down the server...")
@@ -82,6 +109,10 @@ async fn shutdown_signal() {
     tokio::select! {
         _ = ctrl_c => {},
         _ = terminate => {},
+        _ = requested.requested() => {},
+        task = supervisor.wait_failed() => {
+            tracing::warn!("The task {task} stopped unexpectedly, shutting down the server...");
+        },
     }
 }
 
@@ -91,9 +122,24 @@ async fn run_shutdown_hooks(shutdown_hooks: Vec<ShutdownHook>) {
     }
 }
 
-async fn graceful_shutdown(handle: Handle<SocketAddr>, shutdown_hooks: Vec<ShutdownHook>) {
-    shutdown_signal().await;
-    run_shutdown_hooks(shutdown_hooks).await;
+/// What ends the web app: a termination signal or a request, then the shutdown hooks.
+struct AppShutdown {
+    hooks: Vec<ShutdownHook>,
+    requested: ShutdownHandle,
+    supervisor: TaskSupervisor,
+}
+
+/// Waits for the reason to stop, then runs the hooks; the server is told to drain once it returns. The
+/// supervised tasks are expected to end from the reason on, so they are not reported as failed.
+async fn graceful_shutdown(shutdown: AppShutdown) {
+    shutdown_signal(&shutdown.requested, &shutdown.supervisor).await;
+    shutdown.supervisor.shutdown_started();
+    run_shutdown_hooks(shutdown.hooks).await;
+}
+
+/// The shutdown of the TLS server, which has to be told to drain.
+async fn graceful_shutdown_tls(handle: Handle<SocketAddr>, shutdown: AppShutdown) {
+    graceful_shutdown(shutdown).await;
     handle.graceful_shutdown(Some(StdDuration::from_secs(10)));
 
     loop {
@@ -121,12 +167,16 @@ pub trait WebApplication {
 #[derive(Clone)]
 pub struct CoreServices {
     pub current_user_service: Arc<CurrentUserService>,
+    /// Watches the background tasks that must live as long as the service. A task that ends before the
+    /// shutdown stops the whole service gracefully, so the platform restarts it.
+    pub task_supervisor: TaskSupervisor,
 }
 
 pub struct AppBuildContext<'a> {
     core_services: &'a CoreServices,
     health_service: &'a mut HealthService,
     shutdown_hooks: &'a mut Vec<ShutdownHook>,
+    shutdown_handle: ShutdownHandle,
 }
 
 impl<'a> AppBuildContext<'a> {
@@ -134,12 +184,19 @@ impl<'a> AppBuildContext<'a> {
         core_services: &'a CoreServices,
         health_service: &'a mut HealthService,
         shutdown_hooks: &'a mut Vec<ShutdownHook>,
+        shutdown_handle: ShutdownHandle,
     ) -> Self {
         Self {
             core_services,
             health_service,
             shutdown_hooks,
+            shutdown_handle,
         }
+    }
+
+    /// The handle the application asks for its own shutdown with.
+    pub fn shutdown_handle(&self) -> ShutdownHandle {
+        self.shutdown_handle.clone()
     }
 
     pub fn core_services(&self) -> &CoreServices {
@@ -159,12 +216,7 @@ impl<'a> AppBuildContext<'a> {
     }
 }
 
-fn create_cors_layer(allowed_origins: &[String]) -> Result<CorsLayer, AnyError> {
-    let allowed_origins = allowed_origins
-        .iter()
-        .map(|r| compile_anchored_bytes(r))
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|err| anyhow!("Cors config error: {err}"))?;
+fn create_cors_layer(allowed_origins: Vec<Regex>) -> Result<CorsLayer, AnyError> {
     let cors = CorsLayer::default()
         .allow_origin(AllowOrigin::predicate(move |origin, _| {
             let origin = origin.as_bytes();
@@ -198,19 +250,19 @@ async fn load_app_config<A: WebApplication>() -> Result<WebAppConfig<A::AppConfi
         tracing::dispatcher::set_default(&pre_init_log.into())
     };
 
-    log::trace!("init-trace - log: ok");
-    log::debug!("init-debug - log: ok");
-    log::info!("init-info  - log: ok");
-    log::warn!("init-warn  - log: ok");
-    log::error!("init-error - log: ok");
-    tracing::trace!("init-trace - tracing: ok");
-    tracing::debug!("init-debug - tracing: ok");
-    tracing::info!("init-info  - tracing: ok");
-    tracing::warn!("init-warn  - tracing: ok");
-    tracing::error!("init-error - tracing: ok");
+    log::trace!(target: crate::telemetry::SELF_TEST_TARGET, "init-trace - log: ok");
+    log::debug!(target: crate::telemetry::SELF_TEST_TARGET, "init-debug - log: ok");
+    log::info!(target: crate::telemetry::SELF_TEST_TARGET, "init-info  - log: ok");
+    log::warn!(target: crate::telemetry::SELF_TEST_TARGET, "init-warn  - log: ok");
+    log::error!(target: crate::telemetry::SELF_TEST_TARGET, "init-error - log: ok");
+    tracing::trace!(target: crate::telemetry::SELF_TEST_TARGET, "init-trace - tracing: ok");
+    tracing::debug!(target: crate::telemetry::SELF_TEST_TARGET, "init-debug - tracing: ok");
+    tracing::info!(target: crate::telemetry::SELF_TEST_TARGET, "init-info  - tracing: ok");
+    tracing::warn!(target: crate::telemetry::SELF_TEST_TARGET, "init-warn  - tracing: ok");
+    tracing::error!(target: crate::telemetry::SELF_TEST_TARGET, "init-error - tracing: ok");
 
     let config = WebAppConfig::<A::AppConfig>::load(&stage, None).await?;
-    config.feature.validate()?;
+    config.feature().validate()?;
     tracing::info!("pre-init completed");
 
     Ok(config)
@@ -218,27 +270,33 @@ async fn load_app_config<A: WebApplication>() -> Result<WebAppConfig<A::AppConfi
 
 #[instrument(skip(config, app))]
 async fn create_web_app<A: WebApplication>(
-    config: &WebAppConfig<A::AppConfig>,
+    config: WebAppConfig<A::AppConfig>,
     app: &A,
-) -> Result<(Router<()>, Vec<ShutdownHook>), AnyError> {
+) -> Result<(Router<()>, AppShutdown), AnyError> {
     tracing::trace!("Creating telemetry service...");
-    let telemetry_service = TelemetryService::new(app.feature_name(), &config.telemetry).await?;
+    let telemetry_service = TelemetryService::new(app.feature_name(), config.telemetry()).await?;
     tracing::trace!("Creating health service...");
-    let mut health_service = HealthService::new(app.feature_name(), config)?;
+    let mut health_service = HealthService::new(app.feature_name(), &config)?;
     tracing::trace!("Creating problem service...");
-    let problem_service = ProblemConfig::new(config.service.full_problem_response);
+    let problem_service = ProblemConfig::new(config.service().full_problem_response);
     tracing::trace!("Creating in-flight service...");
     let in_flight_service = crate::health::InFlightService::new();
     tracing::trace!("Creating current user service...");
-    let current_user_service = Arc::new(CurrentUserService::from_config(&config.service).await?);
+    let current_user_service = Arc::new(CurrentUserService::from_config(&config.core().stage, config.service()).await?);
+    let shutdown_handle = ShutdownHandle::default();
+    let task_supervisor = TaskSupervisor::new();
     let core_services = CoreServices {
         current_user_service: Arc::clone(&current_user_service),
+        task_supervisor: task_supervisor.clone(),
     };
 
     tracing::trace!("Creating layer...");
-    let cors_layer = create_cors_layer(&config.service.allowed_origins)?;
-    let powered_by_layer = if config.service.expose_powered_by {
-        Some(PoweredBy::from_service_info(app.feature_name(), &config.core.version)?)
+    let cors_layer = create_cors_layer(config.service().allowed_origins.clone())?;
+    let powered_by_layer = if config.service().expose_powered_by {
+        Some(PoweredBy::from_service_info(
+            app.feature_name(),
+            &config.core().version,
+        )?)
     } else {
         None
     };
@@ -261,12 +319,17 @@ async fn create_web_app<A: WebApplication>(
 
     tracing::trace!("Creating app state...");
     let mut shutdown_hooks: Vec<ShutdownHook> = Vec::new();
-    let mut app_context = AppBuildContext::new(&core_services, &mut health_service, &mut shutdown_hooks);
-    let app_state = app.create(config, &mut app_context, &mut router).await?;
+    let mut app_context = AppBuildContext::new(
+        &core_services,
+        &mut health_service,
+        &mut shutdown_hooks,
+        shutdown_handle.clone(),
+    );
+    let app_state = app.create(&config, &mut app_context, &mut router).await?;
 
     tracing::trace!("Setting up open API...");
     let (router, open_api) = router.split_for_parts();
-    let router = if config.service.expose_api_docs {
+    let router = if config.service().expose_api_docs {
         let mut doc = ApiDoc::with_default_components();
         doc.merge(open_api);
 
@@ -286,6 +349,7 @@ async fn create_web_app<A: WebApplication>(
     Ok((
         router
             .layer(Extension(current_user_service))
+            .layer(Extension(config.clone()))
             .layer(problem_service.into_layer())
             .layer(in_flight_service.create_layer())
             .layer(tower::util::option_layer(powered_by_layer))
@@ -293,18 +357,22 @@ async fn create_web_app<A: WebApplication>(
             .layer(cors_layer)
             .layer(trace_layer)
             .with_state(app_state),
-        shutdown_hooks,
+        AppShutdown {
+            hooks: shutdown_hooks,
+            requested: shutdown_handle,
+            supervisor: task_supervisor,
+        },
     ))
 }
 
 async fn start_web_app<A: WebApplication>(app: A) -> Result<(), AnyError> {
     let config = load_app_config::<A>().await?;
-    let (router, shutdown_hooks) = create_web_app(&config, &app).await?;
+    let (router, shutdown) = create_web_app(config.clone(), &app).await?;
     tracing::info!("Starting web app with config...");
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], config.service.port));
+    let addr = SocketAddr::from(([0, 0, 0, 0], config.service().port));
 
-    if let Some(tls_config) = &config.service.tls {
+    if let Some(tls_config) = &config.service().tls {
         tracing::info!("Starting service on https://{addr:?} ...");
         let cert = fs::read(&tls_config.cert)?;
         let key = fs::read(&tls_config.key)?;
@@ -315,7 +383,7 @@ async fn start_web_app<A: WebApplication>(app: A) -> Result<(), AnyError> {
             .map_err(|e| anyhow!(e))?;
 
         let handle = Handle::new();
-        tokio::spawn(graceful_shutdown(handle.clone(), shutdown_hooks));
+        tokio::spawn(graceful_shutdown_tls(handle.clone(), shutdown));
 
         axum_server::bind_rustls(addr, config)
             .handle(handle)
@@ -325,12 +393,8 @@ async fn start_web_app<A: WebApplication>(app: A) -> Result<(), AnyError> {
     } else {
         tracing::info!("Starting service on http://{addr:?} ...");
         let listener = TcpListener::bind(&addr).await.unwrap();
-        let shutdown = async move {
-            shutdown_signal().await;
-            run_shutdown_hooks(shutdown_hooks).await;
-        };
         axum::serve(listener, router)
-            .with_graceful_shutdown(shutdown)
+            .with_graceful_shutdown(graceful_shutdown(shutdown))
             .await
             .map_err(|e| anyhow!(e))
     }
@@ -356,5 +420,80 @@ pub fn run_web_app<A: WebApplication>(app: A) {
             }
         }
         panic!();
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::time::Duration;
+    use tokio::time::timeout;
+
+    #[tokio::test]
+    async fn a_request_ends_the_wait_for_a_shutdown() {
+        let handle = ShutdownHandle::default();
+        let waiting = tokio::spawn({
+            let handle = handle.clone();
+            async move { handle.requested().await }
+        });
+
+        handle.request("test");
+
+        assert!(timeout(Duration::from_secs(5), waiting).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn a_request_made_before_anyone_waits_is_kept() {
+        let handle = ShutdownHandle::default();
+        handle.request("test");
+
+        assert!(timeout(Duration::from_secs(5), handle.requested()).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn a_request_ends_the_shutdown_signal() {
+        let (supervisor, handle) = (TaskSupervisor::new(), ShutdownHandle::default());
+        handle.request("test");
+
+        let ended = timeout(Duration::from_secs(5), shutdown_signal(&handle, &supervisor)).await;
+
+        assert!(ended.is_ok());
+    }
+
+    #[tokio::test]
+    async fn a_supervised_task_that_ended_unexpectedly_ends_the_shutdown_signal() {
+        let (supervisor, handle) = (TaskSupervisor::new(), ShutdownHandle::default());
+        // It ended before anyone waits: the failure is still seen.
+        supervisor.spawn("worker", async {}).await.unwrap();
+
+        let ended = timeout(Duration::from_secs(5), shutdown_signal(&handle, &supervisor)).await;
+
+        assert!(ended.is_ok());
+    }
+
+    #[tokio::test]
+    async fn a_supervised_task_that_ends_once_the_shutdown_started_does_not_end_the_shutdown_signal() {
+        let (supervisor, handle) = (TaskSupervisor::new(), ShutdownHandle::default());
+
+        supervisor.shutdown_started();
+        supervisor.spawn("worker", async {}).await.unwrap();
+
+        let ended = timeout(Duration::from_millis(100), shutdown_signal(&handle, &supervisor)).await;
+
+        assert!(ended.is_err());
+    }
+
+    #[test]
+    fn the_openapi_document_describes_the_problem_response_by_the_real_type() {
+        let doc = serde_json::to_value(ApiDoc::with_default_components()).unwrap();
+
+        let fields = &doc["components"]["schemas"]["Problem"]["properties"];
+        for field in ["status", "type", "instance", "detail", "extension", "sensitive"] {
+            assert!(fields.get(field).is_some(), "`{field}` is not described: {fields}");
+        }
+        assert_eq!(
+            doc["components"]["responses"]["Problem"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/Problem"
+        );
     }
 }

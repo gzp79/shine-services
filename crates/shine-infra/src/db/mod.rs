@@ -3,7 +3,6 @@ mod cns_param;
 mod db_metrics;
 mod listener_status;
 mod pool_error_logger;
-mod tls_policy;
 
 pub mod postgres;
 pub mod redis;
@@ -13,5 +12,4 @@ pub use self::{
     cns_param::{split_query, CnsParamError, ConnectionString},
     db_metrics::time_db_operation,
     listener_status::ListenerStatus,
-    tls_policy::{check_postgres_tls, check_redis_tls},
 };

@@ -1,8 +1,13 @@
 use crate::{
     models::messages::{HubEvent, HubMessage, StreamEvent, StreamMessage, TopicKey},
     repositories::{command_inbox::redis::RedisCommandInboxDb, command_log::pg::PgCommandLogDb},
-    services::{command_stream::StreamRegistry, HubService, StreamEgress},
+    services::{
+        command_stream::StreamRegistry,
+        hub::{hub_gateway::HubGateway, hub_subscribers::Subscribers},
+        StreamEgress,
+    },
 };
+use shine_core::tokio::TaskSupervisor;
 use std::{sync::Arc, time::Duration};
 use tokio::{task::JoinHandle, time};
 
@@ -19,13 +24,15 @@ impl StreamDispatcher {
     /// Subscribes to the hub bus and starts the dispatcher. On the hub's shutdown it has the workers
     /// persist what is waiting (for up to `shutdown_timeout`) and ends.
     pub async fn start(
-        service: HubService,
+        subscribers: &Subscribers,
+        supervisor: &TaskSupervisor,
+        gateway: HubGateway,
         registry: StreamRegistry<RedisCommandInboxDb, PgCommandLogDb>,
         shutdown_timeout: Duration,
     ) -> JoinHandle<()> {
         // Subscribed before the hub's loop starts: an event dispatched before is lost to it for good.
-        let mut subscription = service.subscribe(vec![TopicKey::Hub, TopicKey::Stream]).await;
-        tokio::spawn(async move {
+        let mut subscription = subscribers.subscribe(vec![TopicKey::Hub, TopicKey::Stream]).await;
+        supervisor.spawn("hub stream dispatcher", async move {
             let mut purge = time::interval(PURGE_INTERVAL);
             purge.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
             purge.tick().await;
@@ -45,7 +52,7 @@ impl StreamDispatcher {
                         if let Err(err) = registry.subscribe(connection_id, &stream_id) {
                             tracing::warn!("[{connection_id}] Failed to subscribe to stream {stream_id}: {err:#?}");
                             let reason = err.subscribe_failure();
-                            service
+                            gateway
                                 .send(
                                     connection_id,
                                     Arc::new(StreamMessage::SubscribeFailed { stream_id, reason }),

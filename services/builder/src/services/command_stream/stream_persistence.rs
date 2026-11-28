@@ -204,7 +204,14 @@ where
             Some(snapshot) => {
                 let state = decode_snapshot::<S>(&snapshot.data)
                     .map_err(|error| CommandStreamError::Corrupt(format!("snapshot {}: {error}", snapshot.version)))?;
-                Replica::from_snapshot(snapshot.version, state, snapshot.chain_hash)
+                let replica = Replica::from_snapshot(snapshot.version, state, snapshot.chain_hash);
+                if replica.hash() != snapshot.hash {
+                    return Err(CommandStreamError::Corrupt(format!(
+                        "snapshot {}: the state does not match its stored hash",
+                        snapshot.version
+                    )));
+                }
+                replica
             }
             None => Replica::new(),
         };
@@ -248,7 +255,7 @@ where
         &mut self,
         commands: &[StoredCommand],
     ) -> Result<(Option<StoredSnapshot>, Option<Checkpoint>), AdvanceError> {
-        let snapshot_every = self.service.config().log_snapshot_every;
+        let snapshot_every = self.service.config().log.snapshot_every;
         // Only the last snapshot boundary of the batch is kept: the ones before it are already
         // obsolete by the end of the replay.
         let boundary = if snapshot_every > 0 {

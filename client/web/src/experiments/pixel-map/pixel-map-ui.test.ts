@@ -23,7 +23,7 @@ describe('statusText', () => {
     });
 
     it('says the stream is unavailable when the server cannot serve it', () => {
-        expect(statusText('live', 'unsynced', 5, 0)).toEqual({ text: 'Stream unavailable, retrying', tone: 'error' });
+        expect(statusText('live', 'desynced', 5, 0)).toEqual({ text: 'Stream unavailable, retrying', tone: 'error' });
     });
 
     it('says the connection moved to another tab', () => {

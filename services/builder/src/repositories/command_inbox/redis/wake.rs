@@ -46,12 +46,6 @@ where
     Ok(())
 }
 
-pub async fn unlisten(db: &RedisCommandInboxDb) -> Result<(), RedisCommandInboxError> {
-    let client = db.client().await?;
-    client.unlisten(WAKE_CHANNEL).await?;
-    Ok(())
-}
-
 fn parse_payload(payload: &str) -> Option<InboxWake> {
     let (stream_id, persisted) = match payload.split_once('@') {
         Some((stream_id, version)) => (stream_id, Some(version.parse().ok()?)),

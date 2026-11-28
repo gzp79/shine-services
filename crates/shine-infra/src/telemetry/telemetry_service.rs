@@ -1,5 +1,5 @@
-use crate::telemetry::log_metrics::LogMetricsLayer;
 use crate::telemetry::otel_http::TRACING_TARGET;
+use crate::telemetry::{log_metrics::LogMetricsLayer, SELF_TEST_TARGET};
 use crate::telemetry::{
     ConsoleLogFormat, Logging, Metering, OtelLayer, RootSpanOriginLayer, TelemetryBuildError, TelemetryConfig,
     TelemetryError, Tracing,
@@ -104,16 +104,16 @@ impl TelemetryService {
         };
         service.install_telemetry(service_name, config)?;
 
-        log::trace!("trace - log: ok");
-        log::debug!("debug - log: ok");
-        log::info!("info  - log: ok");
-        log::warn!("warn  - log: ok");
-        log::error!("error - log: ok");
-        tracing::trace!("trace - tracing: ok");
-        tracing::debug!("debug - tracing: ok");
-        tracing::info!("info  - tracing: ok");
-        tracing::warn!("warn  - tracing: ok");
-        tracing::error!("error - tracing: ok");
+        log::trace!(target: SELF_TEST_TARGET, "trace - log: ok");
+        log::debug!(target: SELF_TEST_TARGET, "debug - log: ok");
+        log::info!(target: SELF_TEST_TARGET, "info  - log: ok");
+        log::warn!(target: SELF_TEST_TARGET, "warn  - log: ok");
+        log::error!(target: SELF_TEST_TARGET, "error - log: ok");
+        tracing::trace!(target: SELF_TEST_TARGET, "trace - tracing: ok");
+        tracing::debug!(target: SELF_TEST_TARGET, "debug - tracing: ok");
+        tracing::info!(target: SELF_TEST_TARGET, "info  - tracing: ok");
+        tracing::warn!(target: SELF_TEST_TARGET, "warn  - tracing: ok");
+        tracing::error!(target: SELF_TEST_TARGET, "error - tracing: ok");
 
         Ok(service)
     }

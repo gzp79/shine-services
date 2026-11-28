@@ -5,7 +5,7 @@ use crate::{
     models::messages::{DisconnectReason, HubEvent, TopicKey},
     services::HubService,
     testing::{
-        hub::{Egress, EgressState, HubEvents, Lifecycle, TestHub},
+        hub::{EgressState, HubEvents, Lifecycle, TestEgress, TestHub},
         TestMessage,
     },
 };
@@ -71,7 +71,12 @@ const DROP_REASONS: [DisconnectReason; 2] = [DisconnectReason::SessionInvalid, D
 
 /// Runs a random but seeded script of connects, disconnects, forced drops and vanishing clients for one
 /// user, returning the expected outcome and the egress channels that were kept.
-async fn run_user_script(hub: HubService, user_id: Uuid, seed: u64, steps: usize) -> (UserModel, Vec<(Uuid, Egress)>) {
+async fn run_user_script(
+    hub: HubService,
+    user_id: Uuid,
+    seed: u64,
+    steps: usize,
+) -> (UserModel, Vec<(Uuid, TestEgress)>) {
     let mut rng = Rng(seed);
     let mut model = UserModel::default();
     let mut owned = vec![];
@@ -87,28 +92,31 @@ async fn run_user_script(hub: HubService, user_id: Uuid, seed: u64, steps: usize
                 receivers.insert(connection_id, rx);
             }
             (4 | 5, Some(active)) => {
-                hub.request_disconnection(user_id, active).unwrap();
+                hub.request_disconnect(user_id, active, DisconnectReason::Client)
+                    .unwrap();
                 model.disconnect(active);
             }
             (6, Some(_)) => {
                 let stale = stale.unwrap();
-                hub.request_disconnection(user_id, stale).unwrap();
+                hub.request_disconnect(user_id, stale, DisconnectReason::Client)
+                    .unwrap();
                 model.disconnect(stale);
             }
             (7, Some(active)) => {
                 let reason = DROP_REASONS[rng.below(2) as usize];
-                hub.request_drop(user_id, active, reason).unwrap();
+                hub.request_disconnect(user_id, active, reason).unwrap();
                 model.drop(active, reason);
             }
             (8, Some(active)) => {
                 // The client goes away: its socket is gone before the disconnect reaches the hub.
                 receivers.remove(&active);
-                hub.request_disconnection(user_id, active).unwrap();
+                hub.request_disconnect(user_id, active, DisconnectReason::Client)
+                    .unwrap();
                 model.disconnect(active);
             }
             (_, Some(_)) => {
                 let stale = stale.unwrap();
-                hub.request_drop(user_id, stale, DisconnectReason::HeartbeatInactive)
+                hub.request_disconnect(user_id, stale, DisconnectReason::HeartbeatInactive)
                     .unwrap();
                 model.drop(stale, DisconnectReason::HeartbeatInactive);
             }
@@ -186,7 +194,8 @@ async fn parallel_users_each_follow_their_own_command_order() {
     test.assert_consistent(users.iter().map(|(u, _)| *u), &active).await;
 
     for (user_id, connection_id) in &active {
-        hub.request_disconnection(*user_id, *connection_id).unwrap();
+        hub.request_disconnect(*user_id, *connection_id, DisconnectReason::Client)
+            .unwrap();
     }
     test.wait_all_commands().await;
     assert_eq!(hub.stats().await.connections, 0);
@@ -214,17 +223,18 @@ async fn same_user_contention_keeps_a_single_active_connection() {
                     connections.push((connection_id, rx));
                     match rng.below(4) {
                         0 => {
-                            hub.request_disconnection(user, connection_id).unwrap();
+                            hub.request_disconnect(user, connection_id, DisconnectReason::Client)
+                                .unwrap();
                             disconnected.insert(connection_id);
                         }
                         1 => {
-                            hub.request_drop(user, connection_id, DisconnectReason::SessionInvalid)
+                            hub.request_disconnect(user, connection_id, DisconnectReason::SessionInvalid)
                                 .unwrap();
                             forced.insert(connection_id);
                         }
                         2 => {
                             let (older, _) = &connections[rng.below(connections.len() as u64) as usize];
-                            hub.request_disconnection(user, *older).unwrap();
+                            hub.request_disconnect(user, *older, DisconnectReason::Client).unwrap();
                             disconnected.insert(*older);
                         }
                         _ => {}
@@ -292,7 +302,8 @@ async fn same_user_contention_keeps_a_single_active_connection() {
     test.assert_consistent([user], &active).await;
 
     if let Some(connection_id) = active.get(&user) {
-        hub.request_disconnection(user, *connection_id).unwrap();
+        hub.request_disconnect(user, *connection_id, DisconnectReason::Client)
+            .unwrap();
     }
     test.wait_all_commands().await;
     assert_eq!(hub.stats().await.connections, 0);
@@ -300,7 +311,7 @@ async fn same_user_contention_keeps_a_single_active_connection() {
 
 enum Client {
     Reader(JoinHandle<EgressState>),
-    Slow(Egress),
+    Slow(TestEgress),
 }
 
 #[test(serial = "hub-service")]
@@ -385,9 +396,11 @@ async fn churn_under_traffic_stays_consistent() {
                     };
                     let _ = known_tx.send(connection_id);
                     match rng.below(3) {
-                        0 => hub.request_disconnection(user, connection_id).unwrap(),
+                        0 => hub
+                            .request_disconnect(user, connection_id, DisconnectReason::Client)
+                            .unwrap(),
                         1 => hub
-                            .request_drop(user, connection_id, DisconnectReason::SessionInvalid)
+                            .request_disconnect(user, connection_id, DisconnectReason::SessionInvalid)
                             .unwrap(),
                         _ => {}
                     }
@@ -415,12 +428,13 @@ async fn churn_under_traffic_stays_consistent() {
     test.assert_consistent(users.iter().copied(), &active).await;
     let slow_state = slow_rx.drain();
     assert_eq!(slow_state.pings, ["b-00000000".to_string(), "b-00000001".to_string()]);
-    assert!(slow_state.disconnects.is_empty());
+    assert_eq!(slow_state.disconnects, [DisconnectReason::SlowConsumer]);
     assert!(slow_state.closed, "the slow client {slow_connection} was not released");
 
     // Release the survivors so every channel ends, then check what each client saw.
     for (user_id, connection_id) in &active {
-        hub.request_disconnection(*user_id, *connection_id).unwrap();
+        hub.request_disconnect(*user_id, *connection_id, DisconnectReason::Client)
+            .unwrap();
     }
     seen.extend(test.wait_all_commands().await);
     assert!(seen.active().is_empty());
@@ -508,7 +522,7 @@ async fn a_connect_on_another_instance_takes_the_user_over() {
     b.assert_consistent([user], &HashMap::from([(user, on_b)])).await;
 
     // B's disconnect removes the row; A has nothing left to drop.
-    b.hub.request_disconnection(user, on_b).unwrap();
+    b.hub.request_disconnect(user, on_b, DisconnectReason::Client).unwrap();
     b.wait_all_commands().await;
     tokio::time::sleep(Duration::from_millis(200)).await;
 
@@ -539,7 +553,9 @@ async fn users_bouncing_between_instances_converge_to_the_registry() {
                     let instance = rng.below(2) as usize;
                     let (connection_id, rx) = TestHub::connect_ping_to(&hubs[instance], user, 16);
                     if rng.below(3) == 0 {
-                        hubs[instance].request_disconnection(user, connection_id).unwrap();
+                        hubs[instance]
+                            .request_disconnect(user, connection_id, DisconnectReason::Client)
+                            .unwrap();
                         disconnected.insert(connection_id);
                     }
                     connections.push((instance, connection_id, rx));
@@ -618,7 +634,10 @@ async fn users_bouncing_between_instances_converge_to_the_registry() {
 
     for (test_hub, active) in [(&mut a, &active_a), (&mut b, &active_b)] {
         for (user, connection_id) in active {
-            test_hub.hub.request_disconnection(*user, *connection_id).unwrap();
+            test_hub
+                .hub
+                .request_disconnect(*user, *connection_id, DisconnectReason::Client)
+                .unwrap();
         }
         test_hub.wait_all_commands().await;
     }

@@ -2,11 +2,13 @@
 //! the connection's lifecycle, and it reaches the internal subscribers only.
 
 use crate::{
-    models::messages::{CommandFailure, HubEvent, HubMessage, StreamEvent, StreamMessage, SubscribeFailure, TopicKey},
-    services::command_stream::StreamEgress,
+    models::messages::{
+        CommandFailure, DisconnectReason, HubEvent, HubMessage, StreamEvent, StreamMessage, SubscribeFailure, TopicKey,
+    },
+    services::{command_stream::StreamEgress, hub::control_command::ControlCommand},
     testing::{
         command_stream::TestStreamId,
-        hub::{Egress, TestHub, TestHubOptions},
+        hub::{TestEgress, TestHub, TestHubOptions},
         TestMessage,
     },
 };
@@ -38,10 +40,16 @@ async fn a_subscribe_reaches_the_internal_subscribers_and_never_the_sockets() {
     let (connection, mut socket) = test.connect(Uuid::new_v4(), 8, vec![TopicKey::Hub, TopicKey::Ping], None);
 
     test.hub
-        .request_stream_subscribe(connection, TestStreamId::new_chat_with("s1"))
+        .send_control(ControlCommand::SubscribeStream {
+            connection_id: connection,
+            stream_id: TestStreamId::new_chat_with("s1"),
+        })
         .unwrap();
     test.hub
-        .request_stream_unsubscribe(connection, TestStreamId::new_chat_with("s1"))
+        .send_control(ControlCommand::UnsubscribeStream {
+            connection_id: connection,
+            stream_id: TestStreamId::new_chat_with("s1"),
+        })
         .unwrap();
     test.wait_all_commands().await;
 
@@ -61,10 +69,16 @@ async fn a_subscribe_of_a_connection_that_is_not_registered_is_ignored() {
     let mut internal = test.hub.subscribe(vec![TopicKey::Stream]).await;
 
     test.hub
-        .request_stream_subscribe(Uuid::new_v4(), TestStreamId::new_chat_with("s1"))
+        .send_control(ControlCommand::SubscribeStream {
+            connection_id: Uuid::new_v4(),
+            stream_id: TestStreamId::new_chat_with("s1"),
+        })
         .unwrap();
     test.hub
-        .request_stream_unsubscribe(Uuid::new_v4(), TestStreamId::new_chat_with("s1"))
+        .send_control(ControlCommand::UnsubscribeStream {
+            connection_id: Uuid::new_v4(),
+            stream_id: TestStreamId::new_chat_with("s1"),
+        })
         .unwrap();
     test.wait_all_commands().await;
 
@@ -79,12 +93,20 @@ async fn a_subscribe_is_ordered_with_the_lifecycle_of_its_connection() {
     let (connection, _socket) = test.connect_ping(user, 8);
 
     test.hub
-        .request_stream_subscribe(connection, TestStreamId::new_chat_with("s1"))
+        .send_control(ControlCommand::SubscribeStream {
+            connection_id: connection,
+            stream_id: TestStreamId::new_chat_with("s1"),
+        })
         .unwrap();
-    test.hub.request_disconnection(user, connection).unwrap();
+    test.hub
+        .request_disconnect(user, connection, DisconnectReason::Client)
+        .unwrap();
     // Too late: the connection is gone.
     test.hub
-        .request_stream_subscribe(connection, TestStreamId::new_chat_with("s2"))
+        .send_control(ControlCommand::SubscribeStream {
+            connection_id: connection,
+            stream_id: TestStreamId::new_chat_with("s2"),
+        })
         .unwrap();
     test.wait_all_commands().await;
 
@@ -127,15 +149,15 @@ async fn the_hub_sends_stream_messages_to_a_connection_by_its_id() {
 
 mod served {
     use super::*;
-    use crate::services::command_stream::StreamConfig;
+    use crate::services::command_stream::{InboxConfig, StreamAccessConfig, StreamConfig};
     use shine_test::test;
     use std::time::Duration;
-    use tokio::time::timeout;
+    use tokio::time::{sleep, timeout};
 
     async fn create_test_hub() -> TestHub {
         let stream_config = StreamConfig {
             worker_unload_grace: Duration::from_millis(20),
-            ..StreamConfig::quiet()
+            ..StreamConfig::test_default()
         };
         TestHub::from_env(TestHubOptions {
             with_streams: Some(stream_config),
@@ -145,7 +167,7 @@ mod served {
     }
 
     /// The next stream message the connection gets.
-    async fn next_stream_message(socket: &mut Egress) -> Arc<StreamMessage> {
+    async fn next_stream_message(socket: &mut TestEgress) -> Arc<StreamMessage> {
         timeout(Duration::from_secs(5), async {
             loop {
                 match socket.recv().await {
@@ -157,6 +179,69 @@ mod served {
         })
         .await
         .expect("a stream message")
+    }
+
+    #[test(serial = "hub-service")]
+    async fn a_failed_stream_is_closed_for_all_subscribers_without_closing_their_connections() {
+        let mut test = create_test_hub().await;
+        let user = Uuid::new_v4();
+        let other_user = Uuid::new_v4();
+        let (failed, kept) = (TestStreamId::new_chat(), TestStreamId::new_chat());
+        let (first, mut first_socket) = test.connect_ping(user, 32);
+        let (second, mut second_socket) = test.connect_ping(other_user, 32);
+        test.wait_all_commands().await;
+        test.stream_subscribe(first, user, &failed).await.unwrap();
+        next_stream_message(&mut first_socket).await;
+        test.stream_subscribe(first, user, &kept).await.unwrap();
+        next_stream_message(&mut first_socket).await;
+        test.stream_subscribe(second, other_user, &failed).await.unwrap();
+        next_stream_message(&mut second_socket).await;
+        let mut internal = test.hub.subscribe(vec![TopicKey::Stream]).await;
+
+        test.hub.notify_failed(&failed).await;
+        test.wait_all_commands().await;
+
+        for socket in [&mut first_socket, &mut second_socket] {
+            assert_eq!(
+                *next_stream_message(socket).await,
+                StreamMessage::Desynced { stream_id: failed.clone() }
+            );
+            assert!(matches!(socket.try_recv(), Err(TryRecvError::Empty)));
+        }
+        assert_eq!(drain_messages(&mut internal), vec![format!("unsubscribed:{failed}"); 2]);
+
+        let command_id = Uuid::new_v4();
+        assert_eq!(
+            test.hub
+                .send_stream_command(
+                    first,
+                    user,
+                    &failed,
+                    command_id,
+                    &TestMessage::new_chat_command("closed")
+                )
+                .await,
+            Err(CommandFailure::NotSubscribed)
+        );
+        test.hub
+            .send_stream_command(
+                first,
+                user,
+                &kept,
+                Uuid::new_v4(),
+                &TestMessage::new_chat_command("kept"),
+            )
+            .await
+            .unwrap();
+        assert!(matches!(
+            &*next_stream_message(&mut first_socket).await,
+            StreamMessage::Commands { stream_id, .. } if *stream_id == kept
+        ));
+        test.stream_subscribe(second, other_user, &failed).await.unwrap();
+        assert!(matches!(
+            &*next_stream_message(&mut second_socket).await,
+            StreamMessage::Sync { stream_id, .. } if *stream_id == failed
+        ));
     }
 
     #[test(serial = "hub-service")]
@@ -208,6 +293,71 @@ mod served {
     }
 
     #[test(serial = "hub-service")]
+    async fn subscribing_again_syncs_the_connection_again_from_the_start() {
+        let mut test = create_test_hub().await;
+        let (user, id) = (Uuid::new_v4(), TestStreamId::new_chat());
+        let (connection, mut socket) = test.connect_ping(user, 32);
+        test.wait_all_commands().await;
+        let send = |text: &str| {
+            let hub = test.hub.clone();
+            let (id, command) = (id.clone(), TestMessage::new_chat_command(text));
+            async move {
+                hub.send_stream_command(connection, user, &id, Uuid::new_v4(), &command)
+                    .await
+            }
+        };
+
+        test.stream_subscribe(connection, user, &id).await.unwrap();
+        assert!(
+            matches!(&*next_stream_message(&mut socket).await, StreamMessage::Sync { commands, .. } if commands.is_empty())
+        );
+        send("first").await.unwrap();
+        assert!(
+            matches!(&*next_stream_message(&mut socket).await, StreamMessage::Commands { commands, .. } if commands.len() == 1)
+        );
+
+        // The second subscribe is a request for a new sync: the whole history again, then only what is new.
+        test.stream_subscribe(connection, user, &id).await.unwrap();
+        let message = next_stream_message(&mut socket).await;
+        assert!(
+            matches!(&*message, StreamMessage::Sync { commands, .. } if commands.len() == 1 && commands[0].version == 1),
+            "{message:?}"
+        );
+        send("second").await.unwrap();
+        let message = next_stream_message(&mut socket).await;
+        assert!(
+            matches!(&*message, StreamMessage::Commands { commands, .. } if commands.len() == 1 && commands[0].version == 2),
+            "{message:?}"
+        );
+    }
+
+    #[test(serial = "hub-service")]
+    async fn a_command_id_is_the_clients_own_so_a_repeated_one_gets_a_version_each() {
+        let mut test = create_test_hub().await;
+        let (user, id, command_id) = (Uuid::new_v4(), TestStreamId::new_chat(), Uuid::new_v4());
+        let (connection, mut socket) = test.connect_ping(user, 32);
+        test.wait_all_commands().await;
+        test.stream_subscribe(connection, user, &id).await.unwrap();
+        next_stream_message(&mut socket).await;
+
+        let command = TestMessage::new_chat_command("same");
+        for _ in 0..2 {
+            test.hub
+                .send_stream_command(connection, user, &id, command_id, &command)
+                .await
+                .unwrap();
+        }
+
+        let mut received = Vec::new();
+        while received.len() < 2 {
+            if let StreamMessage::Commands { commands, .. } = &*next_stream_message(&mut socket).await {
+                received.extend(commands.iter().map(|c| (c.version, c.command_id)));
+            }
+        }
+        assert_eq!(received, [(1, command_id), (2, command_id)]);
+    }
+
+    #[test(serial = "hub-service")]
     async fn the_hub_shutdown_completes_after_the_workers_made_the_commands_durable() {
         let test = create_test_hub().await;
         let user = Uuid::new_v4();
@@ -238,7 +388,7 @@ mod served {
             locker.batch_execute("COMMIT;").await.unwrap();
         });
 
-        test.hub.request_shutdown().unwrap();
+        test.hub.send_control(ControlCommand::Shutdown).unwrap();
         test.wait_shutdown_complete().await;
 
         // No waiting for the log: shutdown complete is the promise that the command is there, which can
@@ -248,7 +398,7 @@ mod served {
             "the hub shut down while the persistence was blocked"
         );
         assert_eq!(log.all_commands(&id).await.len(), 1);
-        assert_eq!(test.stream_registry.as_ref().unwrap().worker_count(), 0);
+        assert_eq!(test.stream_registry.as_ref().unwrap().running_worker_count(), 0);
     }
 
     #[test(serial = "hub-service")]
@@ -261,12 +411,14 @@ mod served {
         test.stream_subscribe(connection, user, &id).await.unwrap();
         next_stream_message(&mut socket).await;
         let streams = test.stream_registry.unwrap().clone();
-        assert_eq!(streams.worker_count(), 1);
+        assert_eq!(streams.running_worker_count(), 1);
 
-        test.hub.request_disconnection(user, connection).unwrap();
+        test.hub
+            .request_disconnect(user, connection, DisconnectReason::Client)
+            .unwrap();
 
         timeout(Duration::from_secs(5), async {
-            while streams.worker_count() != 0 {
+            while streams.running_worker_count() != 0 {
                 tokio::time::sleep(Duration::from_millis(5)).await;
             }
         })
@@ -313,6 +465,49 @@ mod served {
     }
 
     #[test(serial = "hub-service")]
+    async fn a_command_into_a_full_inbox_is_refused_as_busy_and_the_connection_stays() {
+        let mut test = TestHub::from_env(TestHubOptions {
+            with_streams: Some(StreamConfig {
+                inbox: InboxConfig {
+                    backpressure_low: 0,
+                    backpressure_high: 1,
+                    backpressure_poll_period: Duration::from_millis(5),
+                    backpressure_timeout: Duration::from_millis(100),
+                    ..StreamConfig::test_default().inbox
+                },
+                ..StreamConfig::test_default()
+            }),
+            ..TestHubOptions::default()
+        })
+        .await;
+        let user = Uuid::new_v4();
+        let id = TestStreamId::new_chat();
+        let (connection, _socket) = test.connect_ping(user, 32);
+        test.wait_all_commands().await;
+        // Opened on the registry, not subscribed through the hub: no worker drains the inbox.
+        test.stream_registry
+            .as_ref()
+            .unwrap()
+            .open(connection, user, &id)
+            .await
+            .unwrap();
+
+        let command = TestMessage::new_chat_command("hi");
+        let send = || {
+            test.hub
+                .send_stream_command(connection, user, &id, Uuid::new_v4(), &command)
+        };
+        send().await.unwrap();
+        // The limit is polled, not reserved: the next push is throttled only once the length is seen.
+        sleep(Duration::from_millis(100)).await;
+        assert_eq!(send().await, Err(CommandFailure::Busy));
+
+        let seen = test.wait_all_commands().await;
+        assert!(seen.drops().is_empty(), "{:?}", seen.drops());
+        assert_eq!(test.hub.stats().await.connections, 1);
+    }
+
+    #[test(serial = "hub-service")]
     async fn a_connection_that_is_gone_is_not_subscribed_to_anything() {
         let mut test = create_test_hub().await;
         let user = Uuid::new_v4();
@@ -322,7 +517,9 @@ mod served {
         test.stream_subscribe(connection, user, &id).await.unwrap();
         next_stream_message(&mut socket).await;
 
-        test.hub.request_disconnection(user, connection).unwrap();
+        test.hub
+            .request_disconnect(user, connection, DisconnectReason::Client)
+            .unwrap();
         test.wait_all_commands().await;
 
         let result = test
@@ -333,6 +530,42 @@ mod served {
                 &id,
                 Uuid::new_v4(),
                 &TestMessage::new_chat_command("ghost"),
+            )
+            .await;
+        assert_eq!(result, Err(CommandFailure::NotSubscribed));
+    }
+
+    #[test(serial = "hub-service")]
+    async fn a_stream_outside_the_allow_list_is_refused_as_unauthorized() {
+        let mut test = TestHub::from_env(TestHubOptions {
+            with_streams: Some(StreamConfig {
+                access: StreamAccessConfig::AllowList { ids: vec!["open".to_string()] },
+                ..StreamConfig::test_default()
+            }),
+            ..TestHubOptions::default()
+        })
+        .await;
+        let user = Uuid::new_v4();
+        let (connection, _socket) = test.connect_ping(user, 32);
+        test.wait_all_commands().await;
+        let allowed = TestStreamId::new_chat_with("open");
+        let refused = TestStreamId::new_chat_with("closed");
+
+        assert_eq!(test.stream_subscribe(connection, user, &allowed).await, Ok(()));
+        assert_eq!(
+            test.stream_subscribe(connection, user, &refused).await,
+            Err(SubscribeFailure::Unauthorized)
+        );
+
+        // nothing was opened for the refused stream, so the connection cannot push to it either
+        let result = test
+            .hub
+            .send_stream_command(
+                connection,
+                user,
+                &refused,
+                Uuid::new_v4(),
+                &TestMessage::new_chat_command("no"),
             )
             .await;
         assert_eq!(result, Err(CommandFailure::NotSubscribed));

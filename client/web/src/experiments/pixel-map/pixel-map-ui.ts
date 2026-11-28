@@ -5,7 +5,7 @@ export type StatusTone = 'ok' | 'wait' | 'error';
 
 export function statusText(
     connection: ConnectionState,
-    stream: 'waiting' | 'live' | 'unsynced',
+    stream: 'waiting' | 'live' | 'desynced',
     version: number,
     pending: number,
     issue: string | null = null
@@ -13,7 +13,7 @@ export function statusText(
     if (connection === 'closed') return { text: 'Disconnected', tone: 'error' };
     if (connection === 'replaced') return { text: 'Opened in another tab, reload to take over', tone: 'error' };
     if (connection === 'reconnecting') return { text: `Reconnecting…${issue ? ` (${issue})` : ''}`, tone: 'wait' };
-    if (stream === 'unsynced') return { text: 'Stream unavailable, retrying', tone: 'error' };
+    if (stream === 'desynced') return { text: 'Stream unavailable, retrying', tone: 'error' };
     if (connection === 'connecting' || stream === 'waiting') return { text: 'Connecting…', tone: 'wait' };
     const unconfirmed = pending > 0 ? ` · ${pending} unconfirmed` : '';
     return { text: `Live · v${version}${unconfirmed}`, tone: 'ok' };

@@ -57,16 +57,22 @@ export const paintCommand = (x: number, y: number, color: number) =>
 export type StreamSnapshotFrame = { version: number; chainHash: string; stateHash: string; data: string };
 
 export type StreamFrame =
+    | { type: 'connected'; userId: string }
     | { type: 'streamSync'; streamId: string; snapshot: StreamSnapshotFrame | null; commands: StreamCommandFrame[] }
     | { type: 'streamCommands'; streamId: string; commands: StreamCommandFrame[] }
     | { type: 'streamCheckpoint'; streamId: string; version: number; stateHash: string }
     | { type: 'streamReset'; streamId: string }
-    | { type: 'streamUnsynced'; streamId: string }
-    | { type: 'streamNack'; streamId: string; commandId: string; reason: 'notSubscribed' | 'invalid' | 'failed' }
+    | { type: 'streamDesynced'; streamId: string }
+    | {
+          type: 'streamNack';
+          streamId: string;
+          commandId: string;
+          reason: 'notSubscribed' | 'invalid' | 'failed' | 'busy' | 'rateLimited';
+      }
     | {
           type: 'streamSubscribeFailed';
           streamId: string;
-          reason: 'unauthorized' | 'failed';
+          reason: 'unauthorized' | 'failed' | 'rateLimited';
       };
 
 export type StreamFrameOf<T extends StreamFrame['type']> = Extract<StreamFrame, { type: T }>;
@@ -112,6 +118,13 @@ export class StreamSession {
             );
             ws.once('error', (err: Error) => reject(err));
         });
+        // Consume the connected frame that is sent immediately upon connection.
+        try {
+            await session.waitFrame('connected', () => true, 10_000);
+        } catch (err) {
+            session.close();
+            throw new Error(`Failed to receive connected frame: ${err}`);
+        }
         return session;
     }
 

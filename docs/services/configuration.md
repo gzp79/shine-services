@@ -155,7 +155,7 @@ What the builder uses today (`services/builder/src/repositories/`); the rule abo
 | Feature | Keys / channels | Commands |
 |---|---|---|
 | Command inbox (`command_inbox/redis`) | stream `cmd-inbox:<stream_id>`, channel `cmd-inbox-wake` | `XADD`, `XRANGE`, `XTRIM`, `XLEN`, `EXPIRE`, `PUBLISH`, `SUBSCRIBE`, `UNSUBSCRIBE` |
-| Hub registry (`hub_registry/redis`) | `hub-connection:<user_id>`, channel `hub-registry-changed` | `SET … EX`, `GET`, `MGET`, `EXPIRE`, `DEL`, `SCAN MATCH` (the `WATCH`/`MULTI`/`EXEC` group is the optimistic transaction in `transaction_async`), `PUBLISH`, `SUBSCRIBE`, `UNSUBSCRIBE` |
+| Hub registry (`hub_registry/redis`) | `hub-connection:<user_id>`, channel `hub-registry-changed` | `SET … EX`, `GET`, `MGET`, `EXPIRE`, `DEL`, `SCAN MATCH`, `EVALSHA`/`EVAL` (the heartbeat and removal scripts), `PUBLISH`, `SUBSCRIBE`, `UNSUBSCRIBE` |
 | Startup (`shine_infra::db::redis`) | none | `INFO server`, `CONFIG GET maxmemory-policy` (`check_redis`), `PING` |
 
 `SCAN` and the pub/sub commands take no key arguments, so the key pattern does not restrict them: the `builder` user can still scan the keyspace (it sees names, not values) and use any channel. Channel rules (`resetchannels &cmd-inbox-wake &hub-registry-changed`) would close that, but whether Upstash accepts them is untested.

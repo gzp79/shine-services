@@ -282,6 +282,42 @@ async fn either_hash_mismatching_in_the_overlap_rejects_the_whole_batch() {
     }
 }
 
+// The chain hash covers the content and the version only, so another author's identical command
+// has the same hashes. The overlap must still be recognised as a different command.
+#[test]
+async fn a_batch_with_the_same_hashes_but_another_command_identity_is_diverged() {
+    let log = TestLog::from_env().await;
+    let (id, seed) = log.seeded_chat_log(3).await;
+    let head = log.db.head(&id).await.unwrap().unwrap();
+
+    type Alter = fn(&mut StoredCommand);
+    let alterations: [(&str, Alter); 3] = [
+        ("command_id", |c| c.command_id = Uuid::new_v4()),
+        ("user_id", |c| c.user_id = Uuid::new_v4()),
+        ("inbox_id", |c| c.inbox_id = InboxId::new(2, 99)),
+    ];
+    // Covering the head, extending past it, and overlapping only the head.
+    for (first, last) in [(1, 3), (1, 5), (3, 5)] {
+        for (field, alter) in alterations {
+            let mut batch = ChatLog::new("seed", 5);
+            alter(&mut batch.commands[2]);
+            assert_eq!(
+                batch.commands[2].chain_hash, seed.commands[2].chain_hash,
+                "the hashes are the same, only the {field} differs"
+            );
+
+            let result = batch.persist(&log.db, &id, first, last).await;
+
+            assert!(
+                matches!(&result, Err(CommandStreamError::LogDiverged { head: seen }) if *seen == head),
+                "{first}..={last}, other {field}: {result:?}"
+            );
+            assert_eq!(log.db.head(&id).await.unwrap(), Some(head.clone()));
+            assert_eq!(log.all_commands(&id).await, seed.commands);
+        }
+    }
+}
+
 #[test]
 async fn an_inbox_position_already_stored_at_another_version_is_diverged() {
     let log = TestLog::from_env().await;

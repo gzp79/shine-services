@@ -20,7 +20,7 @@ flowchart LR
     classDef violet fill:#a855f722,stroke:#a855f7
     classDef pink fill:#ec489922,stroke:#ec4899
 
-    Registry["Stream registry<br/>kinds, open streams, push"]:::blue
+    Registry["Stream registry<br/>kinds, access, open streams, push"]:::blue
     Gate["Inbox back-pressure"]:::teal
     Inbox[("Redis inbox<br/>proposals, wakes")]:::violet
     Log[("Postgres<br/>log and snapshots")]:::violet
@@ -44,14 +44,15 @@ flowchart LR
 
 ## Stream registry
 
-The `StreamRegistry` is built with the supported replay kinds (`stream_kinds.rs`) and knows nothing of their state types. Per open stream it holds an inbox back-pressure handle and the stream's worker.
+The `StreamRegistry` is built with the supported replay kinds (`stream_kinds.rs`) and knows nothing of their state types. Each kind is registered with its `StreamConfig`, which includes the [access](#stream-access) that says which of its streams may be opened. Per open stream the registry holds an inbox back-pressure handle and the stream's worker.
 
 | Call | Made by | Effect |
 |---|---|---|
-| `open` | Hub, on an accepted subscribe | Checks the kind is registered and marks the stream open for the connection, which may push from then on. |
+| `open` | Hub, on a subscribe | Checks that the kind is registered and that its access lets the user open the stream (`Unauthorized` otherwise), then marks the stream open for the connection, which may push from then on. |
 | `subscribe` | Stream dispatcher, on the `Subscribed` event | Joins the stream's worker, starting one if there is none or it has ended. Ignored if the stream is no longer open for the connection. |
 | `push` | Hub, on a command | The write path, below. |
 | `close`, `disconnect` | Hub | Removes the open stream (all of them on disconnect) and unsubscribes from the worker. |
+| `close_stream` | Hub, on `StreamFailed` | Removes the stream from every connection that has it open, drops its state and returns those connections. |
 | `wake` | Inbox listener | Wakes the worker named by an inbox wake; a listener that reconnected may have missed wakes and wakes every worker. |
 | `purge` | Stream dispatcher, every 60 s | Forgets streams that nobody has open and whose worker has ended. |
 | `shutdown` | Stream dispatcher, on the hub's shutdown | Has every worker persist what is waiting and end, for up to the shutdown timeout. |
@@ -83,13 +84,28 @@ The checks run in this order, each with its refusal reason:
 3. The inbox back-pressure admits it: `busy`, see [Back-pressure](#back-pressure).
 4. The inbox push succeeds: `failed`. The command may or may not have been queued.
 
+## Stream access
+
+Each registered kind has a `StreamAccess`, an async trait that decides which of its streams may be opened, with the implementations `AnyStreamAccess` and `AllowListStreamAccess`. The `access` setting of the kind's `StreamConfig` (`streams.<kind>.access`) selects one. `open` asks it before anything is created for the stream, so a refused stream gets no inbox poller, worker or log row.
+
+| `mode` | Effect |
+|---|---|
+| `allowList` | Only the listed ids (without the kind prefix) may be opened. An empty list, which is the default, opens nothing. |
+| `any` | Every id of the kind may be opened. For tests and local runs. |
+
+```json
+"streams": { "chat": { "access": { "mode": "allowList", "ids": ["global"] } } }
+```
+
+Allow-list ids are validated when the config loads. The production configuration explicitly allow-lists `chat:global` and `pixel-map:pixel-demo`; other stages can supply their own ids. A refusal is `CommandStreamError::Unauthorized`, which the client sees as `streamSubscribeFailed` with reason `unauthorized`.
+
 ## Client access
 
 A stream is named by a `StreamId` whose prefix selects the registered replay kind (`chat`, `pixel-map`). Clients use it over a WebSocket that is also a [hub](hub.md) connection: the hub supplies the authenticated user id and the connection id, neither of which ever comes from a frame, and carries the worker's messages back to the socket. Everything else on this page is independent of the transport.
 
 ### Subscribe
 
-`streamSubscribe` carries only `streamId`. The hub authorizes the user (`StreamAuthorizeService`, which currently allows every stream), then **opens** the stream for the connection: the registry checks that the kind is registered, and from then on the connection may push. The subscription itself travels as an event through the hub loop, which keeps it ordered with the connection's lifecycle: a subscribe for a connection that is gone, or a stream closed since, is ignored. Unsubscribe and disconnect reach the registry directly.
+`streamSubscribe` carries only `streamId`. The hub **opens** the stream for the connection: the registry checks that the kind is registered and that its [access](#stream-access) lets the user open the stream, and from then on the connection may push. The subscription itself travels as an event through the hub loop, which keeps it ordered with the connection's lifecycle: a subscribe for a connection that is gone, or a stream closed since, is ignored. Unsubscribe and disconnect reach the registry directly.
 
 ```mermaid
 sequenceDiagram
@@ -100,8 +116,7 @@ sequenceDiagram
     participant W as Stream worker
 
     C->>H: streamSubscribe(streamId)
-    H->>H: authorize
-    H->>R: open(connection, streamId)
+    H->>R: open(connection, user, streamId)
     alt unauthorized, unknown kind, or hub stopped
         H-->>C: streamSubscribeFailed
     else accepted
@@ -114,7 +129,7 @@ sequenceDiagram
 
 ### Submit
 
-The hub passes a command to the registry's write path ([Stream registry](#stream-registry)). There is no success acknowledgement: the sender sees its own `commandId` in a `streamCommands` batch once the worker has versioned it. A refusal answers with `streamNack`; `busy` also drops the connection (close code 4000, reason `busy`).
+The hub passes a command to the registry's write path ([Stream registry](#stream-registry)). There is no success acknowledgement: once versioned, the command is returned to the sender in either `streamCommands` or a `streamSync`, depending on whether that subscriber needs a full sync. A refusal answers with `streamNack`; the connection stays open, also after `busy` or `rateLimited`. How much a socket may send is in [Hub Load Protection](hub-load-protection.md).
 
 ### Client protocol
 
@@ -128,10 +143,10 @@ Frames are JSON text with a camel-case `type`; the `StreamId` carries the kind p
 | to client | `streamSync` | `streamId`, optional snapshot, the commands after it; replaces the client's state. |
 | to client | `streamCommands` | `streamId`, contiguous optimistic or canonical commands. |
 | to client | `streamCheckpoint` | `streamId`, `version`, `stateHash`; sent after the commands it covers, to compare with the client's own state hash at that version. |
-| to client | `streamUnsynced` | `streamId`; the worker cannot serve the stream now, subscribe again. |
-| to client | `streamNack` | `streamId`, `commandId`, reason `notSubscribed`, `failed` or `busy` (then the connection is dropped). |
-| to client | `streamSubscribeFailed` | `streamId`, reason `unauthorized` or `failed`. |
-| to client | `streamReset` | Defined but never sent: a sync alone replaces the state. |
+| to client | `streamDesynced` | `streamId`; the worker cannot serve the stream now, subscribe again. |
+| to client | `streamNack` | `streamId`, `commandId`, reason `notSubscribed`, `failed`, `busy` or `rateLimited`. |
+| to client | `streamSubscribeFailed` | `streamId`, reason `unauthorized`, `failed` or `rateLimited`. |
+| to client | `streamReset` | Client parser type only; the server never emits it. Current worker resynchronization uses `streamSync`. |
 
 A frame that carries an invalid stream id is ignored without an answer. A command that is invalid (it does not decode, is not valid for the kind, or is over `MAX_COMMAND_BYTES`) is ignored the same way, and counted as `invalid` in `ws_messages_received`. A valid request that is refused for another reason gets the matching `streamNack`. A socket message over twice `MAX_COMMAND_BYTES` ends the socket.
 
@@ -149,7 +164,7 @@ The relay task is one loop over four inputs. Everything it owns (optimistic tail
 |---|---|
 | Subscribe, unsubscribe, stop | Subscribe marks the subscriber as needing a sync and wakes the loop. Unsubscribe removes it. Stop drains and ends the worker. |
 | Persistence result | Bookkeeping only, see [Persistence](#persistence), then a wake. |
-| Wake, or poll tick | A **pass**: the only place that talks to subscribers and the only place that starts a persistence. The tick (`inbox_recovery_poll_interval`) recovers a lost wake. |
+| Wake, or poll tick | A **pass**: the only place that talks to subscribers and the only place that starts a persistence. The tick (`inbox.recovery_poll_interval`) recovers a lost wake. |
 | Grace timer | Ends the worker after `worker_unload_grace` without a subscriber. |
 
 ```mermaid
@@ -161,7 +176,7 @@ sequenceDiagram
     participant P as Persistence task
 
     W->>A: wake
-    A->>X: poll a page, at most min(inbox_poll_limit, room)
+    A->>X: poll a page, at most min(inbox.poll_limit, room)
     X-->>A: entries and has-more
     A->>A: version the entries, append to the optimistic tail
     A->>C: deliver syncs, new commands, then the pending checkpoint
@@ -173,7 +188,7 @@ sequenceDiagram
     end
 ```
 
-The relay keeps one cursor per subscriber: the version it has been sent through, or none when it needs a sync (new, resubscribed, or told versions that no longer hold). Delivery sends a sync to the ones without a cursor and the commands after the cursor to the others; a subscriber that cannot be sent to is dropped. A sync is the latest snapshot plus every command the relay holds after it, optimistic ones included. The sender sees its own `commandId` in the optimistic batch, there is no separate acknowledgement. Wakes are coalesced, so a burst becomes bounded batches.
+The relay keeps one cursor per subscriber: the version it has been sent through, or none when it needs a sync (new, resubscribed, or told versions that no longer hold). Delivery sends a sync to the ones without a cursor and the commands after the cursor to the others; a subscriber that cannot be sent to is dropped. A sync is the latest snapshot plus every command the relay holds after it, optimistic ones included. A sender learns its command was versioned when it appears in a `streamCommands` batch or `streamSync`; there is no separate success acknowledgement. Wakes are coalesced, so a burst becomes bounded batches.
 
 ## Persistence
 
@@ -199,7 +214,7 @@ sequenceDiagram
         A->>A: clear every cursor and drop the pending checkpoint
     else Failed
         P-->>A: error
-        A-->>C: streamUnsynced, the worker ends
+        A-->>C: reports the stream failed through the egress, the worker ends
     end
     A->>A: wake itself
     Note over A,C: the next pass syncs the cleared subscribers, sends the others their commands, then the checkpoint, and submits what piled up
@@ -210,18 +225,20 @@ sequenceDiagram
 ```mermaid
 stateDiagram-v2
     [*] --> Loading: first subscribe
-    Loading --> Serving: reconciled with Postgres
-    Loading --> Ended: load failed
+    Loading --> Serving: reconciliation succeeded
+    Loading --> Ended: reconciliation failed
     Serving --> Draining: stop, or no subscriber for the grace period
-    Serving --> Ended: a pass or the persistence failed
+    Serving --> Ended: persistence failed
     Draining --> Ended: nothing is waiting
     Ended --> [*]
 ```
 
-- **Loading:** the relay starts empty and touches neither inbox nor subscribers until the persistence has reconciled it with the log (a `Reloaded` result).
+- **Loading:** the relay starts empty and immediately asks the persistence task to reconcile with Postgres. Subscriber bookkeeping (subscribe, unsubscribe, stop) continues while this is in flight, but delivery and inbox polling wait until it resolves. Reconciliation may return `Reloaded` or `Current`; either success transitions to Serving. A `Failed` result ends the worker immediately.
+- **Serving:** the relay is live and processes subscribers and inbox concurrently. Work is submitted for persistence only when `in_flight` is idle (no outstanding request). A `Failed` persistence result ends the worker.
 - **Draining:** a final inbox pass, then the tail is persisted until nothing is waiting, then the request channel closes. Proposals that arrive later stay in Redis for the next worker. A returning subscriber cancels the grace countdown before it ends.
-- **Inbox read retried:** a read that fails because Redis is out of reach (`CommandStreamError::ServiceUnavailable`: no pooled connection, a refused, dropped or timed out connection, a server that is still loading) is tried again inside the pass, at most `inbox_max_retries` (default 8, `0` turns it off) times, with jittered waits doubling from `inbox_retry_min_delay` (100 ms) to `inbox_retry_max_delay` (1 s), about three to five seconds in all by default. Any other error is not retried. The read changes nothing until it succeeds, so repeating it is safe. The subscribers stay and are not told anything. The worker does nothing else meanwhile: subscribes and persistence answers wait for the pass. When the retries are spent, the failure ends the worker as below.
-- **Ended by failure:** queued and registered subscribers get `streamUnsynced` and subscribe again. Commands that were not made durable stay in the Redis inbox for whoever serves the stream next.
+- **Inbox read retried:** a read that fails because Redis is out of reach (`CommandStreamError::ServiceUnavailable`: no pooled connection, a refused, dropped or timed out connection, a server that is still loading) is tried again inside the pass, at most `inbox.max_retries` (default 8, `0` turns it off) times, with jittered waits doubling from `inbox.retry_min_delay` (100 ms) to `inbox.retry_max_delay` (1 s), about three to five seconds in all by default. Any other error is not retried. The read changes nothing until it succeeds, so repeating it is safe. The subscribers stay and are not told anything. The worker does nothing else meanwhile: subscribes and persistence answers wait for the pass. When the retries are spent, the failure ends the worker as below.
+- **Log calls retried:** the persistence retries a call to Postgres the same way when it fails because the database is out of reach (`CommandStreamError::ServiceUnavailable`: pool timeout, refused or dropped connection): the head read, the load of the history and the append, at most `log.max_retries` (default 8, `0` turns it off) times, with jittered waits doubling from `log.retry_min_delay` (100 ms) to `log.retry_max_delay` (1 s). Repeating is safe: reads change nothing, and an append that got through the first time is found covered by the log. Meanwhile the relay keeps serving the subscribers optimistically until `relay_max_pending` is reached, then the pushes get `Busy`. Snapshot storing, pruning and the inbox trim are best effort and are not retried. `Contention`, `Corrupt` and the other errors are not retried.
+- **Ended by failure:** the worker reports the stream failed through `StreamEgress::notify_failed`, which the hub handles as `ControlCommand::StreamFailed` in its loop: the registry closes the stream for every connection that has it open (including ones whose subscribe has not arrived yet), a `StreamEvent::Unsubscribed` is published for each, and then each gets `streamDesynced` and subscribes again. Closing before telling keeps a resubscribe from being closed by the failure. Commands that were not made durable stay in the Redis inbox for whoever serves the stream next.
 
 A worker reconciles with Postgres at startup. After that a peer's advance is found by the next persistence, whose baseline no longer matches; a quiet worker is not checked periodically.
 
@@ -247,7 +264,7 @@ sequenceDiagram
         A->>P: persist(batch)
         P-->>A: result
     end
-    A->>A: queued subscribers get streamUnsynced, subscribers released
+    A->>A: queued subscribers get streamDesynced, subscribers released
     A--)P: relay task ends, request channel closes
     P->>P: queued requests done, task ends
     R->>R: wait_finished: message channel closed, both tasks joined
@@ -265,7 +282,7 @@ sequenceDiagram
 
 The two limits stack on either side of the Redis inbox, so a slow persistence ends up refusing client pushes.
 
-**Write side.** Each open stream polls its inbox length every `inbox_backpressure_poll_period`. Pushes wait once it reaches `inbox_backpressure_high` and resume when it drains to `inbox_backpressure_low`. After `inbox_backpressure_timeout` the push fails `busy`: the sender gets `streamNack` and the hub drops the connection. An unreadable length does not block pushes, they fail on their own if Redis is down.
+**Write side.** Each open stream polls its inbox length every `inbox.backpressure_poll_period`. Pushes wait once it reaches `inbox.backpressure_high` and resume when it drains to `inbox.backpressure_low`. After `inbox.backpressure_timeout` the push fails `busy`: the sender gets `streamNack` and keeps its connection; the socket budget limits how fast it can send more frames. The client removes the nacked command from its pending set and does not automatically retry it. An unreadable length does not block pushes; pushes fail on their own if Redis is down.
 
 **Read side.** `relay_max_pending` caps the optimistic tail. At the cap a pass does not read the inbox, and each read asks for at most the room that is left.
 
@@ -278,13 +295,13 @@ flowchart LR
     Slow["Persistence is slow"]:::orange --> Full["Optimistic tail full<br/>relay_max_pending"]:::orange
     Full --> Hold["Inbox not read,<br/>proposals stay in Redis"]:::orange
     Hold --> High["Inbox at the high watermark,<br/>pushes wait"]:::orange
-    High --> Busy["Still full after the timeout:<br/>nack busy, connection dropped"]:::red
+    High --> Busy["Still full after the timeout:<br/>nack busy, connection stays"]:::red
     Done["A result confirms a prefix"]:::green -. "frees room, wake, reads resume" .-> Hold
 ```
 
 ## Snapshots and checkpoints
 
-The persistence replica applies canonical commands in order. For a batch that crosses a multiple of `log_snapshot_every` it snapshots at the last such version in the batch (earlier ones would be obsolete at once) and stores it. The newest `log_keep_snapshots` stay, older ones are pruned together with the commands before the oldest kept. A stored snapshot yields a **checkpoint** (version and state hash): the relay sends it after the commands, once, so subscribers can compare their own state hash at that version. Only the latest unsent checkpoint is kept.
+The persistence replica applies canonical commands in order. For a batch that crosses a multiple of `log.snapshot_every` it snapshots at the last such version in the batch (earlier ones would be obsolete at once) and stores it. The newest `log.keep_snapshots` stay, older ones are pruned together with the commands before the oldest kept. A stored snapshot yields a **checkpoint** (version and state hash): the relay sends it after the commands, once, so subscribers can compare their own state hash at that version. Only the latest unsent checkpoint is kept.
 
 A snapshot that disagrees with the one in the log reloads the stream. Any other store failure skips the snapshot and its checkpoint without touching the durable commands.
 
@@ -296,7 +313,7 @@ After advancing, the persistence trims the Redis inbox through the latest stored
 
 | Metric | Labels | Measures |
 |---|---|---|
-| `stream_commands_pushed` | outcome: `queued`, `invalid`, `not_subscribed`, `busy`, `failed` | Every command a client sends: the hub counts the answer of the write path, the socket counts the ones refused as `invalid` before it (undecodable or over `MAX_COMMAND_BYTES`). Tells apart what the websocket metric reports as `refused` or `invalid`. |
+| `stream_commands_pushed` | outcome: `queued`, `invalid`, `not_subscribed`, `busy`, `failed`, `rate_limited` | Every command a client sends: the hub counts the answer of the write path, the socket counts the ones refused as `invalid` (undecodable or over `MAX_COMMAND_BYTES`) or `rate_limited` (over its budget) before it. Tells apart what the websocket metric reports as `refused` or `invalid`. |
 | `stream_push_throttle_wait` | outcome: `ok`, `timeout` | Time a push waited for the inbox to drain. Only pushes that had to wait are recorded, so the count is the number of throttled pushes. |
 | `stream_inbox_depth` | | Inbox length, sampled by the back-pressure check. |
 | `stream_commands_ingested` | | Commands taken from the inbox and versioned. |
@@ -327,17 +344,17 @@ After advancing, the persistence trims the Redis inbox through the latest stored
 | Correction | A version that canonical history invalidates clears the subscriber cursors; the next pass sends a canonical `streamSync`. |
 | Open streams | Only a connection that opened the stream can push; unsubscribing, closing or disconnecting removes it. |
 | Concurrency | One relay task and one persistence task per loaded stream; one persistence request in flight. |
-| Batching | A pass reads at most `inbox_poll_limit` entries; a full page wakes the relay for the next one. |
-| Back-pressure | Write side: pushes wait above `inbox_backpressure_high`, then fail `busy`. Read side: `relay_max_pending` stops inbox reads. |
+| Batching | A pass reads at most `inbox.poll_limit` entries; a full page wakes the relay for the next one. |
+| Back-pressure | Write side: pushes wait above `inbox.backpressure_high`, then fail `busy`. Read side: `relay_max_pending` stops inbox reads. |
 | Duplicates | Stored inbox positions suppress durable proposals; client command ids are correlation values, not uniqueness constraints. |
 | Drift | Persistence reloads on a baseline, replay or canonical disagreement. |
-| Failure | A failed pass or persistence sends `streamUnsynced` and ends the worker. An inbox read that fails because Redis is out of reach is tried again first (`ServiceUnavailable` only), see worker lifecycle. |
+| Failure | A failed pass or persistence ends the worker and reports the stream failed; the hub closes it for all its connections and sends them `streamDesynced`. An inbox read that fails because Redis is out of reach is tried again first (`ServiceUnavailable` only), see worker lifecycle. |
 | Redis loss | Unsequenced proposals may be lost; canonical Postgres history stays valid. |
 | Isolation | A slow or failing stream does not block another stream's tasks. |
 | Slow subscriber | `StreamEgress::send` never waits; when it cannot queue, the relay forgets the subscriber. |
 | Identity | The user id and connection id come from the authenticated connection, never from a frame. |
-| Authorization | `StreamAuthorizeService` decides a subscribe; it currently allows every stream. |
-| Busy connection | A push into an inbox that stays full is nacked `busy` and the connection is dropped (close code 4000, reason `busy`). |
+| Authorization | The access of the stream's kind decides which streams may be opened, checked by `open` before anything is created; the default opens none, see [Stream access](#stream-access). |
+| Busy inbox | A push into an inbox that stays full is nacked `busy`; the connection stays open and the client removes that command from its pending set without automatic retry. |
 | Socket limit | A socket message over twice `MAX_COMMAND_BYTES` ends the socket; the command limits are the registry's. |
 | Shutdown | On the hub's shutdown the dispatcher has the registry persist what is waiting, for up to `stream_shutdown_timeout`; see [Shutdown](#shutdown). |
 
@@ -345,21 +362,23 @@ After advancing, the persistence trims the Redis inbox through the latest stored
 
 | File | Role |
 |---|---|
-| `crates/shine-game/src/replica/` | Shared replay state, envelopes, chain hashes, snapshots and checkpoints, client replica logic. |
+| `crates/shine-game/src/replica/` | Shared replay state, envelopes, chain hashes, snapshots and checkpoints. |
+| `crates/shine-game/src/replica/client_stream.rs` | Client replica cursors, pending commands, resync and checkpoint verification. |
 | `services/builder/src/repositories/command_inbox/` | Redis proposal queue, monotonic inbox cursor, trimming, wake notifications. |
 | `services/builder/src/repositories/command_log/` | Postgres canonical commands, snapshots, append arbitration, pruning. |
-| `services/builder/src/services/command_stream/stream_registry.rs` | Kind validation, open streams per connection, the write path with back-pressure, wake routing, workers by stream, purge and shutdown. |
-| `services/builder/src/services/command_stream/stream_kinds.rs` | Registration of the supported replay kinds. |
+| `services/builder/src/services/command_stream/stream_registry.rs` | Collects the kinds and makes their entries in `build`, kind validation, the access check, open streams per connection, the write path with back-pressure, wake routing, workers by stream, purge and shutdown. |
+| `services/builder/src/services/command_stream/stream_kinds.rs` | Standard registry wiring: Chat and PixelMap kinds with their per-kind configuration. |
+| `services/builder/src/services/command_stream/stream_access.rs` | The `StreamAccess` trait and its `any` and allow-list implementations. |
 | `services/builder/src/services/command_stream/stream_worker.rs` | Two-task lifecycle, channels, scheduling, persistence results, failure handling, drain and unload. |
 | `services/builder/src/services/command_stream/stream_relay.rs` | Fast side: ingest, optimistic versions, subscriber cursors, delivery, sync, checkpoint. |
 | `services/builder/src/services/command_stream/stream_persistence.rs` | Durable side: canonical replica, append, reconcile, reload, snapshot, cleanup. |
 | `services/builder/src/services/command_stream/stream_log_service.rs` | Durable repository operations used by the persistence. |
 | `services/builder/src/services/command_stream/stream_metrics.rs` | OpenTelemetry instruments of the streams. |
-| `services/builder/src/services/command_stream/stream_config.rs` | Poll, back-pressure, pending, snapshot, recovery and unload-grace limits. |
-| `services/builder/src/services/command_stream/stream_egress.rs` | Transport-independent worker-to-connection delivery interface. |
-| `services/builder/src/services/hub/hub_service.rs` | Stream side of the hub: authorized subscribe, unsubscribe, command submission, busy-connection drop; `StreamEgress` implementation. |
+| `services/builder/src/services/command_stream/stream_config.rs` | The settings of a kind: `inbox` (poll, recovery, retries, back-pressure), `log` (retries, paging, snapshots), the relay and worker limits, and the `access` config (`any`, `allowList`) with its validation. |
+| `services/builder/src/services/command_stream/stream_egress.rs` | Transport-independent worker-to-connection delivery interface: `send` and `notify_failed`. |
+| `services/builder/src/services/hub/hub_service.rs` | Stream side of the hub: subscribe (open, then event), unsubscribe, command submission, `StreamFailed` handling; `StreamEgress` implementation. |
 | `services/builder/src/services/hub/tasks/stream_dispatcher.rs` | Applies ordered subscribe events to the registry, purges ended workers, shuts the registry down. |
-| `services/builder/src/services/stream_authorize/stream_authorize_service.rs` | Decides whether a user may use a stream. |
+| `services/builder/config/mock.json`, `services/builder/server_config.prod.json` | The access of the streams per stage. |
 | `services/builder/src/models/messages/stream.rs` | Internal stream messages, events and failures. |
 | `services/builder/src/routes/ws/connect.rs`, `services/builder/src/routes/ws/message.rs` | Stream requests of the socket, wire shapes, conversion from `StreamMessage`. |
 | `client/web/src/engine/net/stream-hub.ts` | Scene-facing transport contract: subscriptions and listener callbacks. |
@@ -403,16 +422,26 @@ Postcard is not self-describing and the log is replayed forever.
 
 </details>
 
+<details data-agent="security">
+<summary>What the access guards and what it does not</summary>
+
+- The check is in `open`, the only way to create stream state, so no path reaches a worker, a poller or a log row without it. `push` needs the stream open for the connection, so refusing the open refuses the writes too.
+- It decides by stream id. `allows` is async and takes the user id so a per-user rule (membership, ownership) can be added without changing a caller; no rule uses the user today.
+- Every user who may open a stream may read and write it. Flooding is limited only by the back-pressure.
+- `any` is valid in every stage. Only the config layers keep it out of production: it is set in the mock layer, which production does not load.
+
+</details>
+
 <details data-agent="test">
 <summary>Where the stream side is covered</summary>
 
-`services/builder/src/services/hub/tests/streams.rs` covers subscribe events (ordered with the connection's lifecycle, ignored for a connection that is gone) and delivery to a connection by id. `tests/api-tests/builder/streams.ts` covers the wire protocol against the real service, and `stream_failures.ts` the Postgres and Redis outages (`infraOutage`).
+`services/builder/src/services/hub/tests/streams.rs` covers subscribe events (ordered with the connection's lifecycle, ignored for a connection that is gone), delivery to a connection by id, a subscribe outside the allow-list answered `Unauthorized`, a repeated subscribe that syncs again and a repeated command id that gets a version each. `stream_fault.rs` breaks the Postgres and the Redis behind the streams with toxiproxy (a subscribe that fails and works again, one that resumes after a short outage, a command refused as `failed` while the stream carries on after), with pools that give up within a second. `routes/ws/connect_test.rs` covers the socket: frames that are not valid requests and commands the kind does not accept are ignored without an answer. `tests/api-tests/builder/streams.ts` covers the contract of the real service (one happy path in order, checkpoints and snapshots) and the socket size limit; late subscribers, replaced connections and faults are covered in Rust only.
 
 </details>
 
 <details data-agent="test">
 <summary>Where the registry, worker and persistence are covered</summary>
 
-`stream_registry_test.rs` covers kind validation, open-stream bookkeeping, write refusal, write-side back-pressure (a push into an inbox that stays full fails `busy` and is not queued), wake routing, worker reuse, purge and shutdown. `stream_worker_test.rs` covers sync and ordered exactly-once delivery, backlog draining, late subscribers, the recovery poll, forgotten subscribers, the grace period, shutdown drain, a log contradicting the worker, load failure and inbox read failure. `stream_relay_test.rs` covers re-versioning, cursors, the canonical prefix, reloads and checkpoint delivery. `stream_persistence_test.rs` and `stream_log_service_test.rs` cover loading, append and replay, concurrent instances converging, reconcile and the stored inbox marker.
+`stream_access_test.rs` covers the allow-list match by kind and id. `stream_config_test.rs` covers the deny-all default of a missing setting, the short setting names and the validation of ids, watermarks and retry delays. `stream_registry_test.rs` covers kind validation, a kind registered twice or with an invalid access failing the registration, the access refusal (nothing is created for a refused stream), open-stream bookkeeping, write refusal, write-side back-pressure (a push into an inbox that stays full fails `busy` and is not queued), wake routing, worker reuse, purge and shutdown. `stream_worker_test.rs` covers sync and ordered exactly-once delivery, backlog draining, late subscribers, the recovery poll, forgotten subscribers, the grace period, shutdown drain, a log contradicting the worker, load failure and inbox read failure. `stream_relay_test.rs` covers re-versioning, cursors, the canonical prefix, reloads and checkpoint delivery. `stream_persistence_test.rs` and `stream_log_service_test.rs` cover loading, append and replay, concurrent instances converging, reconcile and the stored inbox marker.
 
 </details>

@@ -11,6 +11,9 @@ use std::{
 
 pub const DEFAULT_VERSION_CONFIG_FILE: &str = "server_version.json";
 
+pub const PROD_STAGE: &str = "prod";
+pub const TEST_STAGE: &str = "test";
+
 /// Partial configuration required for early setup.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
