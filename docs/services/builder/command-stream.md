@@ -97,7 +97,7 @@ Each registered kind has a `StreamAccess`, an async trait that decides which of 
 "streams": { "chat": { "access": { "mode": "allowList", "ids": ["global"] } } }
 ```
 
-The ids are validated when the config loads. The mock layer (`services/builder/config/mock.json`, used by the test and local stages) sets `any`; `server_config.prod.json` lists the streams that exist in production. A refusal is `CommandStreamError::Unauthorized`, which the client sees as `streamSubscribeFailed` with reason `unauthorized`.
+Allow-list ids are validated when the config loads. The production configuration explicitly allow-lists `chat:global` and `pixel-map:pixel-demo`; other stages can supply their own ids. A refusal is `CommandStreamError::Unauthorized`, which the client sees as `streamSubscribeFailed` with reason `unauthorized`.
 
 ## Client access
 
@@ -129,7 +129,7 @@ sequenceDiagram
 
 ### Submit
 
-The hub passes a command to the registry's write path ([Stream registry](#stream-registry)). There is no success acknowledgement: the sender sees its own `commandId` in a `streamCommands` batch once the worker has versioned it. A refusal answers with `streamNack`; the connection stays open, also after `busy` or `rateLimited`. How much a socket may send is in [Hub Load Protection](hub-load-protection.md).
+The hub passes a command to the registry's write path ([Stream registry](#stream-registry)). There is no success acknowledgement: once versioned, the command is returned to the sender in either `streamCommands` or a `streamSync`, depending on whether that subscriber needs a full sync. A refusal answers with `streamNack`; the connection stays open, also after `busy` or `rateLimited`. How much a socket may send is in [Hub Load Protection](hub-load-protection.md).
 
 ### Client protocol
 
@@ -146,7 +146,7 @@ Frames are JSON text with a camel-case `type`; the `StreamId` carries the kind p
 | to client | `streamDesynced` | `streamId`; the worker cannot serve the stream now, subscribe again. |
 | to client | `streamNack` | `streamId`, `commandId`, reason `notSubscribed`, `failed`, `busy` or `rateLimited`. |
 | to client | `streamSubscribeFailed` | `streamId`, reason `unauthorized`, `failed` or `rateLimited`. |
-| to client | `streamReset` | Defined but never sent: a sync alone replaces the state. |
+| to client | `streamReset` | Client parser type only; the server never emits it. Current worker resynchronization uses `streamSync`. |
 
 A frame that carries an invalid stream id is ignored without an answer. A command that is invalid (it does not decode, is not valid for the kind, or is over `MAX_COMMAND_BYTES`) is ignored the same way, and counted as `invalid` in `ws_messages_received`. A valid request that is refused for another reason gets the matching `streamNack`. A socket message over twice `MAX_COMMAND_BYTES` ends the socket.
 
@@ -188,7 +188,7 @@ sequenceDiagram
     end
 ```
 
-The relay keeps one cursor per subscriber: the version it has been sent through, or none when it needs a sync (new, resubscribed, or told versions that no longer hold). Delivery sends a sync to the ones without a cursor and the commands after the cursor to the others; a subscriber that cannot be sent to is dropped. A sync is the latest snapshot plus every command the relay holds after it, optimistic ones included. The sender sees its own `commandId` in the optimistic batch, there is no separate acknowledgement. Wakes are coalesced, so a burst becomes bounded batches.
+The relay keeps one cursor per subscriber: the version it has been sent through, or none when it needs a sync (new, resubscribed, or told versions that no longer hold). Delivery sends a sync to the ones without a cursor and the commands after the cursor to the others; a subscriber that cannot be sent to is dropped. A sync is the latest snapshot plus every command the relay holds after it, optimistic ones included. A sender learns its command was versioned when it appears in a `streamCommands` batch or `streamSync`; there is no separate success acknowledgement. Wakes are coalesced, so a burst becomes bounded batches.
 
 ## Persistence
 
@@ -233,7 +233,7 @@ stateDiagram-v2
     Ended --> [*]
 ```
 
-- **Loading:** the relay starts empty. Reconciliation with Postgres begins immediately via the persistence task (seeking a `Reloaded` result). Inbox polling and subscriber message processing remain guarded by `in_flight.is_none()`: subscriptions queue in the channel unprocessed, and inbox reads are skipped. Once `in_flight` resolves—either `Reloaded` (success) or `Failed` (Postgres unavailable or error)—the relay accepts the result. A `Failed` result ends the worker immediately; `Reloaded` or other success transitions to Serving.
+- **Loading:** the relay starts empty and immediately asks the persistence task to reconcile with Postgres. Subscriber bookkeeping (subscribe, unsubscribe, stop) continues while this is in flight, but delivery and inbox polling wait until it resolves. Reconciliation may return `Reloaded` or `Current`; either success transitions to Serving. A `Failed` result ends the worker immediately.
 - **Serving:** the relay is live and processes subscribers and inbox concurrently. Work is submitted for persistence only when `in_flight` is idle (no outstanding request). A `Failed` persistence result ends the worker.
 - **Draining:** a final inbox pass, then the tail is persisted until nothing is waiting, then the request channel closes. Proposals that arrive later stay in Redis for the next worker. A returning subscriber cancels the grace countdown before it ends.
 - **Inbox read retried:** a read that fails because Redis is out of reach (`CommandStreamError::ServiceUnavailable`: no pooled connection, a refused, dropped or timed out connection, a server that is still loading) is tried again inside the pass, at most `inbox.max_retries` (default 8, `0` turns it off) times, with jittered waits doubling from `inbox.retry_min_delay` (100 ms) to `inbox.retry_max_delay` (1 s), about three to five seconds in all by default. Any other error is not retried. The read changes nothing until it succeeds, so repeating it is safe. The subscribers stay and are not told anything. The worker does nothing else meanwhile: subscribes and persistence answers wait for the pass. When the retries are spent, the failure ends the worker as below.
@@ -282,7 +282,7 @@ sequenceDiagram
 
 The two limits stack on either side of the Redis inbox, so a slow persistence ends up refusing client pushes.
 
-**Write side.** Each open stream polls its inbox length every `inbox.backpressure_poll_period`. Pushes wait once it reaches `inbox.backpressure_high` and resume when it drains to `inbox.backpressure_low`. After `inbox.backpressure_timeout` the push fails `busy`: the sender gets `streamNack` and keeps its connection; its frame budget limits how fast it can try again. An unreadable length does not block pushes, they fail on their own if Redis is down.
+**Write side.** Each open stream polls its inbox length every `inbox.backpressure_poll_period`. Pushes wait once it reaches `inbox.backpressure_high` and resume when it drains to `inbox.backpressure_low`. After `inbox.backpressure_timeout` the push fails `busy`: the sender gets `streamNack` and keeps its connection; the socket budget limits how fast it can send more frames. The client removes the nacked command from its pending set and does not automatically retry it. An unreadable length does not block pushes; pushes fail on their own if Redis is down.
 
 **Read side.** `relay_max_pending` caps the optimistic tail. At the cap a pass does not read the inbox, and each read asks for at most the room that is left.
 
@@ -354,7 +354,7 @@ After advancing, the persistence trims the Redis inbox through the latest stored
 | Slow subscriber | `StreamEgress::send` never waits; when it cannot queue, the relay forgets the subscriber. |
 | Identity | The user id and connection id come from the authenticated connection, never from a frame. |
 | Authorization | The access of the stream's kind decides which streams may be opened, checked by `open` before anything is created; the default opens none, see [Stream access](#stream-access). |
-| Busy inbox | A push into an inbox that stays full is nacked `busy`; the connection stays open. |
+| Busy inbox | A push into an inbox that stays full is nacked `busy`; the connection stays open and the client removes that command from its pending set without automatic retry. |
 | Socket limit | A socket message over twice `MAX_COMMAND_BYTES` ends the socket; the command limits are the registry's. |
 | Shutdown | On the hub's shutdown the dispatcher has the registry persist what is waiting, for up to `stream_shutdown_timeout`; see [Shutdown](#shutdown). |
 
@@ -362,11 +362,12 @@ After advancing, the persistence trims the Redis inbox through the latest stored
 
 | File | Role |
 |---|---|
-| `crates/shine-game/src/replica/` | Shared replay state, envelopes, chain hashes, snapshots and checkpoints, client replica logic. |
+| `crates/shine-game/src/replica/` | Shared replay state, envelopes, chain hashes, snapshots and checkpoints. |
+| `crates/shine-game/src/replica/client_stream.rs` | Client replica cursors, pending commands, resync and checkpoint verification. |
 | `services/builder/src/repositories/command_inbox/` | Redis proposal queue, monotonic inbox cursor, trimming, wake notifications. |
 | `services/builder/src/repositories/command_log/` | Postgres canonical commands, snapshots, append arbitration, pruning. |
 | `services/builder/src/services/command_stream/stream_registry.rs` | Collects the kinds and makes their entries in `build`, kind validation, the access check, open streams per connection, the write path with back-pressure, wake routing, workers by stream, purge and shutdown. |
-| `services/builder/src/services/command_stream/stream_kinds.rs` | Registration of the supported replay kinds. |
+| `services/builder/src/services/command_stream/stream_kinds.rs` | Standard registry wiring: Chat and PixelMap kinds with their per-kind configuration. |
 | `services/builder/src/services/command_stream/stream_access.rs` | The `StreamAccess` trait and its `any` and allow-list implementations. |
 | `services/builder/src/services/command_stream/stream_worker.rs` | Two-task lifecycle, channels, scheduling, persistence results, failure handling, drain and unload. |
 | `services/builder/src/services/command_stream/stream_relay.rs` | Fast side: ingest, optimistic versions, subscriber cursors, delivery, sync, checkpoint. |

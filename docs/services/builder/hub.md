@@ -1,20 +1,18 @@
 # Hub
 
-*The builder's WebSocket hub: one live connection per user, kept in sync with the session and a cross-instance registry, and a topic-based message bus that delivers serialized messages to those connections.*
+*The builder's WebSocket hub: locally serialized connection lifecycle, cross-instance registry reconciliation, and topic-based delivery to WebSocket connections.*
 
 ## Problem
 
-The hub tracks who is connected and distributes messages to them. A user has at most one live connection — a fresh connect supersedes the previous one — and a connection never outlives its session or its registry entry. These properties come from one *serial command loop* that is the sole writer of connection state, a connection identity (`connection_id`) that tells a stale request from a fresh reconnect, and a Redis registry that extends the last-wins rule across service instances.
+The hub tracks connections and routes messages to them. Within one instance, a serial command loop is the sole writer of connection state; a `connection_id` makes stale disconnects harmless. Redis applies last-write-wins across instances, which notify and reconcile with one another rather than sharing a global command loop. This is a resource-abuse mitigation, not a global single-connection guarantee: two instances can briefly serve the same user until the other instance observes the registry change. Session and registry checks are periodic, so invalidation is eventually observed, not instantaneous.
 
-On top of that, the hub distributes messages by **topic**. Delivery is serialized through the loop and deliberately simple, not a high-throughput path. There are two topics: `Hub` carries the connection lifecycle events, `Ping` carries a ping message that exercises delivery. Stream requests and the stream data use the same socket; the streams themselves are [Command Streams](command-stream.md), a separate system.
-
-A socket exchanges very different messages with the hub, each with its own guarantee, and the end of a connection always carries one reason, so the client knows whether to reconnect, back off or sign in again.
+Message delivery does not pass through the command loop: the gateway writes directly to each connection's bounded socket queue. The loop serializes lifecycle changes and stream-subscription events. The bus has three topics: `Hub` for connection lifecycle, `Stream` for stream events and worker messages, and `Ping` for the optional ping path. Stream behavior is detailed in [Command Streams](command-stream.md); admission and per-socket budgets are in [Hub Load Protection](hub-load-protection.md).
 
 ## Architecture
 
-The user id and the connection id come from the authenticated connection, never from a frame. After the upgrade and the registration, the server's first frame is `{"type":"connected","userId":"<uuid>"}`, which the socket writes itself before its two tasks start.
+Host and origin checks, authentication, and hub admission happen before the WebSocket upgrade. The permit is held until the socket ends. The first server frame is `connected`; the receive task sends it after queuing `ConnectUser`, before the hub loop has necessarily completed Redis and local registration. The user id and connection id come from the authenticated connection, never from a frame.
 
-Two tasks serve a socket. The receive task reads the client's frames and hands each to the part of the hub that owns it. The send task reads one endpoint, `SocketReceiver`, that the hub side feeds through a `SocketSender` registered with the connection. Every message to the client reaches the socket through that sender, whoever produced it.
+Two tasks serve a socket. The receive task reads client frames and hands requests to their owning path: stream commands go straight to the registry, stream subscribe/unsubscribe operations combine registry changes with ordered loop events, ping uses topic delivery, and request replies can write directly to the socket sender. The send task reads `SocketReceiver`; hub-side producers enqueue through a `SocketSender` registered with the connection. This keeps stream data, ping delivery, and lifecycle control distinct without duplicating their details here.
 
 ```mermaid
 flowchart TB
@@ -23,45 +21,64 @@ flowchart TB
     classDef blue fill:#0ea5e922,stroke:#0ea5e9
     classDef green fill:#22c55e22,stroke:#22c55e
     classDef orange fill:#fb923c22,stroke:#fb923c
+    classDef violet fill:#a855f722,stroke:#a855f7
 
     C["WebSocket client"]:::indigo
+    A["WS route<br/>host, origin, auth, admission"]:::teal
 
     subgraph Socket["Socket tasks"]
         R["Receive task<br/>SocketBudget"]:::teal
         S["Send task<br/>SocketReceiver::next<br/>Close has priority"]:::teal
+        TX["SocketSender<br/>bounded data + close slot"]:::green
     end
 
     subgraph Hub["Hub"]
-        CQ["Control queue<br/>FIFO"]:::green
-        L["HubLoop<br/>sole writer"]:::blue
-        CN["Connections<br/>SocketSender per connection"]:::green
-        SE["HubGateway<br/>delivery and requests"]:::teal
+        CQ["Control queue<br/>unbounded FIFO"]:::green
+        L["HubLoop<br/>serializes state changes"]:::blue
+        CN["Local Connections"]:::green
+        SE["HubGateway<br/>direct delivery and control"]:::teal
+        BUS["Topic subscribers"]:::orange
+        BG["Heartbeat, session checker,<br/>registry listener"]:::orange
+        HR[("Redis hub registry")]:::violet
+        DISP["Stream dispatcher"]:::blue
     end
 
-    subgraph Streams["Streams"]
-        REG["Stream registry<br/>BackPressure"]:::blue
-        IB["Redis inbox"]:::green
+    subgraph Streams["Command streams"]
+        REG["Stream registry<br/>open, close, push"]:::blue
+        IB[("Redis inbox")]:::violet
         W["Stream worker"]:::blue
+        PG[("Postgres<br/>canonical log + snapshots")]:::violet
     end
-    
+    C -- "GET /api/connect" --> A
+    A -- "upgrade accepted" --> R
     C -- "frames" --> R
     CN -- "SocketMessage" --> S
-    R -- "ControlCommand" --> CQ
-    R -- "open, close, push" --> REG
+    R -- "lifecycle commands" --> CQ
+    R -- "stream command: push<br/>subscribe: open, unsubscribe: close" --> REG
+    R -- "direct request reply" --> TX
     CQ -- "ControlCommand" --> L
-    R -- "HubMessage" --> CN
-    L -- "register, unregister<br/>DisconnectReason" --> CN
-    L -- "StreamEvent" --> W
+    SE -- "direct delivery" --> CN
+    CN -- "try_send" --> TX
+    TX -- "SocketMessage" --> S
+    L -- "register, unregister" --> CN
+    L -- "create, remove" --> HR
+    BG -- "heartbeat CAS" --> HR
+    HR -. "registry change" .-> BG
+    BG -- "registry change, tick results" --> CQ
+    L -- "HubEvent" --> BUS
+    BUS -- "Hub topic events" --> BG
+    L -- "broadcast HubEvent to matching socket topics" --> CN
+    L -- "StreamEvent" --> BUS
+    BUS -- "Stream topic events" --> DISP
+    DISP -- "subscribe / start" --> REG
     REG --> IB --> W
-    W -- "StreamMessage" --> SE
-    SE -- "HubMessage" --> CN
-    L -- "HubMessage" --> SE
-    CN ~~~ SE
-    SE -- "ControlCommand" --> CQ    
+    W -- "durable append, replay, snapshots" --> PG
+    W -- "StreamEgress" --> SE
+    SE -- "dead send: DisconnectUser" --> CQ
     S -- "text frames, close frame" --> C
 ```
 
-`StreamEgress` is the trait a worker delivers through; the `HubGateway` implements it (`HubService` forwards to it), so a worker never sees a socket, and it cannot close one: a connection that is full or dead is ended by the send that finds it. The gateway is the handle producers use: it delivers messages to the connections and sends requests to the loop. The loop is the only writer of the connections. Periodic tasks (heartbeat, session checker) and the registry listener also put commands on the control queue; they are in [Connection lifecycle](#connection-lifecycle).
+`HubGateway` delivers directly to bounded socket queues; ordinary messages are not serialized through the command loop. The loop is the sole writer of local connection state and orders lifecycle and stream events. Redis stores the cross-instance active id; pub/sub accelerates reconciliation and heartbeat is the backstop. Receive-task replies may use the connection's weak sender directly. A worker uses `StreamEgress` through the gateway and cannot close a socket itself; failed delivery requests a disconnect, which the loop processes. Stream workers persist to Postgres. The diagram focuses on runtime paths; limit behavior is in [Hub Load Protection](hub-load-protection.md), and stream internals are in [Command Streams](command-stream.md).
 
 ### Message paths
 
@@ -71,19 +88,19 @@ flowchart TB
 | to hub | `streamSubscribe` | Registry `open` (authorize) → control queue → loop publishes `Subscribed` → dispatcher → worker. | Subscribe bucket of the socket; refusal is `streamSubscribeFailed`. |
 | to hub | `streamUnsubscribe` | Registry `close` → control queue → loop publishes `Unsubscribed`. | Frame bucket of the socket. |
 | to hub | `ping` | Receive task → `send_to_user` or `broadcast` → queue of the target. Off unless `ping_enabled`. | Frame bucket of the socket. |
-| to hub | connect, disconnect, drop | Control queue → loop → `Connections` and the Redis registry. | One entry per connection, bounded by the connection cap. |
+| to hub | connect, disconnect, drop | Control queue → loop → `Connections` and the Redis registry. | Local connects are limited by admission; remote registry notifications are not covered by this instance's cap. See [Hub Load Protection](hub-load-protection.md). |
 | to client | `streamSync`, `streamCommands`, `streamCheckpoint`, `streamDesynced` | Worker → `StreamEgress::send` → `Connections` → queue. Ordered per connection. | A full queue drops the connection as `slow_consumer`. |
 | to client | `streamNack`, `streamSubscribeFailed` | The answer of a refused request goes from the receive task into the queue; a failed stream is answered by the hub with `streamDesynced`. | Lost with a full queue; that client is dropped anyway. |
-| to client | `ping` | Topic delivery → queue. | As stream data. |
+| to client | `ping` | Topic delivery → direct queue of topic-matching connection(s). | Bounded queue; failed send closes the connection. |
 | to client | close frame | The close slot, see [Ending a connection](#ending-a-connection). | Cannot be full. |
 
 A subscribe has two steps. The registry `open` runs at once on the receive task: it authorizes the stream and refuses with `streamSubscribeFailed`. The `Subscribed` event follows through the control queue, so the loop orders it after the connection's own `ConnectUser`, and drops it when the connection is already gone; the dispatcher then starts or joins the worker. An unsubscribe is the same pair, `close` and `Unsubscribed`.
 
-Hub lifecycle events are published to the internal consumers and to the sockets' topic, but are not forwarded to the client.
+Lifecycle events are published to internal consumers and broadcast to sockets subscribed to the `Hub` topic, but are not converted into client protocol frames.
 
 ### Stream delivery
 
-The `HubGateway` holds the connections and the sender of the control queue. A delivery is one call: it never waits, and a failure is answered by ending the connection, not by retrying.
+The `HubGateway` holds the connections and the sender of the control queue. A delivery is one call: it never waits, and a failure is answered by ending the connection, not by retrying. Ordinary delivery goes directly through `Connections`; the loop is only involved if the send reports a dead connection.
 
 ```mermaid
 sequenceDiagram
@@ -108,7 +125,7 @@ sequenceDiagram
             CN-->>SE: FailedSend(user_id, connection_id, reason)
             SE->>CQ: DisconnectUser
             CQ->>L: DisconnectUser
-            L->>CN: unregister_connection, count the drop
+            L->>CN: Connections::unregister, count the drop
         else already closed
             CN-->>SE: not queued
         end
@@ -142,11 +159,12 @@ flowchart TD
 
 ### Topics
 
-A message on the bus has exactly one topic. A connection declares its topics when it connects (the WS route uses `Hub` and `Ping`) and receives only messages of those topics. Internal tasks subscribe to topics in the same way.
+A message on the bus has exactly one topic. A connection declares its topics when it connects (the WS route uses `Hub` and `Ping`) and receives broadcast messages only for those topics. Internal tasks subscribe to topics in the same way. Stream worker egress is addressed by `connection_id` and does not rely on the socket subscribing to the `Stream` topic.
 
 | Topic | Message | Carries |
 |---|---|---|
-| `Hub` | `HubEvent` | Connection lifecycle: `UserConnected`, `UserDisconnected`, `Shutdown`. |
+| `Hub` | `HubEvent` | Connection lifecycle events. `Shutdown` is published to internal subscribers only; sockets close directly. |
+| `Stream` | `StreamEvent`, `StreamMessage` | Internal subscribe/unsubscribe events use this topic. `StreamMessage` carries the topic tag but worker egress targets a connection directly. See [Command Streams](command-stream.md). |
 | `Ping` | `PingEvent` | A client-chosen `id`, delivered to one user or to every connection subscribed to the topic. |
 
 | Delivery | Recipients |
@@ -169,11 +187,11 @@ A client sends `{"type":"ping","id":"…","userId":"<uuid>?"}`. With a `userId` 
 | to client | `ping` | `id`. |
 | to client | close | Sent when a connection ends: the `DisconnectReason` name as reason, and a code that tells the client whether to reconnect, back off or sign in again. See [Ending a connection](#ending-a-connection). |
 
-Frames that are not text, do not parse, or fail validation are ignored without an answer and do not end the connection. A socket that sends more than its budget allows has its frames refused and, if it keeps on, is dropped; a connect that is too frequent or finds the hub full is refused before the upgrade. See [Hub Load Protection](hub-load-protection.md).
+Non-text, unparseable, or invalid request frames are ignored without an answer; the socket stays open. A message exceeding twice `MAX_COMMAND_BYTES` ends the socket. Frames over budget are refused and, if denials persist, the socket is dropped; connects over the rate or capacity limit are refused before upgrade. See [Hub Load Protection](hub-load-protection.md).
 
 ## Connection lifecycle
 
-The hub is a closed loop with a single writer. Producers never touch state — they enqueue a `ControlCommand` on an unbounded channel that the loop drains one command at a time. For each command the loop mutates the in-memory `Connections` and the Redis registry, then publishes a lifecycle `HubEvent`. The periodic tasks event-source their own view from those events and, when they find a connection that should die, enqueue a `DisconnectUser` straight back onto the channel — so every mutation, including the ones the tasks trigger, is applied by the same serial writer.
+The unbounded control channel carries more than connection lifecycle commands. The loop serializes connection-state changes and lifecycle publication; stream subscription commands publish internal stream events, registry-change commands reconcile one user's entry, and shutdown closes the hub. It does not mediate ordinary message delivery. Periodic consumers track lifecycle events independently and enqueue disconnects when their checks find stale connections.
 
 ```mermaid
 flowchart LR
@@ -183,39 +201,44 @@ flowchart LR
     classDef green fill:#22c55e22,stroke:#22c55e
     classDef orange fill:#fb923c22,stroke:#fb923c
 
-    P["<b>Producer</b><br/>API · egress · registry listener"]:::indigo
-    Q["<b>Command channel</b><br/>unbounded"]:::teal
-    L["<b>process()</b><br/>sole writer"]:::blue
-    S["<b>State</b><br/>Connections · Redis registry"]:::green
-    T["<b>Periodic task</b><br/>heartbeat · session checker"]:::orange
+    P["Producer<br/>API, consumers, registry listener"]:::indigo
+    Q["Control channel<br/>unbounded"]:::teal
+    L["HubLoop<br/>one command at a time"]:::blue
+    S["Connection state<br/>local Connections, Redis registry"]:::green
+    T["Periodic consumer<br/>heartbeat, session checker"]:::orange
+    D["Stream dispatcher"]:::blue
 
-    P -- "1 · enqueue ControlCommand" --> Q
-    Q -- "2 · dequeue, one at a time" --> L
-    L -- "3 · register / remove" --> S
-    L -- "4 · publish HubEvent (event-sourced)" --> T
-    T -. "5 · enqueue DisconnectUser (feedback)" .-> Q
+    P -- "enqueue ControlCommand" --> Q
+    Q --> L
+    L -- "lifecycle commands" --> S
+    L -- "HubEvent" --> T
+    T -. "DisconnectUser" .-> Q
+    L -- "StreamEvent" --> D
+    P -. "messages delivered directly,<br/>not through the loop" .-> S
 ```
 
 | Command | Enqueued by | Loop action |
 |---|---|---|
-| `ConnectUser` | Connection API (`request_connection`) | Register the new connection, superseding any prior one for the user. |
-| `DisconnectUser` | Connection API, heartbeat, session checker, senders that find a dead channel | Remove the connection if its id still matches (CAS). |
+| `ConnectUser` | `HubService::request_connect` | Write the Redis registry (verify ambiguous failure), then supersede and register locally. |
+| `DisconnectUser` | API, heartbeat, session checker, dead-channel send | Remove only if `connection_id` still matches; update Redis best-effort and publish the lifecycle event. |
 | `HubRegistryChanged` | Redis registry-change listener | Recheck the user's active connection against the registry. |
-| `Shutdown` | Connection API (`shutdown`), or the service when a hub task ends unexpectedly (Key rules, task supervision) | Publish `Shutdown`, close every socket at once, then remove the registry rows side by side (32 at a time) within 5 s; rows left behind expire with their TTL. Stops the loop. |
+| `SubscribeStream`, `UnsubscribeStream` | Stream API | Publish an internal `StreamEvent` if the connection still exists. |
+| `StreamFailed` | Stream worker through `StreamEgress::notify_failed` | Close the stream for its open connections, then deliver `streamDesynced`. |
+| `Shutdown` | `HubService::shutdown` | Publish shutdown, close sockets, remove registry rows concurrently (32 at a time, up to 5 s), stop consumers and loop; stream dispatcher drains workers.
 
 ### Lifecycle events
 
-The loop is the sole emitter of `HubEvent` (defined in `models/messages/hub.rs`). These events carry the connection identity that lets a consumer distinguish a supersede from a same-connection renewal.
+The loop emits lifecycle `HubEvent`s (defined in `models/messages/hub.rs`) for connection changes. Stream subscription and stream failure paths use internal `StreamEvent`s or direct stream messages instead; they are not lifecycle events. Lifecycle events carry the connection identity that lets a consumer distinguish a supersede from a same-connection renewal.
 
 | Event | Payload | Emitted when |
 |---|---|---|
 | `UserConnected` | `user_id`, `connection_id`, `session_key` | A new connection is registered (after any prior one is superseded). |
 | `UserDisconnected` | `user_id`, `connection_id`, `reason` | A connection is removed — superseded, disconnected, dropped-dead, or found inactive in the registry. |
-| `Shutdown` | — | The hub is shutting down; ends every consumer loop. |
+| `Shutdown` | — | The hub is shutting down; delivered to internal consumers before they stop. |
 
-`reason` is a `DisconnectReason`. `Client` is a disconnect the client asked for; every other reason is a *drop*, counted in `hub_connections_dropped`. The reason of every end is also told to the socket, see [Ending a connection](#ending-a-connection).
+`reason` is a `DisconnectReason`. `Client` is a disconnect the client asked for; every other reason is a *drop*, counted in `hub_connections_dropped`. The reason of every end is also told to the socket, see [Ending a connection](#ending-a-connection). Shutdown is different: the loop publishes `Shutdown`, closes sockets, and clears subscribers rather than publishing one `UserDisconnected` per socket.
 
-Every `HubEvent` is carried on the `Hub` topic. The bus has two classes of recipient, and the split is the reason lifecycle signals are never lost to the tasks:
+Lifecycle events are published to the `Hub` topic. Internal subscribers receive them losslessly; connections receive topic-matching events through their bounded socket queues. `Shutdown` is internal-only, because sockets are closed directly. The bus has two classes of recipient:
 
 | Recipient class | Channel | On lag | Why |
 |---|---|---|---|
@@ -231,9 +254,9 @@ flowchart TD
     classDef orange fill:#fb923c22,stroke:#fb923c
     classDef green fill:#22c55e22,stroke:#22c55e
 
-    E["<b>HubEvent</b> (Hub topic)<br/>UserConnected / UserDisconnected / Shutdown"]:::orange
-    HB["<b>Heartbeat</b>"]:::green
-    SC["<b>SessionChecker</b>"]:::green
+    E["HubEvent (Hub topic)<br/>UserConnected / UserDisconnected / Shutdown"]:::orange
+    HB["Heartbeat"]:::green
+    SC["SessionChecker"]:::green
 
     E -- "refreshes each tracked connection's Redis TTL;<br/>disconnects any the registry dropped" --> HB
     E -- "re-validates each tracked session;<br/>disconnects on expiry" --> SC
@@ -243,26 +266,38 @@ All subscriptions are registered synchronously before the command loop starts di
 
 ### Last connection wins
 
-`request_connection` mints a fresh `connection_id` and enqueues `ConnectUser`; the loop then runs this ordered sequence. The registry write comes *first* so a transient Redis failure leaves the existing connection intact rather than orphaning a new socket.
+`HubService::request_connect` mints a fresh `connection_id` and enqueues `ConnectUser`. The socket sends `connected` after that enqueue, before the loop has necessarily registered it. The loop then runs the sequence below. The registry write comes first; if its response is ambiguous, the loop checks whether Redis holds the new id before deciding to abort or continue.
 
 ```mermaid
 sequenceDiagram
-    participant RC as request_connection<br/>mints connection_id
+    participant RC as request_connect<br/>enqueue
+    participant S as Socket task
     participant P as process()<br/>sole writer
     participant R as Redis registry<br/>cross-instance
     participant C as Connections<br/>in-memory
     participant B as Lifecycle bus<br/>HubEvent
 
-    RC->>P: 1 · ConnectUser (new id)
-    P->>R: 2 · SET id EX ttl + PUBLISH
-    Note over P,R: first — abort here on error
-    P->>C: 3 · remove old (if old ≠ new)
-    P->>B: 4 · UserDisconnected(old)
-    P->>C: 5 · insert new
-    P->>B: 6 · UserConnected(new)
+    RC->>P: enqueue ConnectUser (new id)
+    RC->>S: return connection_id
+    S->>S: send connected frame
+    P->>R: SET id EX ttl + PUBLISH
+    alt write succeeds
+        R-->>P: ok
+    else write reports error
+        P->>R: is_active(user, new id)
+        alt registry holds new id
+            R-->>P: active, continue
+        else registry does not hold new id
+            R-->>P: inactive, abort; old connection remains
+        end
+    end
+    P->>C: remove old (if old ≠ new)
+    P->>B: UserDisconnected(old)
+    P->>C: insert new
+    P->>B: UserConnected(new)
 ```
 
-A same-`connection_id` re-registration is a renewal, not a supersede: the old-vs-new check skips the teardown. Because each connect mints a new id, the same session reconnecting simply flows through the last-wins path against its own prior connection.
+A same-`connection_id` re-registration is a renewal, not a supersede: the old-vs-new check skips teardown. Each connect mints a new id. Last-write-wins is enforced by the local loop and Redis registry writes; other instances learn of a change through pub/sub and heartbeat reconciliation, so cross-instance disconnect is eventual rather than globally serialized. Overlap across instances is tolerated: this limits persistent duplicate connections but does not guarantee there is only one live socket at every instant.
 
 ### Keeping connection info current
 
@@ -325,17 +360,15 @@ sequenceDiagram
 
 ## Client contract
 
-The web client reads the close code in `WebSocketStreamHub` and passes the outcome to the stream listeners (`disconnected(stopped?)`).
+The development `WebSocketStreamHub` owns one reconnecting socket and notifies its listeners when the connection opens or closes.
 
 | Concern | Rule |
 |---|---|
-| 4001, 4002 | The hub does not reconnect. Listeners get `disconnected('replaced')` or `disconnected('sessionInvalid')`. A manual `connect()` starts again. |
-| Other closes | Reconnect after an exponential backoff: 1 s doubling to 15 s, jittered to 50–100 % of the step, so clients of a restarted server do not return at once. |
-| Backoff reset | Only after a `streamSync` (or a `connected` while nothing is subscribed). A server that accepts the upgrade and closes again keeps growing the delay. |
-| Socket creation | A `new WebSocket` that throws takes the same backoff path. |
-| After a reconnect | A stream goes back to waiting for its sync (`ClientStream::resync`); paints are only taken while the connection is live. |
-| Replaced, signed out | The pixel map shows the state and ignores resync requests; it never subscribes to a hub that will not reconnect. |
-| Subscribe failure | `unauthorized` ends in `StreamStatus::Rejected` and is not retried; the other failures leave the stream `Desynced`, resubscribed after 5 s doubling to 60 s, jittered to 50–100 %. A sync resets the delay. |
+| Reconnect | On close it reconnects after a deterministic exponential delay, from 1 s up to 15 s. It adds no jitter and does not distinguish close codes. The attempt counter resets on WebSocket `open`, so a socket that opens and then closes again retries after 1 s. |
+| Activation | On `connected`, it activates every stream subscription. Stream-specific state and resync behavior belong to the client replica. |
+| Stream failure | `ClientStream` marks `streamDesynced` and any subscribe failure as `Desynced`; a `notSubscribed` nack triggers resubscribe. The pixel-map experiment retries a desynced stream after 5 s. |
+| Pending commands | `ClientStream` retains pending commands across a sync and resends those not yet present in the server's command batch; any nack removes that command from pending. |
+| Socket construction | An exception from `new WebSocket` is not caught by this development client; the close-driven reconnect path is not reached. |
 
 ## Metrics
 
@@ -364,27 +397,27 @@ A *control command* is the hub's own input (connect, disconnect, registry change
 
 | Concern | Rule |
 |---|---|
-| One connection per user | `process(ConnectUser)` removes any different active connection and emits `UserDisconnected` before registering the new one. |
-| Stale removal | Every removal path is CAS'd on `connection_id` — locally (`unregister_connection`) and in Redis (`remove_connection_if_active`) — so a stale removal cannot tear down a fresh reconnect. |
-| Session bound | `SessionChecker` disconnects on definitive session loss, so a connection never outlives its session. |
+| Connection replacement | The local loop replaces a different active connection. Across instances, Redis last-write-wins and notifications/heartbeats eventually remove stale local connections; temporary overlap is allowed because this is resource-abuse mitigation, not a strict single-connection guarantee. |
+| Stale removal | Every removal path checks `connection_id` — locally (`Connections::unregister`) and in Redis (`remove_connection_if_active`) — so a stale removal cannot tear down a fresh reconnect. |
+| Session bound | `SessionChecker` disconnects on definitive session loss when the periodic check observes it; transient validation errors defer the check. |
 | Crashed instance | Registry entries carry a TTL kept alive only by the live instance's heartbeat, so its connections self-clean. |
 | Task supervision | The command loop, heartbeat, session checker, stream dispatcher and the registry listener (when its subscribe fails) live as long as the hub. One that ends before a shutdown is recorded by the service-wide `TaskSupervisor` (`shine-core`, in `CoreServices`; the hub starts its tasks with its `spawn`, named `hub ...`). The web app then runs the shutdown as for a SIGTERM (hooks, then the server drains), so the platform restarts the service instead of leaving it half alive. |
 | Lifecycle delivery | Lossless unbounded subscriber channels, with all subscriptions registered before the loop starts, so internal tasks never miss an event. |
 | Topics | A connection receives only the topics it declared at connect time; a message has exactly one topic. |
 | Identity | The user id and connection id come from the authenticated connection, never from a frame. |
 | Slow connection | Egress never waits: a connection whose queue is full is dropped as `slow_consumer`, and its socket closes at once. |
-| One endpoint | Everything to a client goes through its `SocketSender`: stream data, pings, answers and the close reason. `socket_channel(capacity)` creates the sender and the `SocketReceiver` together; `HubService::request_connection` takes the sender. |
+| One endpoint | Socket task replies and hub-side producers enqueue through the connection's `SocketSender`; the close reason uses its separate slot. `socket_channel(capacity)` creates the sender and `SocketReceiver` together. |
 | Data and end | The queue is bounded and carries data only. The reason of the end is a separate set-once slot that is not part of the queue, so it cannot be full. |
 | First wins | The slot is set once; later calls are ignored, and `close` returns whether the caller was first. The receive task, the hub loop and the senders may all end the same connection; the first reason is the one the client gets, and the one the loop counts and publishes (`UnregisteredConnection::close` returns it). |
 | Dead connection | A send that finds the queue full or closed ends the connection as `SlowConsumer` or `DeadChannel`. Only the first sender to end it queues a `DisconnectUser`, so a mass eviction queues one command per connection. |
 | Priority | `next` returns `Close` before queued data. Queued data is not flushed: the peer of a `Client` close has stopped reading, and after `Shutdown` or any drop the client resubscribes and gets a fresh sync; its unconfirmed commands stay pending and go out again with it. |
 | Silent end | The queue closing with no reason is `Gone`: the socket still ends, a warning is logged, and the close frame has no code. It marks a bug, not a case. |
-| Commands skip the loop | A stream command goes from the receive task to the registry; it never waits for the control queue. Only subscribe, unsubscribe and lifecycle commands do, in order, so a socket's connect comes before its disconnect. |
-| Drop bookkeeping | Removing the connection from the registry, publishing `UserDisconnected` and counting `hub_connections_dropped` stay on the control queue. `Client` is not a drop and is not counted. |
+| Commands skip the loop | A stream command goes from the receive task to the registry; it never waits for the control queue. Subscribe and unsubscribe queue ordered stream events; lifecycle commands preserve the connection's connect-before-disconnect ordering. |
+| Drop bookkeeping | Local removal, best-effort Redis removal, publishing `UserDisconnected` and counting `hub_connections_dropped` happen as the loop processes the disconnect. `Client` is not a drop and is not counted. |
 | Workers do not close | A worker that finds a connection full or dead gets `false` from `StreamEgress::send`; the hub drops the connection with `SlowConsumer` or `DeadChannel`. `StreamEgress` has no close. |
 | Other ends | The idle timeout and the message size limit end the receive task, and the socket ends the connection as `Client` (1000). A write or drain timeout ends the send task without a close frame. |
 | Ping | Gated by `ping_enabled`; `id` is at most 255 characters. |
-| Load | A connect is admitted by the per-user connect rate and the connection cap before the upgrade, and every frame of a socket draws on its budget; the command queue stays unbounded because these bound what feeds it. See [Hub Load Protection](hub-load-protection.md). |
+| Load | A connect is admitted by the per-user rate and instance cap before upgrade; frames draw on the socket budget. The unbounded control queue also accepts remote registry notifications. See [Hub Load Protection](hub-load-protection.md). |
 
 ## File map
 
@@ -393,37 +426,38 @@ A *control command* is the hub's own input (connect, disconnect, registry change
 | `services/builder/src/routes/ws/connect.rs` | Upgrade (after `admit`), `connected` frame, receive and send tasks over the connection's endpoint, ping request, `close_code`, the close frame, the receive task's own close and answers. |
 | `services/builder/src/routes/ws/socket_budget.rs` | `SocketBudget`: the frame budget of a socket. |
 | `services/builder/src/routes/ws/message.rs` | Wire request and response shapes. |
-| `services/builder/src/services/hub/hub_service.rs` | The public handle: builder, admission, the stream entry points, `request_*`, delivery through the gateway (`send_to_user`, `broadcast`, `subscribe`), the registry listener. |
-| `services/builder/src/services/hub/control_command.rs` | `ControlCommand` enum — the loop's input vocabulary. |
-| `services/builder/src/services/hub/hub_gateway.rs` | `HubGateway`: delivery to the connections, `send_control` to the loop (the one place that stamps and counts), `StreamEgress` for the workers. |
-| `services/builder/src/services/hub/hub_loop.rs` | `HubLoop`: the command loop and everything only it does (`process`, registry changes, shutdown, `publish`). |
-| `services/builder/src/services/hub/hub_registry.rs` | `HubRegistry`: the hub's calls to the Redis registry, counted by operation. |
-| `services/builder/src/services/hub/hub_connections.rs` | Addressable connection registry (`register_connection`, `unregister_connection`); keeps each connection's `SocketSender`; dead-connection detection. |
+| `services/builder/src/services/hub/hub_service.rs` | The public handle: builder, admission, stream entry points, `request_*`, direct delivery through the gateway, registry listener. |
+| `services/builder/src/services/hub/control_command.rs` | `ControlCommand` enum — lifecycle and stream commands handled by the loop. |
+| `services/builder/src/services/hub/hub_gateway.rs` | `HubGateway`: direct delivery to connections, `send_control` to the loop, `StreamEgress` for workers. |
+| `services/builder/src/services/hub/hub_loop.rs` | `HubLoop`: command processing, local connection lifecycle, registry reconciliation, stream failure handling, shutdown, event publication. |
+| `services/builder/src/services/hub/hub_registry.rs` | `HubRegistry`: the hub's calls to the Redis connection registry. |
+| `crates/shine-infra/src/sync/admission.rs` | Per-user connect rate and instance-cap permit held for the socket lifetime. |
+| `services/builder/src/services/hub/hub_connections.rs` | Addressable connection registry (`Connections::register`, `unregister`); keeps each connection's `SocketSender`; dead-connection detection. |
 | `services/builder/src/services/hub/hub_subscribers.rs` | Internal lossless fan-out subscribers. |
-| `services/builder/src/services/hub/hub_status.rs` | Health provider reporting live connection/subscriber counts. |
+| `services/builder/src/services/hub/hub_status.rs` | Status provider exposing connection and subscriber counts from `HubService::stats`. |
 | `services/builder/src/services/hub/hub_metrics.rs` | OpenTelemetry instruments of the hub. |
 | `services/builder/src/routes/ws/ws_metrics.rs` | OpenTelemetry instruments of the websocket endpoint. |
-| `services/builder/src/services/hub/tasks/connection_tracker.rs` | Event-sourced per-consumer tracker and the periodic loop driver. |
+| `services/builder/src/services/hub/tasks/background_task.rs` | Event-sourced `ConnectionTracker` and periodic background-task loop driver. |
 | `services/builder/src/services/hub/tasks/heartbeat.rs` | Batched registry TTL refresh; disconnects registry-dropped connections. |
 | `services/builder/src/services/hub/tasks/session_checker.rs` | Per-tick session validation; disconnect on expiry. |
 | `services/builder/src/models/messages/hub.rs` | `HubEvent`, `DisconnectReason`, `HubMessage`, `TopicKey`, `ToTopic`. |
 | `services/builder/src/models/messages/ping.rs` | `PingEvent`. |
 | `services/builder/src/services/hub/socket_channel.rs` | `socket_channel`, `SocketSender`, `SocketReceiver`, `SocketMessage`: the data queue and the close slot of a connection. |
-| `services/builder/src/services/hub/tasks/stream_dispatcher.rs` | Turns `Subscribed` events into registry subscriptions. |
+| `services/builder/src/services/hub/tasks/stream_dispatcher.rs` | Subscribes to `Hub` and `Stream` topics, applies stream subscription events, purges ended workers and drains the registry on shutdown. |
 | `services/builder/src/services/command_stream/stream_egress.rs` | `StreamEgress`: worker-to-connection delivery. |
 | `client/web/src/engine/net/stream-hub.ts` | `StreamListener.disconnected(stopped?)`, `HubStopReason`. |
-| `client/web/src/engine/net/websocket-stream-hub.ts` | Close codes, backoff with jitter, reset after a sync, guarded socket creation. |
-| `client/web/src/experiments/pixel-map/index.ts` | Resync on connect, paints only while live, replaced and signed-out states, resubscribe backoff. |
-| `crates/shine-game/src/replica/client_stream.rs` | `StreamStatus::Rejected` for an `unauthorized` subscribe failure. |
+| `client/web/src/engine/net/websocket-stream-hub.ts` | Development reconnecting socket; deterministic exponential reconnect delay and stream subscription routing. |
+| `client/web/src/experiments/pixel-map/index.ts` | Pixel-map stream subscription, live-state gating, and fixed-delay resubscribe after desync. |
+| `crates/shine-game/src/replica/client_stream.rs` | Client replica state, pending commands, sync/recovery, checkpoint verification and nack behavior. |
 | `services/builder/src/repositories/hub_registry/hub_connections.rs` | `HubConnections` trait — cross-instance connection contract. |
 | `services/builder/src/repositories/hub_registry/redis/redis_hub_connections.rs` | Redis implementation: SET/EXPIRE/DEL, CAS transactions, pub/sub. |
 | `services/builder/src/repositories/hub_registry/redis/redis_hub_connection_db.rs` | Pooled context factory; registry-change listener with self-origin filtering. |
-| `services/builder/src/app_config.rs`, `services/builder/src/app_state.rs` | Hub configuration (`heartbeat`, `session_check`, `ping_enabled`) and application wiring. |
+| `services/builder/src/app_config.rs`, `services/builder/src/app_state.rs` | Hub configuration and application wiring; constructs the Redis registry/inbox and Postgres command log. |
 
 <details data-agent="implementation">
 <summary>Why the registry write precedes local teardown in ConnectUser</summary>
 
-In `process(ConnectUser)` the order is: (1) `create_registry_connection`, (2) supersede the old local connection, (3) register the new one. If the registry write fails the loop returns early *before* touching local state, so the previously active connection stays intact and tracked. Reversing the order would let a transient Redis error leave the user with no connection and an orphaned, untracked new socket. The registry removal on the disconnect paths is best-effort by contrast — a failure there is logged and left to TTL cleanup, because the local removal and `UserDisconnected` must still happen so sockets and trackers never wedge.
+In `HubLoop::process(ConnectUser)` the order is: write the new registry id, remove any different local connection, then register the new one. If the write call reports an error, the loop checks `is_active`: when Redis holds the new id despite a lost response it continues; otherwise it returns before changing local state. Disconnect-side registry removal is best-effort; local removal and `UserDisconnected` still happen so sockets and trackers do not wedge, with TTL cleanup handling a stale registry entry.
 
 </details>
 
@@ -450,7 +484,7 @@ A watch whose senders are all dropped without a reason is the `Gone` case; the h
 <details data-agent="test">
 <summary>Where the hub is covered</summary>
 
-`services/builder/src/services/hub/tests/` covers the loop: `lifecycle.rs` (last-wins, disconnect, topic delivery, heartbeat, session checks), `contention.rs` (concurrent connects and broadcasts, across instances) and `fault.rs` (registry write failures; the faults of the streams are in `stream_fault.rs`). Unit tests sit beside `hub_connections.rs`, `hub_subscribers.rs` and `tasks/connection_tracker.rs`, and `routes/ws/connect_test.rs` covers the socket. `tests/api-tests/builder/ws_connect.ts` covers the real service: origin and auth rejection and the close code of a replaced socket (last-wins). The rest of the hub (ping delivery, session checks, drop reasons) is covered in Rust only.
+`services/builder/src/services/hub/tests/` covers the loop: `lifecycle.rs` (last-wins, disconnect, topic delivery, heartbeat, session checks), `contention.rs` (concurrent connects and broadcasts, across instances) and `fault.rs` (registry write failures; the faults of the streams are in `stream_fault.rs`). Unit tests sit beside `hub_connections.rs`, `hub_subscribers.rs` and `tasks/background_task.rs`, and `routes/ws/connect_test.rs` covers the socket. `tests/api-tests/builder/ws_connect.ts` covers the real service: origin and auth rejection and the close code of a replaced socket (last-wins). The rest of the hub (ping delivery, session checks, drop reasons) is covered in Rust only.
 
 </details>
 
@@ -466,8 +500,8 @@ A watch whose senders are all dropped without a reason is the `Gone` case; the h
 | 5 | A socket over its budget closes 1008 while the hub loop is not serving | socket test |
 | 6 | A client that closes gets 1000 and no drop is counted | socket test, hub test |
 | 7 | The replaced socket of the real service closes 4001 `replaced` | Playwright (`ws_connect.ts`) |
-| 8 | Hub client: stops on 4001 and 4002, backs off with jitter, resets only after a sync, a throwing socket takes the backoff path | vitest |
-| 9 | `ClientStream`: `unauthorized` is `Rejected`, other failures `Desynced` | Rust unit |
+| 8 | WebSocket stream hub reconnects after a close with capped exponential delay and routes subscriptions by stream id | vitest |
+| 9 | `ClientStream` applies sync and command batches, clears nacked commands, resubscribes on `notSubscribed`, and verifies checkpoints | Rust unit |
 | 10 | Many sends to one full or closed queue queue one `DisconnectUser`; a replaced connection is not removed by a late one | unit, hub test |
 
 </details>
